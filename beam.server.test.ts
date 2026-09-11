@@ -1,0 +1,125 @@
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { midOperationReason, syncOnce } from "./beam.server";
+
+function git(cwd: string, ...args: string[]): string {
+  return execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
+}
+
+function tryGit(cwd: string, ...args: string[]): void {
+  try {
+    execFileSync("git", args, { cwd, encoding: "utf8", stdio: "ignore" });
+  } catch {
+    // some commands (e.g. a conflicting merge) exit non-zero on purpose
+  }
+}
+
+describe("syncOnce", () => {
+  let root: string;
+  let mainRepo: string;
+  let wsDir: string;
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), "beam-test-"));
+    mainRepo = join(root, "main");
+    wsDir = join(root, "ws");
+    mkdirSync(mainRepo, { recursive: true });
+
+    git(mainRepo, "init", "-b", "main");
+    git(mainRepo, "config", "user.email", "beam-test@example.com");
+    git(mainRepo, "config", "user.name", "Beam Test");
+    git(mainRepo, "config", "commit.gpgsign", "false");
+    git(mainRepo, "config", "core.autocrlf", "false");
+
+    writeFileSync(join(mainRepo, "tracked.txt"), "original\n");
+    writeFileSync(join(mainRepo, "todelete.txt"), "delete me\n");
+    git(mainRepo, "add", "-A");
+    git(mainRepo, "commit", "-m", "initial");
+
+    git(mainRepo, "worktree", "add", "-b", "feature", wsDir);
+  });
+
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("mirrors a committed modification to a tracked file", () => {
+    writeFileSync(join(wsDir, "tracked.txt"), "changed\n");
+    git(wsDir, "commit", "-am", "change tracked");
+
+    expect(syncOnce(wsDir, mainRepo)).toBe(true);
+    expect(readFileSync(join(mainRepo, "tracked.txt"), "utf8")).toBe("changed\n");
+  });
+
+  it("mirrors an uncommitted modification (full working tree, not committed-only)", () => {
+    writeFileSync(join(wsDir, "tracked.txt"), "uncommitted\n");
+
+    expect(syncOnce(wsDir, mainRepo)).toBe(true);
+    expect(readFileSync(join(mainRepo, "tracked.txt"), "utf8")).toBe("uncommitted\n");
+  });
+
+  it("mirrors a new untracked non-ignored file", () => {
+    writeFileSync(join(wsDir, "newfile.txt"), "brand new\n");
+
+    expect(syncOnce(wsDir, mainRepo)).toBe(true);
+    expect(readFileSync(join(mainRepo, "newfile.txt"), "utf8")).toBe("brand new\n");
+  });
+
+  it("removes a file deleted in the workspace", () => {
+    rmSync(join(wsDir, "todelete.txt"));
+
+    expect(syncOnce(wsDir, mainRepo)).toBe(true);
+    expect(existsSync(join(mainRepo, "todelete.txt"))).toBe(false);
+  });
+
+  it("keeps main's ignored files and does not mirror the workspace's ignored files", () => {
+    writeFileSync(join(wsDir, ".gitignore"), "secret.env\nignored-ws.txt\n");
+    writeFileSync(join(wsDir, "ignored-ws.txt"), "should not mirror\n");
+    writeFileSync(join(mainRepo, "secret.env"), "MAIN SECRET\n");
+
+    expect(syncOnce(wsDir, mainRepo)).toBe(true);
+    expect(existsSync(join(mainRepo, "secret.env"))).toBe(true);
+    expect(readFileSync(join(mainRepo, "secret.env"), "utf8")).toBe("MAIN SECRET\n");
+    expect(existsSync(join(mainRepo, "ignored-ws.txt"))).toBe(false);
+  });
+
+  it("moves main's branch to the workspace HEAD", () => {
+    writeFileSync(join(wsDir, "tracked.txt"), "committed change\n");
+    git(wsDir, "commit", "-am", "advance feature");
+    const wsHead = git(wsDir, "rev-parse", "HEAD");
+    const mainHeadBefore = git(mainRepo, "rev-parse", "HEAD");
+    expect(wsHead).not.toBe(mainHeadBefore);
+
+    expect(syncOnce(wsDir, mainRepo)).toBe(true);
+    expect(git(mainRepo, "rev-parse", "HEAD")).toBe(wsHead);
+  });
+
+  it("skips and leaves main untouched when the workspace is mid-merge", () => {
+    writeFileSync(join(wsDir, "conflict.txt"), "base\n");
+    git(wsDir, "add", "-A");
+    git(wsDir, "commit", "-m", "base conflict");
+
+    git(wsDir, "checkout", "-b", "branchA");
+    writeFileSync(join(wsDir, "conflict.txt"), "AAAA\n");
+    git(wsDir, "commit", "-am", "A");
+
+    git(wsDir, "checkout", "feature");
+    writeFileSync(join(wsDir, "conflict.txt"), "BBBB\n");
+    git(wsDir, "commit", "-am", "B");
+
+    tryGit(wsDir, "merge", "branchA");
+
+    expect(midOperationReason(wsDir)).not.toBeNull();
+
+    const mainHeadBefore = git(mainRepo, "rev-parse", "HEAD");
+    const trackedBefore = readFileSync(join(mainRepo, "tracked.txt"), "utf8");
+
+    expect(syncOnce(wsDir, mainRepo)).toBe(false);
+    expect(git(mainRepo, "rev-parse", "HEAD")).toBe(mainHeadBefore);
+    expect(readFileSync(join(mainRepo, "tracked.txt"), "utf8")).toBe(trackedBefore);
+    expect(existsSync(join(mainRepo, "conflict.txt"))).toBe(false);
+  });
+});
