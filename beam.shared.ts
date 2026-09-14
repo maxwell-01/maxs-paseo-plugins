@@ -25,3 +25,17 @@ export const beamDeactivate = defineRpc({
   input: z.object({}),
   output: z.object({ active: z.literal(false) }),
 });
+
+export const beamLog = defineRpc({
+  name: "beam.log",
+  input: z.object({}),
+  output: z.object({
+    entries: z.array(
+      z.object({
+        ts: z.string(),
+        level: z.enum(["info", "warn", "error"]),
+        message: z.string(),
+      }),
+    ),
+  }),
+});

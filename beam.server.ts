@@ -32,6 +32,36 @@ const activeBeams = new Map<string, ActiveBeam>();
 
 let tempIndexCounter = 0;
 
+const BEAM_LOG_CAP = 200;
+type BeamLogLevel = "info" | "warn" | "error";
+interface BeamLogEntry {
+  ts: string;
+  level: BeamLogLevel;
+  message: string;
+}
+const beamLog: BeamLogEntry[] = [];
+
+function logBeam(level: BeamLogLevel, message: string): void {
+  beamLog.push({ ts: new Date().toISOString(), level, message });
+  if (beamLog.length > BEAM_LOG_CAP) {
+    beamLog.splice(0, beamLog.length - BEAM_LOG_CAP);
+  }
+}
+
+export function getBeamLog(): BeamLogEntry[] {
+  return [...beamLog];
+}
+
+function gitErrorMessage(error: unknown): string {
+  if (error && typeof error === "object" && "stderr" in error) {
+    const stderr = (error as { stderr?: unknown }).stderr;
+    if (typeof stderr === "string" && stderr.trim().length > 0) {
+      return stderr.trim();
+    }
+  }
+  return error instanceof Error ? error.message : String(error);
+}
+
 function git(cwd: string, ...args: string[]): string {
   return execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
 }
@@ -109,7 +139,7 @@ export function midOperationReason(repo: string): string | null {
 export function syncOnce(workspaceDir: string, mainPath: string): boolean {
   const blocked = midOperationReason(workspaceDir) ?? midOperationReason(mainPath);
   if (blocked) {
-    console.error(`beam sync skipped: ${blocked}`);
+    logBeam("warn", `skipped: ${blocked}`);
     return false;
   }
 
@@ -144,8 +174,9 @@ function sync(workspaceDir: string, mainPath: string): void {
     if (entry) {
       entry.lastSyncAt = new Date().toISOString();
     }
+    logBeam("info", "synced");
   } catch (error) {
-    console.error("beam sync failed:", error instanceof Error ? error.message : error);
+    logBeam("error", `sync failed: ${gitErrorMessage(error)}`);
   }
 }
 
@@ -242,10 +273,16 @@ export async function activate(input: {
 
   watcher.on("all", () => scheduleSync(mainPath));
   watcher.on("error", (error) => {
-    console.error("beam watcher error:", error instanceof Error ? error.message : error);
+    logBeam("error", `watcher error: ${error instanceof Error ? error.message : String(error)}`);
   });
 
+  logBeam("info", `beam in: mirroring ${workspaceDir} -> ${mainPath}`);
   runSyncLoop(mainPath);
+  if (entry.lastSyncAt) {
+    logBeam("info", "applied successfully");
+  } else {
+    logBeam("warn", "initial sync did not apply (skipped or failed); see log above");
+  }
 
   const state: BeamState = {
     workspaceId,
@@ -267,13 +304,20 @@ export async function deactivate(): Promise<{ active: false }> {
     throw new Error("no active beam");
   }
   const { mainPath } = readPointer(pointer);
-  stopBeam(mainPath);
-
   const stateFile = stateFilePath(mainPath);
+  const originalHead = existsSync(stateFile) ? readState(stateFile).originalHead : "unknown";
+
+  stopBeam(mainPath);
+  logBeam(
+    "info",
+    `beam out: stopped mirroring ${mainPath}; restore with git -C ${mainPath} reset --hard ${originalHead}`,
+  );
+
   if (existsSync(stateFile)) {
     rmSync(stateFile);
   }
   rmSync(pointer);
+  logBeam("info", "removed successfully");
 
   return { active: false };
 }
