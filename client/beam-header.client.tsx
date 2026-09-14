@@ -68,7 +68,7 @@ export function registerBeamHeaderButtons(client: PluginClientContext): PluginCl
       return;
     }
     const reg = client.addHeaderButton({
-      id: `beam-${workspaceId}`,
+      id: `beam-${workspaceId.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`,
       workspaceId,
       button: {
         title: "Mirror this workspace into your main checkout",
