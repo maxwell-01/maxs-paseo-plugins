@@ -64,7 +64,7 @@ export function getBeamLog(): BeamLogEntry[] {
 
 function gitErrorMessage(error: unknown): string {
   if (error && typeof error === "object" && "stderr" in error) {
-    const stderr = (error as { stderr?: unknown }).stderr;
+    const stderr = error.stderr;
     if (typeof stderr === "string" && stderr.trim().length > 0) {
       return stderr.trim();
     }
@@ -146,6 +146,20 @@ export function midOperationReason(repo: string): string | null {
   return null;
 }
 
+function writeWorkingTreeTree(repo: string): string {
+  const tmpIndex = join(tmpdir(), `beam-index-${process.pid}-${tempIndexCounter++}`);
+  const env: NodeJS.ProcessEnv = { ...process.env, GIT_INDEX_FILE: tmpIndex };
+  try {
+    gitWithEnv(repo, env, "read-tree", "HEAD");
+    gitWithEnv(repo, env, "add", "-A");
+    return gitWithEnv(repo, env, "write-tree");
+  } finally {
+    if (existsSync(tmpIndex)) {
+      rmSync(tmpIndex);
+    }
+  }
+}
+
 export function syncOnce(workspaceDir: string, mainPath: string): boolean {
   const blocked = midOperationReason(workspaceDir) ?? midOperationReason(mainPath);
   if (blocked) {
@@ -154,19 +168,7 @@ export function syncOnce(workspaceDir: string, mainPath: string): boolean {
   }
 
   const wsHead = git(workspaceDir, "rev-parse", "HEAD");
-
-  const tmpIndex = join(tmpdir(), `beam-index-${process.pid}-${tempIndexCounter++}`);
-  const env: NodeJS.ProcessEnv = { ...process.env, GIT_INDEX_FILE: tmpIndex };
-  let snapTree: string;
-  try {
-    gitWithEnv(workspaceDir, env, "read-tree", "HEAD");
-    gitWithEnv(workspaceDir, env, "add", "-A");
-    snapTree = gitWithEnv(workspaceDir, env, "write-tree");
-  } finally {
-    if (existsSync(tmpIndex)) {
-      rmSync(tmpIndex);
-    }
-  }
+  const snapTree = writeWorkingTreeTree(workspaceDir);
 
   git(mainPath, "reset", "--mixed", wsHead);
   git(mainPath, "read-tree", "--reset", "-u", snapTree);
@@ -201,19 +203,7 @@ export function snapshotMain(mainPath: string): {
   const originalBranch = git(mainPath, "rev-parse", "--abbrev-ref", "HEAD");
   const originalHead = git(mainPath, "rev-parse", "HEAD");
   const originalIndexTree = git(mainPath, "write-tree");
-
-  const tmpIndex = join(tmpdir(), `beam-index-${process.pid}-${tempIndexCounter++}`);
-  const env: NodeJS.ProcessEnv = { ...process.env, GIT_INDEX_FILE: tmpIndex };
-  let originalTree: string;
-  try {
-    gitWithEnv(mainPath, env, "read-tree", "HEAD");
-    gitWithEnv(mainPath, env, "add", "-A");
-    originalTree = gitWithEnv(mainPath, env, "write-tree");
-  } finally {
-    if (existsSync(tmpIndex)) {
-      rmSync(tmpIndex);
-    }
-  }
+  const originalTree = writeWorkingTreeTree(mainPath);
 
   const indexCommit = commitTree(mainPath, originalIndexTree, originalHead, "beam: pre-beam index");
   const worktreeCommit = commitTree(mainPath, originalTree, indexCommit, "beam: pre-beam snapshot");
@@ -328,6 +318,16 @@ export async function activate(input: {
     const activeName =
       (existsSync(stateFile) ? readState(stateFile).workspaceName : undefined) ?? "another workspace";
     throw new Error(`Already beaming "${activeName}" onto this checkout; beam out there first`);
+  }
+
+  const pointer = pointerPath();
+  if (existsSync(pointer)) {
+    const { mainPath: activeMainPath } = readPointer(pointer);
+    const activeStateFile = stateFilePath(activeMainPath);
+    if (activeMainPath !== mainPath && existsSync(activeStateFile)) {
+      const activeName = readState(activeStateFile).workspaceName ?? "another workspace";
+      throw new Error(`Already beaming "${activeName}" onto ${activeMainPath}; beam out there first`);
+    }
   }
 
   const { originalBranch, originalHead, originalTree, originalIndexTree, originalRef } =

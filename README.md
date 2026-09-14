@@ -60,20 +60,32 @@ touched during beam-in, sync, or beam-out.
 
 ## Notes and limitations
 
-- **One beam at a time.** Beam tracks a single active mirror through a home pointer file
-  (`~/.paseo-beam-active.json`) and a per-checkout state file (`<mainPath>/.git/beam-state.json`).
-  Beaming a second workspace onto a checkout that already has an active beam is rejected; beam out
-  first.
+- **One beam at a time, machine-wide.** Beam tracks the single active mirror through a home pointer
+  file (`~/.paseo-beam-active.json`) plus a per-checkout state file
+  (`<mainPath>/.git/beam-state.json`). Beaming a second workspace — even onto a different checkout —
+  while one is already active is rejected; beam out first.
 - **Ignored during watch:** any path segment named `.git`, `node_modules`, or `.context`, and any
   filename containing `.tmp.`.
 - **Crash caveat.** If Paseo or your machine stops while a beam is active, main stays mirrored until
-  you beam out (which performs the restore). The snapshot survives under `refs/beam/original`; if the
-  state file is lost, restore by hand with `git -C <mainPath> reset --hard refs/beam/original` (that
-  commit's tree is main's full pre-beam working tree).
+  you beam out (which performs the restore). The snapshot survives under `refs/beam/original` even if
+  the state file is lost, because that ref is a 3-commit chain: the snapshot commit's tree is main's
+  full pre-beam working tree, its parent commit's tree is the pre-beam index, and its grandparent is
+  the pre-beam `HEAD`. Restore by hand with:
+  ```bash
+  git -C <mainPath> read-tree --reset -u refs/beam/original^{tree}
+  git -C <mainPath> reset --soft refs/beam/original^^
+  git -C <mainPath> read-tree refs/beam/original^^{tree}
+  git -C <mainPath> update-ref -d refs/beam/original
+  ```
+  A plain `git -C <mainPath> reset --hard refs/beam/original` only gets the working-tree *contents*
+  right — it leaves the branch pointed at the synthetic `beam: pre-beam snapshot` commit instead of
+  your real pre-beam `HEAD`, and it collapses whatever was staged vs. unstaged into one committed
+  state. Use the four commands above to reproduce the pre-beam state exactly.
 
 ## Development
 
 ```bash
 npm install
 npm run typecheck
+npm test
 ```
