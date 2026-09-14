@@ -60,6 +60,8 @@ function presentation(state: BeamButtonState, otherName: string) {
 
 export function registerBeamHeaderButtons(client: PluginClientContext): PluginCleanup {
   const buttons = new Map<string, { reg: PluginButtonRegistration; lastKey: string }>();
+  const agentsByWorkspace = new Map<string, Set<string>>();
+  const workspaceByAgent = new Map<string, string>();
 
   const addButton = (workspaceId: string) => {
     if (buttons.has(workspaceId)) {
@@ -77,48 +79,92 @@ export function registerBeamHeaderButtons(client: PluginClientContext): PluginCl
     buttons.set(workspaceId, { reg, lastKey: "idle" });
   };
 
-  const unsubscribe = client.paseo.workspaces.subscribe((update) => {
+  const removeButton = (workspaceId: string) => {
+    const entry = buttons.get(workspaceId);
+    if (entry) {
+      entry.reg.remove();
+      buttons.delete(workspaceId);
+    }
+  };
+
+  // Header buttons need a workspaceId, and the client can enumerate AGENTS (not workspaces).
+  // Discover each open workspace through its agents, ref-counting agents per workspace so one
+  // button is registered per workspace and removed when its last agent goes away.
+  const addAgent = (agent: { id: string; workspaceId?: string }) => {
+    const { id: agentId, workspaceId } = agent;
+    if (!workspaceId || workspaceByAgent.has(agentId)) {
+      return;
+    }
+    workspaceByAgent.set(agentId, workspaceId);
+    let agentIds = agentsByWorkspace.get(workspaceId);
+    if (!agentIds) {
+      agentIds = new Set();
+      agentsByWorkspace.set(workspaceId, agentIds);
+    }
+    agentIds.add(agentId);
+    addButton(workspaceId);
+  };
+
+  const removeAgent = (agentId: string) => {
+    const workspaceId = workspaceByAgent.get(agentId);
+    if (!workspaceId) {
+      return;
+    }
+    workspaceByAgent.delete(agentId);
+    const agentIds = agentsByWorkspace.get(workspaceId);
+    if (agentIds) {
+      agentIds.delete(agentId);
+      if (agentIds.size === 0) {
+        agentsByWorkspace.delete(workspaceId);
+        removeButton(workspaceId);
+      }
+    }
+  };
+
+  const unsubscribe = client.paseo.agents.subscribe((update) => {
     if (update.kind === "upsert") {
-      addButton(update.workspace.id);
+      addAgent(update.agent);
+    } else if (update.kind === "remove") {
+      removeAgent(update.agentId);
     }
   });
 
-  client.paseo.workspaces
+  client.paseo.agents
     .list({ subscribe: {} })
     .then((result) => {
-      for (const workspace of result.entries) {
-        addButton(workspace.id);
+      for (const entry of result.entries) {
+        addAgent(entry.agent);
       }
     })
     .catch((error) => {
       console.error(
-        "beam: failed to list workspaces for header buttons:",
+        "beam: failed to list agents for header buttons:",
         error instanceof Error ? error.message : error,
       );
     });
 
+  const refreshButtons = async () => {
+    const status = await client.rpc(beamStatus, {});
+    const otherName = status.workspaceName ?? "another workspace";
+    for (const [workspaceId, entry] of buttons) {
+      const state: BeamButtonState =
+        status.active && status.workspaceId === workspaceId
+          ? "mine"
+          : status.active
+            ? "other"
+            : "idle";
+      const key = state === "other" ? `other:${otherName}` : state;
+      if (key !== entry.lastKey) {
+        entry.reg.update(presentation(state, otherName));
+        entry.lastKey = key;
+      }
+    }
+  };
+
   const interval = setInterval(() => {
-    client
-      .rpc(beamStatus, {})
-      .then((status) => {
-        const otherName = status.workspaceName ?? "another workspace";
-        for (const [workspaceId, entry] of buttons) {
-          const state: BeamButtonState =
-            status.active && status.workspaceId === workspaceId
-              ? "mine"
-              : status.active
-                ? "other"
-                : "idle";
-          const key = state === "other" ? `other:${otherName}` : state;
-          if (key !== entry.lastKey) {
-            entry.reg.update(presentation(state, otherName));
-            entry.lastKey = key;
-          }
-        }
-      })
-      .catch(() => {
-        // transient poll failure; keep the last presentation
-      });
+    refreshButtons().catch(() => {
+      // transient poll failure; keep the last presentation
+    });
   }, POLL_INTERVAL_MS);
 
   return () => {
@@ -128,5 +174,7 @@ export function registerBeamHeaderButtons(client: PluginClientContext): PluginCl
       reg.remove();
     }
     buttons.clear();
+    agentsByWorkspace.clear();
+    workspaceByAgent.clear();
   };
 }
