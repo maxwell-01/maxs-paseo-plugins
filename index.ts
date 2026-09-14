@@ -1,10 +1,7 @@
-import type { PluginClientContext } from "@getpaseo/plugin/client";
-import type { PluginServerContext } from "@getpaseo/plugin/server";
+import type { PluginContext } from "@getpaseo/plugin";
 import { BeamPanel } from "./beam.client";
 import { activate, deactivate, status, stopAllBeams } from "./beam.server";
 import { beamActivate, beamDeactivate, beamStatus } from "./beam.shared";
-
-type PluginContext = PluginClientContext & PluginServerContext;
 
 export default function contribute(plugin: PluginContext) {
   plugin.handle(beamActivate, (input) => activate(input));
