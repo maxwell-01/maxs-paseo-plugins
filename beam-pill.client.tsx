@@ -10,7 +10,6 @@ import { Text, View } from "react-native";
 import { beamActivate, beamDeactivate, beamStatus } from "./beam.shared";
 
 const POLL_INTERVAL_MS = 1000;
-const ACTIVE_TEXT_COLOR = "#1A1A1A";
 
 export function BeamPill({ theme, workspaceId }: PluginComposerPillProps) {
   const callStatus = useRpc(beamStatus);
@@ -23,25 +22,14 @@ export function BeamPill({ theme, workspaceId }: PluginComposerPillProps) {
 
   const styles = useMemo(
     () => ({
-      pill: {
+      container: {
         flexDirection: "row" as const,
         alignItems: "center" as const,
-        paddingVertical: 4,
-        paddingHorizontal: 10,
-        borderRadius: 999,
-        borderWidth: 1,
+        cursor: "pointer" as const,
       },
-      pillActive: {
-        backgroundColor: theme.colors.statusWarning,
-        borderColor: theme.colors.statusWarning,
-      },
-      pillInactive: {
-        backgroundColor: theme.colors.surface2,
-        borderColor: theme.colors.border,
-      },
-      pillError: { borderColor: theme.colors.statusDanger },
-      textActive: { color: ACTIVE_TEXT_COLOR, fontSize: 13, fontWeight: "600" as const },
-      textInactive: { color: theme.colors.foreground, fontSize: 13, fontWeight: "600" as const },
+      label: { fontSize: 13, fontWeight: "600" as const, color: theme.colors.foreground },
+      labelActive: { color: theme.colors.statusWarning },
+      labelError: { color: theme.colors.statusDanger },
     }),
     [theme],
   );
@@ -52,13 +40,17 @@ export function BeamPill({ theme, workspaceId }: PluginComposerPillProps) {
       accessibilityLabel={
         active ? "Beam active, click to beam out" : "Beam inactive, click to beam in"
       }
-      style={[
-        styles.pill,
-        active ? styles.pillActive : styles.pillInactive,
-        statusQuery.isError ? styles.pillError : null,
-      ]}
+      style={styles.container}
     >
-      <Text style={active ? styles.textActive : styles.textInactive}>⚡ Beam</Text>
+      <Text
+        style={[
+          styles.label,
+          active ? styles.labelActive : null,
+          statusQuery.isError ? styles.labelError : null,
+        ]}
+      >
+        ⚡ Beam
+      </Text>
     </View>
   );
 }
