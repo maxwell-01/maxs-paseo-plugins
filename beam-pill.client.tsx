@@ -5,7 +5,7 @@ import {
   useRpc,
 } from "@getpaseo/plugin";
 import { useQuery } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Text, View } from "react-native";
 import { beamActivate, beamDeactivate, beamStatus } from "./beam.shared";
 
@@ -19,10 +19,15 @@ export function BeamPill({ theme, workspaceId }: PluginComposerPillProps) {
     refetchInterval: POLL_INTERVAL_MS,
   });
   const active = statusQuery.data?.active ?? false;
+  const [hovered, setHovered] = useState(false);
+  const tooltip = active
+    ? "Mirroring into main — click to restore"
+    : "Mirror this workspace into your main checkout";
 
   const styles = useMemo(
     () => ({
       container: {
+        position: "relative" as const,
         flexDirection: "row" as const,
         alignItems: "center" as const,
         cursor: "pointer" as const,
@@ -30,6 +35,20 @@ export function BeamPill({ theme, workspaceId }: PluginComposerPillProps) {
       label: { fontSize: 13, fontWeight: "600" as const, color: theme.colors.foreground },
       labelActive: { color: theme.colors.statusWarning },
       labelError: { color: theme.colors.statusDanger },
+      tooltip: {
+        position: "absolute" as const,
+        bottom: "100%" as const,
+        left: 0,
+        marginBottom: 6,
+        paddingVertical: 4,
+        paddingHorizontal: 8,
+        borderRadius: 6,
+        backgroundColor: theme.colors.surface2,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+        maxWidth: 260,
+      },
+      tooltipText: { color: theme.colors.foreground, fontSize: 12 },
     }),
     [theme],
   );
@@ -37,9 +56,9 @@ export function BeamPill({ theme, workspaceId }: PluginComposerPillProps) {
   return (
     <View
       accessibilityRole="button"
-      accessibilityLabel={
-        active ? "Beam active, click to beam out" : "Beam inactive, click to beam in"
-      }
+      accessibilityLabel={tooltip}
+      onPointerEnter={() => setHovered(true)}
+      onPointerLeave={() => setHovered(false)}
       style={styles.container}
     >
       <Text
@@ -51,6 +70,11 @@ export function BeamPill({ theme, workspaceId }: PluginComposerPillProps) {
       >
         {active ? "⚡ Beaming" : "Beam"}
       </Text>
+      {hovered ? (
+        <View pointerEvents="none" style={styles.tooltip}>
+          <Text style={styles.tooltipText}>{tooltip}</Text>
+        </View>
+      ) : null}
     </View>
   );
 }
