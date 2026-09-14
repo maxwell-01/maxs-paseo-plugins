@@ -46,7 +46,6 @@ export function BeamPill({ theme, workspaceId }: PluginComposerPillProps) {
         backgroundColor: theme.colors.surface2,
         borderWidth: 1,
         borderColor: theme.colors.border,
-        maxWidth: 260,
       },
       tooltipText: { color: theme.colors.foreground, fontSize: 12 },
     }),
@@ -72,7 +71,9 @@ export function BeamPill({ theme, workspaceId }: PluginComposerPillProps) {
       </Text>
       {hovered ? (
         <View pointerEvents="none" style={styles.tooltip}>
-          <Text style={styles.tooltipText}>{tooltip}</Text>
+          <Text numberOfLines={1} style={styles.tooltipText}>
+            {tooltip}
+          </Text>
         </View>
       ) : null}
     </View>
