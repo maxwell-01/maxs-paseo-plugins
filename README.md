@@ -26,8 +26,12 @@ intentional: your running stack keeps its local environment.
 Syncs are mtime-stable: only files that actually differ are rewritten, so the dev server's watcher
 only reacts to real changes.
 
-The plugin adds a **Beam** workspace panel (toggle, status, and the restore command while active)
-plus an **Open Beam** command-center item.
+Beam appears in three places:
+
+- a **Beam** toggle pill in each agent's composer — reads "Beam" when off and "⚡ Beaming" (yellow)
+  while active, with a hover tooltip, and one click to beam in or out;
+- a **Beam** workspace panel — toggle, status, and a live activity log of each sync;
+- an **Open Beam** command-center item.
 
 ## Install
 
@@ -36,8 +40,8 @@ paseo plugin install /absolute/path/to/paseo-beam
 paseo plugin ls
 ```
 
-Then open a workspace, choose the **Beam** panel (or run **Open Beam** from the command center),
-and press **Beam in**.
+Then open a workspace and either click the **Beam** pill in an agent's composer, or open the
+**Beam** panel (or run **Open Beam** from the command center), and beam in.
 
 ## Reversible — your main checkout is safe
 
