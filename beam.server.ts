@@ -13,6 +13,9 @@ const BeamStateSchema = z.object({
   mainPath: z.string(),
   originalBranch: z.string(),
   originalHead: z.string(),
+  originalTree: z.string(),
+  originalIndexTree: z.string(),
+  originalRef: z.string(),
   startedAt: z.string(),
 });
 type BeamState = z.infer<typeof BeamStateSchema>;
@@ -171,6 +174,69 @@ export function syncOnce(workspaceDir: string, mainPath: string): boolean {
   return true;
 }
 
+function commitTree(mainPath: string, tree: string, parent: string, message: string): string {
+  return git(
+    mainPath,
+    "-c",
+    "user.name=paseo-beam",
+    "-c",
+    "user.email=beam@localhost",
+    "commit-tree",
+    tree,
+    "-p",
+    parent,
+    "-m",
+    message,
+  );
+}
+
+export function snapshotMain(mainPath: string): {
+  originalBranch: string;
+  originalHead: string;
+  originalTree: string;
+  originalIndexTree: string;
+  originalRef: string;
+} {
+  const originalBranch = git(mainPath, "rev-parse", "--abbrev-ref", "HEAD");
+  const originalHead = git(mainPath, "rev-parse", "HEAD");
+  const originalIndexTree = git(mainPath, "write-tree");
+
+  const tmpIndex = join(tmpdir(), `beam-index-${process.pid}-${tempIndexCounter++}`);
+  const env: NodeJS.ProcessEnv = { ...process.env, GIT_INDEX_FILE: tmpIndex };
+  let originalTree: string;
+  try {
+    gitWithEnv(mainPath, env, "read-tree", "HEAD");
+    gitWithEnv(mainPath, env, "add", "-A");
+    originalTree = gitWithEnv(mainPath, env, "write-tree");
+  } finally {
+    if (existsSync(tmpIndex)) {
+      rmSync(tmpIndex);
+    }
+  }
+
+  const indexCommit = commitTree(mainPath, originalIndexTree, originalHead, "beam: pre-beam index");
+  const worktreeCommit = commitTree(mainPath, originalTree, indexCommit, "beam: pre-beam snapshot");
+  const originalRef = "refs/beam/original";
+  git(mainPath, "update-ref", originalRef, worktreeCommit);
+
+  return { originalBranch, originalHead, originalTree, originalIndexTree, originalRef };
+}
+
+export function restoreMain(
+  mainPath: string,
+  originalHead: string,
+  originalTree: string,
+  originalIndexTree: string,
+  originalRef?: string,
+): void {
+  git(mainPath, "read-tree", "--reset", "-u", originalTree);
+  git(mainPath, "reset", "--soft", originalHead);
+  git(mainPath, "read-tree", originalIndexTree);
+  if (originalRef) {
+    gitSucceeds(mainPath, "update-ref", "-d", originalRef);
+  }
+}
+
 function sync(workspaceDir: string, mainPath: string): void {
   try {
     if (!syncOnce(workspaceDir, mainPath)) {
@@ -260,8 +326,8 @@ export async function activate(input: {
     throw new Error(`a beam is already active for ${mainPath}; beam out first`);
   }
 
-  const originalBranch = git(mainPath, "rev-parse", "--abbrev-ref", "HEAD");
-  const originalHead = git(mainPath, "rev-parse", "HEAD");
+  const { originalBranch, originalHead, originalTree, originalIndexTree, originalRef } =
+    snapshotMain(mainPath);
 
   const watcher = watch(workspaceDir, {
     ignored: (path: string) => shouldIgnorePath(path),
@@ -300,6 +366,9 @@ export async function activate(input: {
     mainPath,
     originalBranch,
     originalHead,
+    originalTree,
+    originalIndexTree,
+    originalRef,
     startedAt: new Date().toISOString(),
   };
   writeFileSync(stateFile, JSON.stringify(state, null, 2));
@@ -315,17 +384,27 @@ export async function deactivate(): Promise<{ active: false }> {
   }
   const { mainPath } = readPointer(pointer);
   const stateFile = stateFilePath(mainPath);
-  const originalHead = existsSync(stateFile) ? readState(stateFile).originalHead : "unknown";
 
   stopBeam(mainPath);
-  logBeam(
-    "info",
-    `beam out: stopped mirroring ${mainPath}; restore with git -C ${mainPath} reset --hard ${originalHead}`,
-  );
 
   if (existsSync(stateFile)) {
+    const state = readState(stateFile);
+    restoreMain(
+      mainPath,
+      state.originalHead,
+      state.originalTree,
+      state.originalIndexTree,
+      state.originalRef,
+    );
+    logBeam("info", `beam out: restored main to ${state.originalBranch}@${state.originalHead}`);
     rmSync(stateFile);
+  } else {
+    logBeam(
+      "warn",
+      `beam out: no snapshot found for ${mainPath}; main may still be mirroring the workspace and was not restored`,
+    );
   }
+
   rmSync(pointer);
   logBeam("info", "removed successfully");
 

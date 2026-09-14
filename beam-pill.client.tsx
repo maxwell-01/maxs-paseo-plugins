@@ -49,7 +49,7 @@ export function BeamPill({ theme, workspaceId }: PluginComposerPillProps) {
           statusQuery.isError ? styles.labelError : null,
         ]}
       >
-        ⚡ Beam
+        {active ? "⚡ Beaming" : "Beam"}
       </Text>
     </View>
   );

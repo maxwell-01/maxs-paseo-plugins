@@ -11,11 +11,12 @@ Similar to Conductor's Spotlight feature.
 While a beam is active, Beam watches the workspace directory and, on every change, overwrites your
 main checkout to match the workspace's current working tree:
 
-- **Beam in** — starts a file watcher on the workspace and runs an immediate sync. Each sync moves
-  main's branch to the workspace's `HEAD` and rewrites main's tracked working tree and index to a
-  snapshot of the workspace's full working tree.
-- **Beam out** — stops the watcher. It does **not** restore main (see below); main is left mirroring
-  the workspace.
+- **Beam in** — snapshots main's exact current state (branch, `HEAD`, index, and full working tree
+  including uncommitted, staged, and untracked files), then starts a file watcher on the workspace
+  and runs an immediate sync. Each sync moves main's branch to the workspace's `HEAD` and rewrites
+  main's tracked working tree and index to a snapshot of the workspace's full working tree.
+- **Beam out** — stops the watcher and **restores main to exactly its pre-beam state** — branch,
+  working tree, index, and untracked files all come back as if nothing ever happened.
 
 The mirror is the **full working tree**, including uncommitted and untracked files, not just
 committed changes. `.gitignore` is respected, so ignored files (for example `.env`, `node_modules`)
@@ -38,24 +39,17 @@ paseo plugin ls
 Then open a workspace, choose the **Beam** panel (or run **Open Beam** from the command center),
 and press **Beam in**.
 
-## Destructive to main — read this
+## Reversible — your main checkout is safe
 
-Beam is **destructive** to your main checkout. Each sync:
+Beam is **reversible**. Beaming in is safe even when main has uncommitted, staged, or untracked
+work: before the first sync, Beam captures main's complete state as a git object snapshot stored
+under `refs/beam/original` (a real commit chain in the object store — **not** `git stash`, which is
+left untouched). Beaming out restores main's branch pointer, working tree, index, and untracked
+files to exactly that snapshot, so it is as if the beam never happened, and it deletes the temporary
+ref. Beaming in on a dirty main is therefore fine.
 
-- moves main's current branch to the workspace's `HEAD` commit, and
-- overwrites main's tracked working tree and index with the workspace snapshot.
-
-Any uncommitted tracked work in main at the time you Beam in is **lost**. Commit or stash it first.
-
-**Beam out does not restore main.** When you Beam out, main is left mirroring the workspace. To put
-main back where it was, use the command shown in the panel while active:
-
-```bash
-git -C <mainPath> reset --hard <originalHead>
-```
-
-Beam records `originalHead` and `originalBranch` when you Beam in and surfaces them in the panel, so
-you always have the exact command to recover.
+Ignored files (for example `.env`, `node_modules`) are never captured, never mirrored, and never
+touched during beam-in, sync, or beam-out.
 
 ## Notes and limitations
 
@@ -63,13 +57,12 @@ you always have the exact command to recover.
   (`~/.paseo-beam-active.json`) and a per-checkout state file (`<mainPath>/.git/beam-state.json`).
   Beaming a second workspace onto a checkout that already has an active beam is rejected; beam out
   first.
-- **No persisted checkpoint refs.** Unlike some mirroring tools, Beam does not write checkpoint refs
-  into the repo. Each sync recomputes the workspace `HEAD` and a fresh snapshot tree, which is
-  enough; there is nothing extra to clean up.
 - **Ignored during watch:** any path segment named `.git`, `node_modules`, or `.context`, and any
   filename containing `.tmp.`.
-- **Crash caveat.** If Paseo or your machine stops while a beam is active, main stays mirrored (no
-  automatic restore). Beam out on next launch, or run the restore command above.
+- **Crash caveat.** If Paseo or your machine stops while a beam is active, main stays mirrored until
+  you beam out (which performs the restore). The snapshot survives under `refs/beam/original`; if the
+  state file is lost, restore by hand with `git -C <mainPath> reset --hard refs/beam/original` (that
+  commit's tree is main's full pre-beam working tree).
 
 ## Development
 

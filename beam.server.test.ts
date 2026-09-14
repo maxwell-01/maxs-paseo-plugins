@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { midOperationReason, syncOnce } from "./beam.server";
+import { midOperationReason, restoreMain, snapshotMain, syncOnce } from "./beam.server";
 
 function git(cwd: string, ...args: string[]): string {
   return execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
@@ -121,5 +121,87 @@ describe("syncOnce", () => {
     expect(git(mainRepo, "rev-parse", "HEAD")).toBe(mainHeadBefore);
     expect(readFileSync(join(mainRepo, "tracked.txt"), "utf8")).toBe(trackedBefore);
     expect(existsSync(join(mainRepo, "conflict.txt"))).toBe(false);
+  });
+});
+
+function refExists(cwd: string, ref: string): boolean {
+  try {
+    execFileSync("git", ["rev-parse", "--verify", ref], { cwd, encoding: "utf8", stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+describe("snapshotMain + restoreMain", () => {
+  let root: string;
+  let mainRepo: string;
+  let wsDir: string;
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), "beam-restore-"));
+    mainRepo = join(root, "main");
+    wsDir = join(root, "ws");
+    mkdirSync(mainRepo, { recursive: true });
+
+    git(mainRepo, "init", "-b", "main");
+    git(mainRepo, "config", "user.email", "beam-test@example.com");
+    git(mainRepo, "config", "user.name", "Beam Test");
+    git(mainRepo, "config", "commit.gpgsign", "false");
+    git(mainRepo, "config", "core.autocrlf", "false");
+
+    writeFileSync(join(mainRepo, "committed.txt"), "committed v1\n");
+    writeFileSync(join(mainRepo, "tracked.txt"), "tracked v1\n");
+    git(mainRepo, "add", "-A");
+    git(mainRepo, "commit", "-m", "initial");
+
+    git(mainRepo, "worktree", "add", "-b", "feature", wsDir);
+  });
+
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("captures an untracked file into originalTree", () => {
+    writeFileSync(join(mainRepo, "untracked.txt"), "untracked content\n");
+
+    const snap = snapshotMain(mainRepo);
+    const treeFiles = git(mainRepo, "ls-tree", "-r", "--name-only", snap.originalTree).split("\n");
+
+    expect(treeFiles).toContain("untracked.txt");
+  });
+
+  it("restores main's branch, working tree, index, and untracked files exactly", () => {
+    writeFileSync(join(mainRepo, "tracked.txt"), "tracked v2 UNCOMMITTED\n");
+    writeFileSync(join(mainRepo, "staged.txt"), "staged content\n");
+    git(mainRepo, "add", "staged.txt");
+    writeFileSync(join(mainRepo, "untracked.txt"), "untracked content\n");
+
+    const statusBefore = git(mainRepo, "status", "--porcelain");
+    const headBefore = git(mainRepo, "rev-parse", "HEAD");
+    const trackedBefore = readFileSync(join(mainRepo, "tracked.txt"), "utf8");
+    const stagedBefore = readFileSync(join(mainRepo, "staged.txt"), "utf8");
+    const untrackedBefore = readFileSync(join(mainRepo, "untracked.txt"), "utf8");
+    const committedBefore = readFileSync(join(mainRepo, "committed.txt"), "utf8");
+
+    const snap = snapshotMain(mainRepo);
+    expect(refExists(mainRepo, snap.originalRef)).toBe(true);
+
+    writeFileSync(join(wsDir, "tracked.txt"), "workspace content\n");
+    git(wsDir, "commit", "-am", "workspace change");
+    writeFileSync(join(wsDir, "marker.txt"), "workspace-only marker\n");
+    expect(syncOnce(wsDir, mainRepo)).toBe(true);
+    expect(existsSync(join(mainRepo, "marker.txt"))).toBe(true);
+
+    restoreMain(mainRepo, snap.originalHead, snap.originalTree, snap.originalIndexTree, snap.originalRef);
+
+    expect(git(mainRepo, "rev-parse", "HEAD")).toBe(headBefore);
+    expect(git(mainRepo, "status", "--porcelain")).toBe(statusBefore);
+    expect(readFileSync(join(mainRepo, "tracked.txt"), "utf8")).toBe(trackedBefore);
+    expect(readFileSync(join(mainRepo, "staged.txt"), "utf8")).toBe(stagedBefore);
+    expect(readFileSync(join(mainRepo, "untracked.txt"), "utf8")).toBe(untrackedBefore);
+    expect(readFileSync(join(mainRepo, "committed.txt"), "utf8")).toBe(committedBefore);
+    expect(existsSync(join(mainRepo, "marker.txt"))).toBe(false);
+    expect(refExists(mainRepo, snap.originalRef)).toBe(false);
   });
 });

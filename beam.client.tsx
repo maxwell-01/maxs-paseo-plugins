@@ -55,8 +55,8 @@ export function BeamPanel({ theme, layout, workspaceId }: PluginWorkspacePanelPr
   const logEntries = logQuery.data?.entries ?? [];
 
   const restoreHint =
-    active && beam?.mainPath && beam.originalHead
-      ? `Restore main: git -C ${beam.mainPath} reset --hard ${beam.originalHead} (was ${beam.originalBranch ?? "unknown"}).`
+    active && beam?.originalBranch
+      ? `Beam out restores main to ${beam.originalBranch} automatically.`
       : null;
 
   const styles = useMemo(
