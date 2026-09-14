@@ -1,6 +1,6 @@
 import type { PluginClientContext } from "@getpaseo/plugin/client";
-import { registerBeamHeaderButtons } from "./beam-header.client";
-import { BeamPanel } from "./beam.client";
+import { registerBeamHeaderButtons } from "./client/beam-header.client";
+import { BeamPanel } from "./client/beam.client";
 
 export default function contribute(client: PluginClientContext) {
   client.addWorkspacePanel({

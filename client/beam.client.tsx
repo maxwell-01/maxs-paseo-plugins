@@ -2,7 +2,7 @@ import { type PluginWorkspacePanelProps, useRpc, useWorkspace } from "@getpaseo/
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useRef } from "react";
 import { Platform, Pressable, ScrollView, Text, View } from "react-native";
-import { beamActivate, beamDeactivate, beamLog, beamStatus } from "./beam.shared";
+import { beamActivate, beamDeactivate, beamLog, beamStatus } from "../shared/beam.shared";
 
 const POLL_INTERVAL_MS = 1000;
 const monospace = Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" });

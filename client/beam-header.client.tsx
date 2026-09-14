@@ -5,7 +5,7 @@ import type {
   PluginClientContext,
 } from "@getpaseo/plugin/client";
 import { Icon } from "@getpaseo/plugin/client/react-native";
-import { beamActivate, beamDeactivate, beamStatus } from "./beam.shared";
+import { beamActivate, beamDeactivate, beamStatus } from "../shared/beam.shared";
 
 const POLL_INTERVAL_MS = 1000;
 

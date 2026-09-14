@@ -13,5 +13,5 @@
     "resolveJsonModule": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["*.ts", "*.tsx"]
+  "include": ["**/*.ts", "**/*.tsx"]
 }
