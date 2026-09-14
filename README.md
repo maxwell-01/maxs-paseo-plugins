@@ -1,5 +1,7 @@
 # Beam
 
+<img width="1248" height="477" alt="The Beam header button in the Paseo workspace UI" src="https://github.com/user-attachments/assets/c7b1fca1-c011-42a0-89c5-a2419946bbd5" />
+
 A [Paseo](https://paseo.sh) plugin that continuously mirrors a workspace's entire working tree
 onto your local main checkout on disk, so an already-running dev environment with live-reload
 shows the workspace's changes without you switching branches there.
