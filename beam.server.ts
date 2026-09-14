@@ -46,6 +46,12 @@ function logBeam(level: BeamLogLevel, message: string): void {
   if (beamLog.length > BEAM_LOG_CAP) {
     beamLog.splice(0, beamLog.length - BEAM_LOG_CAP);
   }
+  const line = `[beam] ${message}`;
+  if (level === "error") {
+    console.error(line);
+  } else {
+    console.log(line);
+  }
 }
 
 export function getBeamLog(): BeamLogEntry[] {
@@ -260,6 +266,10 @@ export async function activate(input: {
   const watcher = watch(workspaceDir, {
     ignored: (path: string) => shouldIgnorePath(path),
     ignoreInitial: true,
+    usePolling: true,
+    interval: 400,
+    binaryInterval: 800,
+    awaitWriteFinish: { stabilityThreshold: 200, pollInterval: 50 },
   });
   const entry: ActiveBeam = {
     workspaceDir,
