@@ -73,6 +73,7 @@ export function registerBeamHeaderButtons(client: PluginClientContext): PluginCl
       button: {
         title: "Mirror this workspace into your main checkout",
         icon: BeamHeaderIconIdle,
+        visible: true,
         behavior: { kind: "action", onPress: () => toggleBeam(client, workspaceId) },
       },
     });
