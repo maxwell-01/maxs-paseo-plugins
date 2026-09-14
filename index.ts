@@ -1,4 +1,5 @@
 import type { PluginContext } from "@getpaseo/plugin";
+import { registerBeamPills } from "./beam-pill.client";
 import { BeamPanel } from "./beam.client";
 import { activate, deactivate, getBeamLog, status, stopAllBeams } from "./beam.server";
 import { beamActivate, beamDeactivate, beamLog, beamStatus } from "./beam.shared";
@@ -25,6 +26,8 @@ export default function contribute(plugin: PluginContext) {
       openPanel("beam");
     },
   });
+
+  plugin.addClientSide(registerBeamPills);
 
   return () => {
     stopAllBeams();
