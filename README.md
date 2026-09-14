@@ -1,11 +1,10 @@
 # Beam
 
-<img width="874" height="192" alt="Beam pill inactive in the composer" src="https://github.com/user-attachments/assets/a7740c5d-b09c-40a1-baef-0c6424f1b81d" />
-<img width="893" height="196" alt="Beam pill active while beaming" src="https://github.com/user-attachments/assets/11d6d2cf-1bff-4361-b7bb-e93f4563fb75" />
-
 A [Paseo](https://paseo.sh) plugin that continuously mirrors a workspace's entire working tree
 onto your local main checkout on disk, so an already-running dev environment with live-reload
 shows the workspace's changes without you switching branches there.
+
+Requires **Paseo 0.8 or newer**.
 
 Similar to Conductor's Spotlight feature.
 
@@ -31,8 +30,10 @@ only reacts to real changes.
 
 Beam appears in three places:
 
-- a **Beam** toggle pill in each agent's composer — reads "Beam" when off and "⚡ Beaming" (yellow)
-  while active, with a hover tooltip, and one click to beam in or out;
+- a **Beam** header button (a ⚡ icon) in each workspace's header, next to the GitHub / "Update from
+  main" controls — the primary control. It is the normal color when off and turns **yellow** while
+  this workspace is beaming, with a tooltip that reflects the current state, and one click to beam in
+  or out;
 - a **Beam** workspace panel — toggle, status, and a live activity log of each sync;
 - an **Open Beam** command-center item.
 
@@ -43,7 +44,7 @@ paseo plugin install /absolute/path/to/paseo-beam
 paseo plugin ls
 ```
 
-Then open a workspace and either click the **Beam** pill in an agent's composer, or open the
+Then open a workspace and either click the **Beam** (⚡) button in the workspace header, or open the
 **Beam** panel (or run **Open Beam** from the command center), and beam in.
 
 ## Reversible — your main checkout is safe
