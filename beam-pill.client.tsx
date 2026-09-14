@@ -18,11 +18,16 @@ export function BeamPill({ theme, workspaceId }: PluginComposerPillProps) {
     queryFn: () => callStatus({}),
     refetchInterval: POLL_INTERVAL_MS,
   });
-  const active = statusQuery.data?.active ?? false;
+  const beam = statusQuery.data;
+  const mineActive = (beam?.active ?? false) && beam?.workspaceId === workspaceId;
+  const otherActive = (beam?.active ?? false) && beam?.workspaceId !== workspaceId;
+  const otherName = beam?.workspaceName ?? "another workspace";
   const [hovered, setHovered] = useState(false);
-  const tooltip = active
+  const tooltip = mineActive
     ? "Mirroring into main — click to restore"
-    : "Mirror this workspace into your main checkout";
+    : otherActive
+      ? `Beaming "${otherName}" — beam out there first`
+      : "Mirror this workspace into your main checkout";
 
   const styles = useMemo(
     () => ({
@@ -34,6 +39,7 @@ export function BeamPill({ theme, workspaceId }: PluginComposerPillProps) {
       },
       label: { fontSize: 13, fontWeight: "600" as const, color: theme.colors.foreground },
       labelActive: { color: theme.colors.statusWarning },
+      labelMuted: { color: theme.colors.foregroundMuted },
       labelError: { color: theme.colors.statusDanger },
       tooltip: {
         position: "absolute" as const,
@@ -63,11 +69,12 @@ export function BeamPill({ theme, workspaceId }: PluginComposerPillProps) {
       <Text
         style={[
           styles.label,
-          active ? styles.labelActive : null,
+          mineActive ? styles.labelActive : null,
+          otherActive ? styles.labelMuted : null,
           statusQuery.isError ? styles.labelError : null,
         ]}
       >
-        {active ? "⚡ Beaming" : "Beam"}
+        {mineActive ? "⚡ Beaming" : "Beam"}
       </Text>
       {hovered ? (
         <View pointerEvents="none" style={styles.tooltip}>
@@ -85,20 +92,31 @@ async function toggleBeam(
   workspaceId: string,
 ): Promise<void> {
   const current = await client.rpc(beamStatus, {});
-  if (current.active) {
+  if (current.active && current.workspaceId === workspaceId) {
     await client.rpc(beamDeactivate, {});
     return;
   }
+  if (current.active && current.workspaceId !== workspaceId) {
+    throw new Error(
+      `Already beaming "${current.workspaceName ?? "another workspace"}"; beam out there first`,
+    );
+  }
   const handle = client.paseo.workspaces.ref(workspaceId);
   let workspaceDir = handle.directory;
-  if (!workspaceDir) {
+  let workspaceName = handle.name;
+  if (!workspaceDir || !workspaceName) {
     await handle.refresh();
     workspaceDir = handle.directory;
+    workspaceName = handle.name;
   }
   if (!workspaceDir) {
     throw new Error(`beam: could not resolve directory for workspace ${workspaceId}`);
   }
-  await client.rpc(beamActivate, { workspaceId, workspaceDir });
+  await client.rpc(beamActivate, {
+    workspaceId,
+    workspaceName: workspaceName ?? workspaceId,
+    workspaceDir,
+  });
 }
 
 export function registerBeamPills(client: PluginClientContext): PluginCleanup {

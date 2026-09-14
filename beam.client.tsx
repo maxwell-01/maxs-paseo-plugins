@@ -35,10 +35,14 @@ export function BeamPanel({ theme, layout, workspaceId }: PluginWorkspacePanelPr
 
   const activateMutation = useMutation({
     mutationFn: () => {
-      if (!workspace) {
+      if (!workspace?.dir) {
         throw new Error("workspace directory is not available yet");
       }
-      return callActivate({ workspaceId, workspaceDir: workspace.dir });
+      return callActivate({
+        workspaceId,
+        workspaceName: workspace.name ?? workspaceId,
+        workspaceDir: workspace.dir,
+      });
     },
     onSuccess: refreshAll,
   });
@@ -48,7 +52,9 @@ export function BeamPanel({ theme, layout, workspaceId }: PluginWorkspacePanelPr
   });
 
   const beam = statusQuery.data;
-  const active = beam?.active ?? false;
+  const active = (beam?.active ?? false) && beam?.workspaceId === workspaceId;
+  const otherActive = (beam?.active ?? false) && beam?.workspaceId !== workspaceId;
+  const otherName = beam?.workspaceName ?? "another workspace";
   const pending =
     statusQuery.isLoading || activateMutation.isPending || deactivateMutation.isPending;
   const error = activateMutation.error ?? deactivateMutation.error ?? statusQuery.error;
@@ -57,7 +63,9 @@ export function BeamPanel({ theme, layout, workspaceId }: PluginWorkspacePanelPr
   const restoreHint =
     active && beam?.originalBranch
       ? `Beam out restores main to ${beam.originalBranch} automatically.`
-      : null;
+      : otherActive
+        ? `Beaming "${otherName}" — beam out there first.`
+        : null;
 
   const styles = useMemo(
     () => ({
@@ -119,7 +127,11 @@ export function BeamPanel({ theme, layout, workspaceId }: PluginWorkspacePanelPr
     <View style={styles.screen}>
       <Text style={styles.name}>{workspace?.name ?? "Workspace"}</Text>
       <Text style={styles.state}>
-        {active ? "Beam active: mirroring to main" : "Beam inactive"}
+        {active
+          ? "Beam active: mirroring to main"
+          : otherActive
+            ? `Occupied: "${otherName}" is beaming`
+            : "Beam inactive"}
       </Text>
       <Pressable
         accessibilityRole="button"
@@ -128,12 +140,12 @@ export function BeamPanel({ theme, layout, workspaceId }: PluginWorkspacePanelPr
             ? "Beam out: stop mirroring this workspace to your main checkout"
             : "Beam in: continuously mirror this workspace's working tree onto your main checkout"
         }
-        disabled={pending}
+        disabled={pending || otherActive}
         onPress={() => (active ? deactivateMutation.mutate() : activateMutation.mutate())}
         style={[
           styles.button,
           active ? styles.buttonOut : styles.buttonIn,
-          pending ? styles.buttonDisabled : null,
+          pending || otherActive ? styles.buttonDisabled : null,
         ]}
       >
         <Text style={active ? styles.buttonTextOut : styles.buttonTextIn}>

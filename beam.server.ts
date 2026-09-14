@@ -9,6 +9,7 @@ const SYNC_DEBOUNCE_MS = 200;
 
 const BeamStateSchema = z.object({
   workspaceId: z.string(),
+  workspaceName: z.string().optional(),
   workspaceDir: z.string(),
   mainPath: z.string(),
   originalBranch: z.string(),
@@ -312,9 +313,10 @@ export function stopAllBeams(): void {
 
 export async function activate(input: {
   workspaceId: string;
+  workspaceName: string;
   workspaceDir: string;
 }): Promise<{ active: true; mainPath: string }> {
-  const { workspaceId, workspaceDir } = input;
+  const { workspaceId, workspaceName, workspaceDir } = input;
   const mainPath = resolveMainPath(workspaceDir);
 
   if (realpathSync(mainPath) === realpathSync(workspaceDir)) {
@@ -323,7 +325,9 @@ export async function activate(input: {
 
   const stateFile = stateFilePath(mainPath);
   if (activeBeams.has(mainPath) || existsSync(stateFile)) {
-    throw new Error(`a beam is already active for ${mainPath}; beam out first`);
+    const activeName =
+      (existsSync(stateFile) ? readState(stateFile).workspaceName : undefined) ?? "another workspace";
+    throw new Error(`Already beaming "${activeName}" onto this checkout; beam out there first`);
   }
 
   const { originalBranch, originalHead, originalTree, originalIndexTree, originalRef } =
@@ -362,6 +366,7 @@ export async function activate(input: {
 
   const state: BeamState = {
     workspaceId,
+    workspaceName,
     workspaceDir,
     mainPath,
     originalBranch,
@@ -414,6 +419,7 @@ export async function deactivate(): Promise<{ active: false }> {
 export async function status(): Promise<{
   active: boolean;
   workspaceId?: string;
+  workspaceName?: string;
   mainPath: string;
   originalBranch?: string;
   originalHead?: string;
@@ -433,6 +439,7 @@ export async function status(): Promise<{
   return {
     active: true,
     workspaceId: state.workspaceId,
+    workspaceName: state.workspaceName,
     mainPath,
     originalBranch: state.originalBranch,
     originalHead: state.originalHead,

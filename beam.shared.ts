@@ -7,6 +7,7 @@ export const beamStatus = defineRpc({
   output: z.object({
     active: z.boolean(),
     workspaceId: z.string().optional(),
+    workspaceName: z.string().optional(),
     mainPath: z.string(),
     originalBranch: z.string().optional(),
     originalHead: z.string().optional(),
@@ -16,7 +17,11 @@ export const beamStatus = defineRpc({
 
 export const beamActivate = defineRpc({
   name: "beam.activate",
-  input: z.object({ workspaceId: z.string(), workspaceDir: z.string() }),
+  input: z.object({
+    workspaceId: z.string(),
+    workspaceName: z.string(),
+    workspaceDir: z.string(),
+  }),
   output: z.object({ active: z.literal(true), mainPath: z.string() }),
 });
 
