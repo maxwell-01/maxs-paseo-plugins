@@ -10,6 +10,8 @@ own `package.json`, tests and README.
 While a beam is active the workspace is also marked in Paseo's workspace list: its title gains a
 ⚡ prefix, and beam-out restores the title it had before. The original title is stored in the beam
 state alongside main's branch and `HEAD`, so a beam-out after a daemon restart still puts it back.
+If you rename the workspace during a beam, beam-out keeps your new name. A title that you start with
+"⚡ " yourself loses that prefix at the next beam-out, because Beam cannot tell it from its own mark.
 
 ## Install
 

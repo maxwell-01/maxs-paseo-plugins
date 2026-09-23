@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 const BEAMING_TITLE_PREFIX = "⚡ ";
 
 interface WorkspaceTitleHandle {
@@ -10,31 +12,29 @@ export interface WorkspaceTitlePort {
   workspaces: { ref(workspaceId: string): WorkspaceTitleHandle };
 }
 
-export interface TitleMark {
-  originalTitle: string | null;
-  markedTitle: string;
-}
+export const TitleMarkSchema = z.object({
+  originalTitle: z.string().nullable(),
+  markedTitle: z.string(),
+});
+export type TitleMark = z.infer<typeof TitleMarkSchema>;
 
-export function beamingTitle(title: string | null, workspaceName: string): string {
+function buildBeamingTitle(title: string | null, workspaceName: string): string {
   return `${BEAMING_TITLE_PREFIX}${title ?? workspaceName}`;
 }
 
-function unmarked(title: string | null): string | null {
+function stripBeamingPrefix(title: string | null): string | null {
   return title?.startsWith(BEAMING_TITLE_PREFIX) ? title.slice(BEAMING_TITLE_PREFIX.length) : title;
 }
 
-export async function readWorkspaceTitle(
-  port: WorkspaceTitlePort,
-  workspaceId: string,
-): Promise<TitleMark | null> {
+export async function readWorkspaceTitle(port: WorkspaceTitlePort, workspaceId: string): Promise<TitleMark> {
   const handle = port.workspaces.ref(workspaceId);
   await handle.refresh();
   const workspace = handle.current();
   if (!workspace) {
-    return null;
+    throw new Error(`workspace ${workspaceId} not found`);
   }
-  const originalTitle = unmarked(workspace.title ?? null);
-  return { originalTitle, markedTitle: beamingTitle(originalTitle, workspace.name) };
+  const originalTitle = stripBeamingPrefix(workspace.title ?? null);
+  return { originalTitle, markedTitle: buildBeamingTitle(originalTitle, workspace.name) };
 }
 
 export async function applyBeamingTitle(

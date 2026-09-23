@@ -4,7 +4,7 @@ import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { type FSWatcher, watch } from "chokidar";
 import { z } from "zod";
-import type { TitleMark } from "./beam-title.server";
+import { type TitleMark, TitleMarkSchema } from "./beam-title.server";
 
 const SYNC_DEBOUNCE_MS = 200;
 
@@ -12,7 +12,7 @@ const BeamStateSchema = z.object({
   workspaceId: z.string(),
   workspaceName: z.string().optional(),
   workspaceDir: z.string(),
-  titleMark: z.object({ originalTitle: z.string().nullable(), markedTitle: z.string() }).optional(),
+  titleMark: TitleMarkSchema.optional(),
   mainPath: z.string(),
   originalBranch: z.string(),
   originalHead: z.string(),
