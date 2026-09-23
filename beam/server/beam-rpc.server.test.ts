@@ -3,12 +3,21 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { activateWithTitleMark, deactivateWithTitleMark } from "./beam-rpc.server";
+import { createAgentNotices } from "./beam-agent-notice.server";
+import { beamIn, beamOut, notifyAgentAfterTurn } from "./beam-rpc.server";
+import { createFakeAgentPort } from "./agent-port.fake";
 import { getBeamLog } from "./beam.server";
 import { createFakeWorkspacePort } from "./workspace-port.fake";
 
 function git(cwd: string, ...args: string[]): string {
   return execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
+}
+
+function combinedPort(
+  workspace: ReturnType<typeof createFakeWorkspacePort>,
+  agents: ReturnType<typeof createFakeAgentPort>,
+) {
+  return { ...workspace.port, ...agents.port };
 }
 
 function lastWarning(): string | undefined {
@@ -49,46 +58,93 @@ describe("beam RPC handlers", () => {
   it("marks the workspace on beam-in and restores it on beam-out", async () => {
     const workspace = createFakeWorkspacePort({ slug: "beam-live", title: null });
 
-    await activateWithTitleMark(workspace.port, beamInput);
+    await beamIn(combinedPort(workspace, createFakeAgentPort([])), createAgentNotices(), beamInput);
     expect(workspace.currentTitle()).toBe("⚡ beam-live");
 
-    await deactivateWithTitleMark(workspace.port);
+    await beamOut(combinedPort(workspace, createFakeAgentPort([])), createAgentNotices());
     expect(workspace.currentTitle()).toBeNull();
   });
 
   it("still beams in, and logs why, when the workspace title cannot be read", async () => {
     const workspace = createFakeWorkspacePort({ slug: "beam-live", title: null }, { refresh: true });
 
-    await expect(activateWithTitleMark(workspace.port, beamInput)).resolves.toEqual({
+    await expect(beamIn(combinedPort(workspace, createFakeAgentPort([])), createAgentNotices(), beamInput)).resolves.toEqual({
       active: true,
       mainPath: mainRepo,
     });
     expect(lastWarning()).toBe("could not read the workspace title: daemon unreachable");
     expect(workspace.currentTitle()).toBeNull();
 
-    await deactivateWithTitleMark(workspace.port);
+    await beamOut(combinedPort(workspace, createFakeAgentPort([])), createAgentNotices());
   });
 
   it("still reports beam-in success, and logs why, when the mark cannot be written", async () => {
     const workspace = createFakeWorkspacePort({ slug: "beam-live", title: null }, { setTitle: true });
 
-    await expect(activateWithTitleMark(workspace.port, beamInput)).resolves.toEqual({
+    await expect(beamIn(combinedPort(workspace, createFakeAgentPort([])), createAgentNotices(), beamInput)).resolves.toEqual({
       active: true,
       mainPath: mainRepo,
     });
     expect(lastWarning()).toBe("could not mark the workspace as beaming: daemon unreachable");
 
-    await deactivateWithTitleMark(workspace.port);
+    await beamOut(combinedPort(workspace, createFakeAgentPort([])), createAgentNotices());
   });
 
   it("still reports beam-out success, and logs why, when the title cannot be restored", async () => {
     const workspace = createFakeWorkspacePort({ slug: "beam-live", title: "Checkout rewrite" });
-    await activateWithTitleMark(workspace.port, beamInput);
+    await beamIn(combinedPort(workspace, createFakeAgentPort([])), createAgentNotices(), beamInput);
     workspace.failures.setTitle = true;
 
-    await expect(deactivateWithTitleMark(workspace.port)).resolves.toEqual({ active: false });
+    await expect(beamOut(combinedPort(workspace, createFakeAgentPort([])), createAgentNotices())).resolves.toEqual({ active: false });
     expect(lastWarning()).toBe(
       "could not restore the workspace title to Checkout rewrite: daemon unreachable",
     );
   });
+
+  it("tells idle agents in the workspace when the beam starts and when it stops", async () => {
+    const workspace = createFakeWorkspacePort({ slug: "beam-live", title: null });
+    const agents = createFakeAgentPort([{ id: "a1", workspaceId: "ws-1", status: "idle" }]);
+    const port = combinedPort(workspace, agents);
+    const notices = createAgentNotices();
+
+    await beamIn(port, notices, beamInput);
+    await beamOut(port, notices);
+
+    expect(agents.sent.map((message) => message.text)).toEqual([
+      expect.stringContaining(`mirrored live onto the main checkout at ${mainRepo}`),
+      expect.stringContaining(`no longer mirrored onto ${mainRepo}`),
+    ]);
+  });
+
+  it("tells a working agent about the beam once its turn ends", async () => {
+    const workspace = createFakeWorkspacePort({ slug: "beam-live", title: null });
+    const agents = createFakeAgentPort([{ id: "a1", workspaceId: "ws-1", status: "running" }]);
+    const port = combinedPort(workspace, agents);
+    const notices = createAgentNotices();
+
+    await beamIn(port, notices, beamInput);
+    expect(agents.sent).toEqual([]);
+
+    await notifyAgentAfterTurn(port, notices, { id: "a1", workspaceId: "ws-1" });
+    expect(agents.sent.map((message) => message.agentId)).toEqual(["a1"]);
+
+    await beamOut(port, notices);
+  });
+
+  it("still beams in, and logs why, when an agent cannot be told", async () => {
+    const workspace = createFakeWorkspacePort({ slug: "beam-live", title: null });
+    const agents = createFakeAgentPort([{ id: "a1", workspaceId: "ws-1", status: "idle" }], {
+      failSend: true,
+    });
+    const port = combinedPort(workspace, agents);
+
+    await expect(beamIn(port, createAgentNotices(), beamInput)).resolves.toEqual({
+      active: true,
+      mainPath: mainRepo,
+    });
+    expect(lastWarning()).toBe("could not tell the workspace's agents about the beam: daemon unreachable");
+
+    await beamOut(port, createAgentNotices());
+  });
 });
+
