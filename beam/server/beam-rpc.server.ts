@@ -1,4 +1,3 @@
-import type { AgentNotices, AgentNoticePort } from "./beam-agent-notice.server";
 import {
   applyBeamingTitle,
   readWorkspaceTitle,
@@ -7,11 +6,8 @@ import {
 } from "./beam-title.server";
 import { activate, deactivate, logBeamWarning } from "./beam.server";
 
-type BeamPort = WorkspaceTitlePort & AgentNoticePort;
-
 export async function beamIn(
-  port: BeamPort,
-  notices: AgentNotices,
+  port: WorkspaceTitlePort,
   input: { workspaceId: string; workspaceName: string; workspaceDir: string },
 ): Promise<{ active: true; mainPath: string }> {
   const titleMark = await readWorkspaceTitle(port, input.workspaceId).catch((error: unknown) => {
@@ -24,15 +20,10 @@ export async function beamIn(
       logBeamWarning("could not mark the workspace as beaming", error),
     );
   }
-  await notices
-    .notifyIdleAgents(port, input.workspaceId, { workspaceId: input.workspaceId, mainPath: result.mainPath })
-    .catch((error: unknown) =>
-      logBeamWarning("could not tell the workspace's agents about the beam", error),
-    );
   return result;
 }
 
-export async function beamOut(port: BeamPort, notices: AgentNotices): Promise<{ active: false }> {
+export async function beamOut(port: WorkspaceTitlePort): Promise<{ active: false }> {
   const { workspaceId, titleMark } = await deactivate();
   if (workspaceId) {
     await restoreWorkspaceTitle(port, workspaceId, titleMark).catch((error: unknown) =>
@@ -41,11 +32,6 @@ export async function beamOut(port: BeamPort, notices: AgentNotices): Promise<{ 
         error,
       ),
     );
-    await notices
-      .notifyIdleAgents(port, workspaceId, null)
-      .catch((error: unknown) =>
-        logBeamWarning("could not tell the workspace's agents the beam stopped", error),
-      );
   }
   return { active: false };
 }
