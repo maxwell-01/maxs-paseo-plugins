@@ -157,7 +157,7 @@ describe("beam RPC handlers", () => {
     const notices = createAgentNotices();
     await beamIn(port, notices, beamInput);
 
-    await notifyAgentAfterTurn(port, notices, { id: "a1", workspaceId: "ws-1" }, { kind: "canceled" });
+    await notifyAgentAfterTurn(port, notices, { id: "a1", workspaceId: "ws-1" }, { kind: "canceled", reason: "replaced by a new prompt" });
     expect(agents.sent).toEqual([]);
 
     await beamOut(port, notices);

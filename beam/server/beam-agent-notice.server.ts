@@ -1,3 +1,5 @@
+import { describeError } from "./describe-error";
+
 const AGENT_LIST_PAGE_SIZE = 100;
 
 export interface AgentNoticePort {
@@ -23,22 +25,12 @@ function buildStoppedNotice(mainPath: string): string {
   return `Beam: this workspace is no longer mirrored onto ${mainPath}, and that checkout is back on its own branch. Reply "OK" and nothing else.`;
 }
 
-function describeError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
 export function createAgentNotices() {
   const toldMainPathByAgent = new Map<string, string>();
 
-  function recordTold(agentId: string, mainPath: string | null): void {
-    if (mainPath) {
-      toldMainPathByAgent.set(agentId, mainPath);
-    } else {
-      toldMainPathByAgent.delete(agentId);
-    }
-  }
+  const noticeInFlightByAgent = new Map<string, Promise<void>>();
 
-  async function notifyAgent(
+  async function sendNoticeIfChanged(
     port: AgentNoticePort,
     agentId: string,
     agentWorkspaceId: string | null | undefined,
@@ -49,19 +41,32 @@ export function createAgentNotices() {
     if (beamingMainPath === toldMainPath) {
       return;
     }
-    const notice = beamingMainPath
-      ? buildBeamingNotice(beamingMainPath)
-      : toldMainPath && buildStoppedNotice(toldMainPath);
-    if (!notice) {
-      return;
+    if (beamingMainPath) {
+      await port.agents.ref(agentId).send(buildBeamingNotice(beamingMainPath));
+      toldMainPathByAgent.set(agentId, beamingMainPath);
+    } else if (toldMainPath) {
+      await port.agents.ref(agentId).send(buildStoppedNotice(toldMainPath));
+      toldMainPathByAgent.delete(agentId);
     }
-    recordTold(agentId, beamingMainPath);
-    try {
-      await port.agents.ref(agentId).send(notice);
-    } catch (error) {
-      recordTold(agentId, toldMainPath);
-      throw error;
-    }
+  }
+
+  function notifyAgent(
+    port: AgentNoticePort,
+    agentId: string,
+    agentWorkspaceId: string | null | undefined,
+    beam: BeamTarget | null,
+  ): Promise<void> {
+    const sendAfterPrevious = () => sendNoticeIfChanged(port, agentId, agentWorkspaceId, beam);
+    const previous = noticeInFlightByAgent.get(agentId) ?? Promise.resolve();
+    const current = previous.then(sendAfterPrevious, sendAfterPrevious);
+    noticeInFlightByAgent.set(agentId, current);
+    const forgetIfLatest = () => {
+      if (noticeInFlightByAgent.get(agentId) === current) {
+        noticeInFlightByAgent.delete(agentId);
+      }
+    };
+    current.then(forgetIfLatest, forgetIfLatest);
+    return current;
   }
 
   async function notifyIdleAgents(

@@ -1,8 +1,29 @@
 import { describe, expect, it } from "vitest";
 import { createFakeAgentPort } from "./agent-port.fake";
-import { createAgentNotices } from "./beam-agent-notice.server";
+import { type AgentNoticePort, createAgentNotices } from "./beam-agent-notice.server";
 
 const beam = { workspaceId: "ws-1", mainPath: "/repos/app" };
+
+function createStalledSendPort() {
+  let failSend: (error: Error) => void = () => {};
+  let markSendStarted: () => void = () => {};
+  const sendStarted = new Promise<void>((resolve) => {
+    markSendStarted = resolve;
+  });
+  const port = {
+    agents: {
+      list: async () => ({ entries: [], pageInfo: { nextCursor: null, hasMore: false } }),
+      ref: () => ({
+        send: () =>
+          new Promise<void>((_resolve, reject) => {
+            failSend = reject;
+            markSendStarted();
+          }),
+      }),
+    },
+  } satisfies AgentNoticePort;
+  return { port, sendStarted, failStalledSend: () => failSend(new Error("daemon unreachable")) };
+}
 
 describe("agent notices at beam-in and beam-out", () => {
   it("tells an idle agent in the beaming workspace that it is being mirrored onto main", async () => {
@@ -75,7 +96,6 @@ describe("agent notices when a working agent's turn ends", () => {
     expect(sent.map((message) => message.agentId)).toEqual(["a1"]);
   });
 
-
   it("does not repeat a notice when the agent's reply to it ends its turn", async () => {
     const { port, sent } = createFakeAgentPort([]);
     const notices = createAgentNotices();
@@ -102,6 +122,23 @@ describe("agent notices when a working agent's turn ends", () => {
     const working = createFakeAgentPort([]);
     await notices.notifyAgent(working.port, "a1", "ws-1", beam);
     expect(working.sent).toHaveLength(1);
+  });
+
+  it("does not let a late failed notice erase the record of a newer one", async () => {
+    const stalled = createStalledSendPort();
+    const { port, sent } = createFakeAgentPort([]);
+    const notices = createAgentNotices();
+
+    const failed = notices.notifyAgent(stalled.port, "a1", "ws-1", beam);
+    const stopped = notices.notifyAgent(port, "a1", "ws-1", null);
+    const restarted = notices.notifyAgent(port, "a1", "ws-1", beam);
+    await stalled.sendStarted;
+    stalled.failStalledSend();
+    await expect(failed).rejects.toThrow("daemon unreachable");
+    await Promise.all([stopped, restarted]);
+
+    await notices.notifyAgent(port, "a1", "ws-1", null);
+    expect(sent.at(-1)?.text).toContain("no longer mirrored onto /repos/app");
   });
 
   it("ignores agents that belong to no workspace", async () => {

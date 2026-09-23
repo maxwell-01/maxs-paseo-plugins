@@ -18,7 +18,6 @@ export function createFakeAgentPort(agents: FakeAgent[], options: { pageSize?: n
       },
       ref: (agentId: string) => ({
         send: async (text: string) => {
-          await Promise.resolve();
           if (options.failSendFor?.includes(agentId)) {
             throw new Error("daemon unreachable");
           }
