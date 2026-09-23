@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import { type FSWatcher, watch } from "chokidar";
 import { z } from "zod";
 import { type TitleMark, TitleMarkSchema } from "./beam-title.server";
+import { describeError } from "./describe-error";
 
 const SYNC_DEBOUNCE_MS = 200;
 
@@ -60,6 +61,10 @@ export function logBeam(level: BeamLogLevel, message: string): void {
   }
 }
 
+export function logBeamWarning(action: string, error: unknown): void {
+  logBeam("warn", `${action}: ${describeError(error)}`);
+}
+
 export function getBeamLog(): BeamLogEntry[] {
   return [...beamLog];
 }
@@ -71,7 +76,7 @@ function gitErrorMessage(error: unknown): string {
       return stderr.trim();
     }
   }
-  return error instanceof Error ? error.message : String(error);
+  return describeError(error);
 }
 
 function git(cwd: string, ...args: string[]): string {
@@ -356,7 +361,7 @@ export async function activate(input: {
 
   watcher.on("all", () => scheduleSync(mainPath));
   watcher.on("error", (error) => {
-    logBeam("error", `watcher error: ${error instanceof Error ? error.message : String(error)}`);
+    logBeam("error", `watcher error: ${describeError(error)}`);
   });
 
   logBeam("info", `beam in: mirroring ${workspaceDir} -> ${mainPath}`);
