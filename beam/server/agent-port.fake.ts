@@ -2,7 +2,7 @@ import type { AgentNoticePort } from "./beam-agent-notice.server";
 
 type FakeAgent = { id: string; workspaceId?: string; status: "idle" | "running" };
 
-export function createFakeAgentPort(agents: FakeAgent[], options: { pageSize?: number; failSend?: boolean } = {}) {
+export function createFakeAgentPort(agents: FakeAgent[], options: { pageSize?: number; failSendFor?: string[] } = {}) {
   const sent: Array<{ agentId: string; text: string }> = [];
   const pageSize = options.pageSize ?? agents.length;
   const port = {
@@ -18,7 +18,8 @@ export function createFakeAgentPort(agents: FakeAgent[], options: { pageSize?: n
       },
       ref: (agentId: string) => ({
         send: async (text: string) => {
-          if (options.failSend) {
+          await Promise.resolve();
+          if (options.failSendFor?.includes(agentId)) {
             throw new Error("daemon unreachable");
           }
           sent.push({ agentId, text });

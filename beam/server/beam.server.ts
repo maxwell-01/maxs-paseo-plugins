@@ -60,6 +60,10 @@ export function logBeam(level: BeamLogLevel, message: string): void {
   }
 }
 
+export function logBeamWarning(action: string, error: unknown): void {
+  logBeam("warn", `${action}: ${error instanceof Error ? error.message : String(error)}`);
+}
+
 export function getBeamLog(): BeamLogEntry[] {
   return [...beamLog];
 }

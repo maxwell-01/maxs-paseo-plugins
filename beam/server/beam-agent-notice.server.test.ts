@@ -25,6 +25,20 @@ describe("agent notices at beam-in and beam-out", () => {
     expect(sent).toEqual([]);
   });
 
+  it("still tells the other agents when one cannot be reached, and names the one it missed", async () => {
+    const { port, sent } = createFakeAgentPort(
+      [
+        { id: "a1", workspaceId: "ws-1", status: "idle" },
+        { id: "a2", workspaceId: "ws-1", status: "idle" },
+      ],
+      { failSendFor: ["a1"] },
+    );
+    await expect(createAgentNotices().notifyIdleAgents(port, "ws-1", beam)).rejects.toThrow(
+      "could not tell agent a1: daemon unreachable",
+    );
+    expect(sent.map((message) => message.agentId)).toEqual(["a2"]);
+  });
+
   it("reaches idle agents on later pages of the agent list", async () => {
     const { port, sent } = createFakeAgentPort(
       [
@@ -61,11 +75,6 @@ describe("agent notices when a working agent's turn ends", () => {
     expect(sent.map((message) => message.agentId)).toEqual(["a1"]);
   });
 
-  it("sends nothing when the beam went in and out while the agent was working", async () => {
-    const { port, sent } = createFakeAgentPort([]);
-    await createAgentNotices().notifyAgent(port, "a1", "ws-1", null);
-    expect(sent).toEqual([]);
-  });
 
   it("does not repeat a notice when the agent's reply to it ends its turn", async () => {
     const { port, sent } = createFakeAgentPort([]);
@@ -73,6 +82,26 @@ describe("agent notices when a working agent's turn ends", () => {
     await notices.notifyAgent(port, "a1", "ws-1", beam);
     await notices.notifyAgent(port, "a1", "ws-1", beam);
     expect(sent).toHaveLength(1);
+  });
+
+  it("sends one notice when the turn-end hook and beam-in reach the same agent at once", async () => {
+    const { port, sent } = createFakeAgentPort([]);
+    const notices = createAgentNotices();
+    await Promise.all([
+      notices.notifyAgent(port, "a1", "ws-1", beam),
+      notices.notifyAgent(port, "a1", "ws-1", beam),
+    ]);
+    expect(sent).toHaveLength(1);
+  });
+
+  it("tries again at the next chance when a notice could not be sent", async () => {
+    const failing = createFakeAgentPort([], { failSendFor: ["a1"] });
+    const notices = createAgentNotices();
+    await expect(notices.notifyAgent(failing.port, "a1", "ws-1", beam)).rejects.toThrow();
+
+    const working = createFakeAgentPort([]);
+    await notices.notifyAgent(working.port, "a1", "ws-1", beam);
+    expect(working.sent).toHaveLength(1);
   });
 
   it("ignores agents that belong to no workspace", async () => {

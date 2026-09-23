@@ -23,8 +23,20 @@ function buildStoppedNotice(mainPath: string): string {
   return `Beam: this workspace is no longer mirrored onto ${mainPath}, and that checkout is back on its own branch. Reply "OK" and nothing else.`;
 }
 
+function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 export function createAgentNotices() {
   const toldMainPathByAgent = new Map<string, string>();
+
+  function recordTold(agentId: string, mainPath: string | null): void {
+    if (mainPath) {
+      toldMainPathByAgent.set(agentId, mainPath);
+    } else {
+      toldMainPathByAgent.delete(agentId);
+    }
+  }
 
   async function notifyAgent(
     port: AgentNoticePort,
@@ -37,12 +49,18 @@ export function createAgentNotices() {
     if (beamingMainPath === toldMainPath) {
       return;
     }
-    if (beamingMainPath) {
-      await port.agents.ref(agentId).send(buildBeamingNotice(beamingMainPath));
-      toldMainPathByAgent.set(agentId, beamingMainPath);
-    } else if (toldMainPath) {
-      await port.agents.ref(agentId).send(buildStoppedNotice(toldMainPath));
-      toldMainPathByAgent.delete(agentId);
+    const notice = beamingMainPath
+      ? buildBeamingNotice(beamingMainPath)
+      : toldMainPath && buildStoppedNotice(toldMainPath);
+    if (!notice) {
+      return;
+    }
+    recordTold(agentId, beamingMainPath);
+    try {
+      await port.agents.ref(agentId).send(notice);
+    } catch (error) {
+      recordTold(agentId, toldMainPath);
+      throw error;
     }
   }
 
@@ -51,6 +69,7 @@ export function createAgentNotices() {
     workspaceId: string,
     beam: BeamTarget | null,
   ): Promise<void> {
+    const failures: string[] = [];
     let cursor: string | undefined;
     do {
       const { entries, pageInfo } = await port.agents.list({
@@ -58,11 +77,16 @@ export function createAgentNotices() {
       });
       for (const { agent } of entries) {
         if (agent.workspaceId === workspaceId && agent.status === "idle") {
-          await notifyAgent(port, agent.id, agent.workspaceId, beam);
+          await notifyAgent(port, agent.id, agent.workspaceId, beam).catch((error: unknown) => {
+            failures.push(`could not tell agent ${agent.id}: ${describeError(error)}`);
+          });
         }
       }
       cursor = pageInfo.hasMore ? (pageInfo.nextCursor ?? undefined) : undefined;
     } while (cursor);
+    if (failures.length > 0) {
+      throw new Error(failures.join("; "));
+    }
   }
 
   return { notifyAgent, notifyIdleAgents };
