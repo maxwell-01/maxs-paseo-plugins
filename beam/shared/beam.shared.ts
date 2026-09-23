@@ -44,3 +44,12 @@ export const beamLog = defineRpc({
     ),
   }),
 });
+
+export const BEAMING_TITLE_PREFIX = "⚡ ";
+
+export function beamingTitle(title: string | null, workspaceName: string): string {
+  const current = title ?? workspaceName;
+  return current.startsWith(BEAMING_TITLE_PREFIX)
+    ? current
+    : `${BEAMING_TITLE_PREFIX}${current}`;
+}

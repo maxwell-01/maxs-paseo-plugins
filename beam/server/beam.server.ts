@@ -11,6 +11,7 @@ const BeamStateSchema = z.object({
   workspaceId: z.string(),
   workspaceName: z.string().optional(),
   workspaceDir: z.string(),
+  originalTitle: z.string().nullable().optional(),
   mainPath: z.string(),
   originalBranch: z.string(),
   originalHead: z.string(),
@@ -305,8 +306,9 @@ export async function activate(input: {
   workspaceId: string;
   workspaceName: string;
   workspaceDir: string;
+  workspaceTitle: string | null;
 }): Promise<{ active: true; mainPath: string }> {
-  const { workspaceId, workspaceName, workspaceDir } = input;
+  const { workspaceId, workspaceName, workspaceDir, workspaceTitle } = input;
   const mainPath = resolveMainPath(workspaceDir);
 
   if (realpathSync(mainPath) === realpathSync(workspaceDir)) {
@@ -368,6 +370,7 @@ export async function activate(input: {
     workspaceId,
     workspaceName,
     workspaceDir,
+    originalTitle: workspaceTitle,
     mainPath,
     originalBranch,
     originalHead,
@@ -382,7 +385,11 @@ export async function activate(input: {
   return { active: true, mainPath };
 }
 
-export async function deactivate(): Promise<{ active: false }> {
+export async function deactivate(): Promise<{
+  active: false;
+  workspaceId?: string;
+  originalTitle?: string | null;
+}> {
   const pointer = pointerPath();
   if (!existsSync(pointer)) {
     throw new Error("no active beam");
@@ -392,8 +399,13 @@ export async function deactivate(): Promise<{ active: false }> {
 
   stopBeam(mainPath);
 
+  let workspaceId: string | undefined;
+  let originalTitle: string | null | undefined;
+
   if (existsSync(stateFile)) {
     const state = readState(stateFile);
+    workspaceId = state.workspaceId;
+    originalTitle = state.originalTitle;
     restoreMain(
       mainPath,
       state.originalHead,
@@ -413,7 +425,7 @@ export async function deactivate(): Promise<{ active: false }> {
   rmSync(pointer);
   logBeam("info", "removed successfully");
 
-  return { active: false };
+  return { active: false, workspaceId, originalTitle };
 }
 
 export async function status(): Promise<{
