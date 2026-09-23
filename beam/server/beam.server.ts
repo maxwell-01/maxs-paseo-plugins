@@ -4,6 +4,7 @@ import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { type FSWatcher, watch } from "chokidar";
 import { z } from "zod";
+import { type TitleMark, TitleMarkSchema } from "./beam-title.server";
 
 const SYNC_DEBOUNCE_MS = 200;
 
@@ -11,6 +12,7 @@ const BeamStateSchema = z.object({
   workspaceId: z.string(),
   workspaceName: z.string().optional(),
   workspaceDir: z.string(),
+  titleMark: TitleMarkSchema.optional(),
   mainPath: z.string(),
   originalBranch: z.string(),
   originalHead: z.string(),
@@ -45,7 +47,7 @@ interface BeamLogEntry {
 }
 const beamLog: BeamLogEntry[] = [];
 
-function logBeam(level: BeamLogLevel, message: string): void {
+export function logBeam(level: BeamLogLevel, message: string): void {
   beamLog.push({ ts: new Date().toISOString(), level, message });
   if (beamLog.length > BEAM_LOG_CAP) {
     beamLog.splice(0, beamLog.length - BEAM_LOG_CAP);
@@ -305,8 +307,9 @@ export async function activate(input: {
   workspaceId: string;
   workspaceName: string;
   workspaceDir: string;
+  titleMark: TitleMark | undefined;
 }): Promise<{ active: true; mainPath: string }> {
-  const { workspaceId, workspaceName, workspaceDir } = input;
+  const { workspaceId, workspaceName, workspaceDir, titleMark } = input;
   const mainPath = resolveMainPath(workspaceDir);
 
   if (realpathSync(mainPath) === realpathSync(workspaceDir)) {
@@ -368,6 +371,7 @@ export async function activate(input: {
     workspaceId,
     workspaceName,
     workspaceDir,
+    titleMark,
     mainPath,
     originalBranch,
     originalHead,
@@ -382,7 +386,11 @@ export async function activate(input: {
   return { active: true, mainPath };
 }
 
-export async function deactivate(): Promise<{ active: false }> {
+export async function deactivate(): Promise<{
+  active: false;
+  workspaceId?: string;
+  titleMark?: TitleMark;
+}> {
   const pointer = pointerPath();
   if (!existsSync(pointer)) {
     throw new Error("no active beam");
@@ -392,8 +400,13 @@ export async function deactivate(): Promise<{ active: false }> {
 
   stopBeam(mainPath);
 
+  let workspaceId: string | undefined;
+  let titleMark: TitleMark | undefined;
+
   if (existsSync(stateFile)) {
     const state = readState(stateFile);
+    workspaceId = state.workspaceId;
+    titleMark = state.titleMark;
     restoreMain(
       mainPath,
       state.originalHead,
@@ -413,7 +426,7 @@ export async function deactivate(): Promise<{ active: false }> {
   rmSync(pointer);
   logBeam("info", "removed successfully");
 
-  return { active: false };
+  return { active: false, workspaceId, titleMark };
 }
 
 export async function status(): Promise<{
