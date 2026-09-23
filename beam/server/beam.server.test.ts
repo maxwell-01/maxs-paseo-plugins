@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { midOperationReason, restoreMain, snapshotMain, syncOnce } from "./beam.server";
+import { activate, deactivate, midOperationReason, restoreMain, snapshotMain, syncOnce } from "./beam.server";
 
 function git(cwd: string, ...args: string[]): string {
   return execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
@@ -203,5 +203,71 @@ describe("snapshotMain + restoreMain", () => {
     expect(readFileSync(join(mainRepo, "committed.txt"), "utf8")).toBe(committedBefore);
     expect(existsSync(join(mainRepo, "marker.txt"))).toBe(false);
     expect(refExists(mainRepo, snap.originalRef)).toBe(false);
+  });
+});
+
+describe("activate + deactivate", () => {
+  let root: string;
+  let mainRepo: string;
+  let wsDir: string;
+  let realHome: string | undefined;
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), "beam-title-"));
+    mainRepo = join(root, "main");
+    wsDir = join(root, "ws");
+    mkdirSync(mainRepo, { recursive: true });
+
+    git(mainRepo, "init", "-b", "main");
+    git(mainRepo, "config", "user.email", "beam-test@example.com");
+    git(mainRepo, "config", "user.name", "Beam Test");
+    git(mainRepo, "config", "commit.gpgsign", "false");
+
+    writeFileSync(join(mainRepo, "tracked.txt"), "original\n");
+    git(mainRepo, "add", "-A");
+    git(mainRepo, "commit", "-m", "initial");
+    git(mainRepo, "worktree", "add", "-b", "feature", wsDir);
+
+    realHome = process.env.HOME;
+    process.env.HOME = root;
+  });
+
+  afterEach(async () => {
+    process.env.HOME = realHome;
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("returns the title the workspace had at beam-in so beam-out can restore it", async () => {
+    await activate({
+      workspaceId: "ws-1",
+      workspaceName: "cruel-dolphin",
+      workspaceDir: wsDir,
+      workspaceTitle: "Checkout rewrite",
+    });
+
+    await expect(deactivate()).resolves.toEqual({
+      active: false,
+      workspaceId: "ws-1",
+      originalTitle: "Checkout rewrite",
+    });
+  });
+
+  it("reports no recorded title for a beam started before titles were tracked", async () => {
+    await activate({
+      workspaceId: "ws-1",
+      workspaceName: "cruel-dolphin",
+      workspaceDir: wsDir,
+      workspaceTitle: undefined,
+    });
+
+    const stateFile = join(mainRepo, ".git", "beam-state.json");
+    const state = JSON.parse(readFileSync(stateFile, "utf8"));
+    expect(state).not.toHaveProperty("originalTitle");
+
+    await expect(deactivate()).resolves.toEqual({
+      active: false,
+      workspaceId: "ws-1",
+      originalTitle: undefined,
+    });
   });
 });

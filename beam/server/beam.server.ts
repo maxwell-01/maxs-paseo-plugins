@@ -46,7 +46,7 @@ interface BeamLogEntry {
 }
 const beamLog: BeamLogEntry[] = [];
 
-function logBeam(level: BeamLogLevel, message: string): void {
+export function logBeam(level: BeamLogLevel, message: string): void {
   beamLog.push({ ts: new Date().toISOString(), level, message });
   if (beamLog.length > BEAM_LOG_CAP) {
     beamLog.splice(0, beamLog.length - BEAM_LOG_CAP);
@@ -306,7 +306,7 @@ export async function activate(input: {
   workspaceId: string;
   workspaceName: string;
   workspaceDir: string;
-  workspaceTitle: string | null;
+  workspaceTitle: string | null | undefined;
 }): Promise<{ active: true; mainPath: string }> {
   const { workspaceId, workspaceName, workspaceDir, workspaceTitle } = input;
   const mainPath = resolveMainPath(workspaceDir);

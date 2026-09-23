@@ -1,34 +1,62 @@
-import type { PaseoApi } from "@getpaseo/client";
-import { beamingTitle } from "../shared/beam.shared";
+const BEAMING_TITLE_PREFIX = "⚡ ";
+
+interface WorkspaceTitleHandle {
+  current(): { title?: string | null; name: string } | null;
+  refresh(): Promise<unknown>;
+  setTitle(title: string | null): Promise<unknown>;
+}
+
+export interface WorkspaceTitlePort {
+  workspaces: { ref(workspaceId: string): WorkspaceTitleHandle };
+}
+
+export function beamingTitle(title: string | null, workspaceName: string): string {
+  return `${BEAMING_TITLE_PREFIX}${title ?? workspaceName}`;
+}
+
+function unmarked(title: string | null, workspaceName: string): string | null {
+  if (title === null || !title.startsWith(BEAMING_TITLE_PREFIX)) {
+    return title;
+  }
+  const bare = title.slice(BEAMING_TITLE_PREFIX.length);
+  return bare === workspaceName ? null : bare;
+}
 
 export async function readWorkspaceTitle(
-  paseo: PaseoApi,
+  port: WorkspaceTitlePort,
   workspaceId: string,
-): Promise<{ title: string | null; name: string }> {
-  const handle = paseo.workspaces.ref(workspaceId);
-  if (!handle.current()) {
-    await handle.refresh();
-  }
+): Promise<{ title: string | null; name: string } | null> {
+  const handle = port.workspaces.ref(workspaceId);
+  await handle.refresh();
   const workspace = handle.current();
-  return { title: workspace?.title ?? null, name: workspace?.name ?? workspaceId };
+  if (!workspace) {
+    return null;
+  }
+  return { title: unmarked(workspace.title ?? null, workspace.name), name: workspace.name };
 }
 
 export async function applyBeamingTitle(
-  paseo: PaseoApi,
+  port: WorkspaceTitlePort,
   workspaceId: string,
   originalTitle: string | null,
   workspaceName: string,
 ): Promise<void> {
-  await paseo.workspaces.ref(workspaceId).setTitle(beamingTitle(originalTitle, workspaceName));
+  await port.workspaces.ref(workspaceId).setTitle(beamingTitle(originalTitle, workspaceName));
 }
 
 export async function restoreWorkspaceTitle(
-  paseo: PaseoApi,
+  port: WorkspaceTitlePort,
   workspaceId: string | undefined,
   originalTitle: string | null | undefined,
 ): Promise<void> {
   if (!workspaceId || originalTitle === undefined) {
     return;
   }
-  await paseo.workspaces.ref(workspaceId).setTitle(originalTitle);
+  const handle = port.workspaces.ref(workspaceId);
+  await handle.refresh();
+  const workspace = handle.current();
+  if (!workspace || (workspace.title ?? null) !== beamingTitle(originalTitle, workspace.name)) {
+    return;
+  }
+  await handle.setTitle(originalTitle);
 }
