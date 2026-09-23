@@ -237,18 +237,18 @@ describe("activate + deactivate", () => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  it("returns the title the workspace had at beam-in so beam-out can restore it", async () => {
+  it("returns the title mark recorded at beam-in so beam-out can undo it", async () => {
     await activate({
       workspaceId: "ws-1",
       workspaceName: "cruel-dolphin",
       workspaceDir: wsDir,
-      workspaceTitle: "Checkout rewrite",
+      titleMark: { originalTitle: null, markedTitle: "⚡ cruel-dolphin" },
     });
 
     await expect(deactivate()).resolves.toEqual({
       active: false,
       workspaceId: "ws-1",
-      originalTitle: "Checkout rewrite",
+      titleMark: { originalTitle: null, markedTitle: "⚡ cruel-dolphin" },
     });
   });
 
@@ -257,17 +257,17 @@ describe("activate + deactivate", () => {
       workspaceId: "ws-1",
       workspaceName: "cruel-dolphin",
       workspaceDir: wsDir,
-      workspaceTitle: undefined,
+      titleMark: undefined,
     });
 
     const stateFile = join(mainRepo, ".git", "beam-state.json");
     const state = JSON.parse(readFileSync(stateFile, "utf8"));
-    expect(state).not.toHaveProperty("originalTitle");
+    expect(state).not.toHaveProperty("titleMark");
 
     await expect(deactivate()).resolves.toEqual({
       active: false,
       workspaceId: "ws-1",
-      originalTitle: undefined,
+      titleMark: undefined,
     });
   });
 });

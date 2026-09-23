@@ -4,6 +4,7 @@ import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { type FSWatcher, watch } from "chokidar";
 import { z } from "zod";
+import type { TitleMark } from "./beam-title.server";
 
 const SYNC_DEBOUNCE_MS = 200;
 
@@ -11,7 +12,7 @@ const BeamStateSchema = z.object({
   workspaceId: z.string(),
   workspaceName: z.string().optional(),
   workspaceDir: z.string(),
-  originalTitle: z.string().nullable().optional(),
+  titleMark: z.object({ originalTitle: z.string().nullable(), markedTitle: z.string() }).optional(),
   mainPath: z.string(),
   originalBranch: z.string(),
   originalHead: z.string(),
@@ -306,9 +307,9 @@ export async function activate(input: {
   workspaceId: string;
   workspaceName: string;
   workspaceDir: string;
-  workspaceTitle: string | null | undefined;
+  titleMark: TitleMark | undefined;
 }): Promise<{ active: true; mainPath: string }> {
-  const { workspaceId, workspaceName, workspaceDir, workspaceTitle } = input;
+  const { workspaceId, workspaceName, workspaceDir, titleMark } = input;
   const mainPath = resolveMainPath(workspaceDir);
 
   if (realpathSync(mainPath) === realpathSync(workspaceDir)) {
@@ -370,7 +371,7 @@ export async function activate(input: {
     workspaceId,
     workspaceName,
     workspaceDir,
-    originalTitle: workspaceTitle,
+    titleMark,
     mainPath,
     originalBranch,
     originalHead,
@@ -388,7 +389,7 @@ export async function activate(input: {
 export async function deactivate(): Promise<{
   active: false;
   workspaceId?: string;
-  originalTitle?: string | null;
+  titleMark?: TitleMark;
 }> {
   const pointer = pointerPath();
   if (!existsSync(pointer)) {
@@ -400,12 +401,12 @@ export async function deactivate(): Promise<{
   stopBeam(mainPath);
 
   let workspaceId: string | undefined;
-  let originalTitle: string | null | undefined;
+  let titleMark: TitleMark | undefined;
 
   if (existsSync(stateFile)) {
     const state = readState(stateFile);
     workspaceId = state.workspaceId;
-    originalTitle = state.originalTitle;
+    titleMark = state.titleMark;
     restoreMain(
       mainPath,
       state.originalHead,
@@ -425,7 +426,7 @@ export async function deactivate(): Promise<{
   rmSync(pointer);
   logBeam("info", "removed successfully");
 
-  return { active: false, workspaceId, originalTitle };
+  return { active: false, workspaceId, titleMark };
 }
 
 export async function status(): Promise<{

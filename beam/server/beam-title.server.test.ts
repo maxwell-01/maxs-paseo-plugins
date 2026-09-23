@@ -7,13 +7,13 @@ import {
   type WorkspaceTitlePort,
 } from "./beam-title.server";
 
-function fakePaseo(workspace: { name: string; title?: string | null } | null) {
+function fakePaseo(workspace: { slug: string; title: string | null } | null) {
   const calls: Array<string | null> = [];
   let state = workspace;
   const port = {
     workspaces: {
       ref: () => ({
-        current: () => state,
+        current: () => (state ? { name: state.title ?? state.slug, title: state.title } : null),
         refresh: async () => state,
         setTitle: async (title: string | null) => {
           calls.push(title);
@@ -23,7 +23,7 @@ function fakePaseo(workspace: { name: string; title?: string | null } | null) {
       }),
     },
   } satisfies WorkspaceTitlePort;
-  return { port, calls };
+  return { port, calls, current: () => state };
 }
 
 describe("beamingTitle", () => {
@@ -37,11 +37,11 @@ describe("beamingTitle", () => {
 });
 
 describe("readWorkspaceTitle", () => {
-  it("reads null when the workspace has no title of its own", async () => {
-    const { port } = fakePaseo({ name: "cruel-dolphin" });
+  it("records no title and the display name for an untitled workspace", async () => {
+    const { port } = fakePaseo({ slug: "cruel-dolphin", title: null });
     await expect(readWorkspaceTitle(port, "ws-1")).resolves.toEqual({
-      title: null,
-      name: "cruel-dolphin",
+      originalTitle: null,
+      markedTitle: "⚡ cruel-dolphin",
     });
   });
 
@@ -51,52 +51,49 @@ describe("readWorkspaceTitle", () => {
   });
 
   it("recovers the real title from a mark stranded by an earlier failed beam-out", async () => {
-    const { port } = fakePaseo({ name: "cruel-dolphin", title: "⚡ Checkout rewrite" });
+    const { port } = fakePaseo({ slug: "cruel-dolphin", title: "⚡ Checkout rewrite" });
     await expect(readWorkspaceTitle(port, "ws-1")).resolves.toEqual({
-      title: "Checkout rewrite",
-      name: "cruel-dolphin",
-    });
-  });
-
-  it("recovers a null title from a stranded mark that only carried the workspace name", async () => {
-    const { port } = fakePaseo({ name: "cruel-dolphin", title: "⚡ cruel-dolphin" });
-    await expect(readWorkspaceTitle(port, "ws-1")).resolves.toEqual({
-      title: null,
-      name: "cruel-dolphin",
+      originalTitle: "Checkout rewrite",
+      markedTitle: "⚡ Checkout rewrite",
     });
   });
 });
 
-describe("applyBeamingTitle", () => {
-  it("marks the workspace with the beaming prefix", async () => {
-    const { port, calls } = fakePaseo({ name: "cruel-dolphin" });
-    await applyBeamingTitle(port, "ws-1", null, "cruel-dolphin");
-    expect(calls).toEqual(["⚡ cruel-dolphin"]);
+describe("beam-in then beam-out", () => {
+  it("returns an untitled workspace to having no title", async () => {
+    const { port, current } = fakePaseo({ slug: "beam-live", title: null });
+    const mark = await readWorkspaceTitle(port, "ws-1");
+    await applyBeamingTitle(port, "ws-1", mark!);
+    expect(current()?.title).toBe("⚡ beam-live");
+
+    await restoreWorkspaceTitle(port, "ws-1", mark!);
+    expect(current()?.title).toBeNull();
+  });
+
+  it("returns a titled workspace to its title", async () => {
+    const { port, current } = fakePaseo({ slug: "beam-live", title: "Checkout rewrite" });
+    const mark = await readWorkspaceTitle(port, "ws-1");
+    await applyBeamingTitle(port, "ws-1", mark!);
+    expect(current()?.title).toBe("⚡ Checkout rewrite");
+
+    await restoreWorkspaceTitle(port, "ws-1", mark!);
+    expect(current()?.title).toBe("Checkout rewrite");
   });
 });
 
 describe("restoreWorkspaceTitle", () => {
-  it("puts back the title the workspace had before the beam", async () => {
-    const { port, calls } = fakePaseo({ name: "cruel-dolphin", title: "⚡ Checkout rewrite" });
-    await restoreWorkspaceTitle(port, "ws-1", "Checkout rewrite");
-    expect(calls).toEqual(["Checkout rewrite"]);
-  });
-
-  it("clears the title when the workspace had none before the beam", async () => {
-    const { port, calls } = fakePaseo({ name: "cruel-dolphin", title: "⚡ cruel-dolphin" });
-    await restoreWorkspaceTitle(port, "ws-1", null);
-    expect(calls).toEqual([null]);
-  });
-
   it("leaves the title alone when the beam predates title tracking", async () => {
-    const { port, calls } = fakePaseo({ name: "cruel-dolphin", title: "⚡ cruel-dolphin" });
+    const { port, calls } = fakePaseo({ slug: "cruel-dolphin", title: "⚡ cruel-dolphin" });
     await restoreWorkspaceTitle(port, "ws-1", undefined);
     expect(calls).toEqual([]);
   });
 
   it("keeps a rename the user made during the beam instead of clobbering it", async () => {
-    const { port, calls } = fakePaseo({ name: "cruel-dolphin", title: "Payments migration" });
-    await restoreWorkspaceTitle(port, "ws-1", "Checkout rewrite");
+    const { port, calls } = fakePaseo({ slug: "cruel-dolphin", title: "Payments migration" });
+    await restoreWorkspaceTitle(port, "ws-1", {
+      originalTitle: "Checkout rewrite",
+      markedTitle: "⚡ Checkout rewrite",
+    });
     expect(calls).toEqual([]);
   });
 });
