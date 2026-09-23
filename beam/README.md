@@ -46,6 +46,13 @@ state alongside main's branch and `HEAD`, so a beam-out after a daemon restart s
 If you rename the workspace during a beam, beam-out keeps your new name. A title that you start with
 "⚡ " yourself loses that prefix at the next beam-out, because Beam cannot tell it from its own mark.
 
+Beam does not message your agents. Claude agents learn about a beam from the `beam-awareness` hook
+in [maxwell-01/myStuff](https://github.com/maxwell-01/myStuff) (`claudeConfig/plugins/beam-awareness`),
+which adds hidden context to each prompt: an agent in the beaming workspace is told its changes appear
+in the main checkout, and an agent in the main checkout is warned its edits are discarded at beam-out.
+The hook reads `mainPath` from `~/.paseo-beam-active.json` and `workspaceDir` from
+`<mainPath>/.git/beam-state.json`, so changing either file's path or those fields breaks it.
+
 ## Install
 
 ```bash

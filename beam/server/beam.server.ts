@@ -5,7 +5,6 @@ import { join, resolve } from "node:path";
 import { type FSWatcher, watch } from "chokidar";
 import { z } from "zod";
 import { type TitleMark, TitleMarkSchema } from "./beam-title.server";
-import { describeError } from "./describe-error";
 
 const SYNC_DEBOUNCE_MS = 200;
 
@@ -48,7 +47,11 @@ interface BeamLogEntry {
 }
 const beamLog: BeamLogEntry[] = [];
 
-export function logBeam(level: BeamLogLevel, message: string): void {
+function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function logBeam(level: BeamLogLevel, message: string): void {
   beamLog.push({ ts: new Date().toISOString(), level, message });
   if (beamLog.length > BEAM_LOG_CAP) {
     beamLog.splice(0, beamLog.length - BEAM_LOG_CAP);
