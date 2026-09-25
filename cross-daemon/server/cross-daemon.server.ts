@@ -3,30 +3,46 @@ import type { PluginServerContext } from "@getpaseo/plugin/server";
 import { crossDaemonSettings, describeDaemon, listPeerNames, type Peer, setPeers } from "../shared/cross-daemon.shared";
 import { withCrossDaemonTools } from "./agent-injection.server";
 import type { PaseoCli } from "./paseo-cli.server";
+import { startDeliveryWorker } from "./message-delivery.server";
+import { createMessageQueue } from "./message-queue.server";
 import { createPeerStore } from "./peer-store.server";
 import { isSwitchedOn, peersToStore } from "./switch-policy.server";
 import { installToolProxy } from "./tool-proxy.server";
 import { serveTools } from "./tool-socket.server";
-import { createTools } from "./tools.server";
+import { createTools, type DaemonIdentity } from "./tools.server";
+
+const DELIVERY_INTERVAL_MS = 15_000;
 
 interface CrossDaemonDependencies {
   readOwnPeer(relayEnabled: boolean): Promise<Peer | null>;
   stateDir: Promise<string>;
   cli: PaseoCli;
+  ownDaemon(): Promise<DaemonIdentity>;
 }
 
-function startToolServer(stateDir: string, peers: ReturnType<typeof createPeerStore>, cli: PaseoCli) {
-  const tools = createTools({ readPeers: () => peers.read(), cli });
+function startToolServer(
+  stateDir: string,
+  peers: ReturnType<typeof createPeerStore>,
+  { cli, ownDaemon }: Pick<CrossDaemonDependencies, "cli" | "ownDaemon">,
+) {
+  const queue = createMessageQueue(stateDir);
+  const readPeers = () => peers.read();
+  const tools = createTools({ readPeers, cli, queue, ownDaemon });
   const socketPath = join(stateDir, "tools.sock");
   const stopServing = serveTools(socketPath, tools);
+  const stopDelivering = startDeliveryWorker({ queue, readPeers, cli }, DELIVERY_INTERVAL_MS);
   const proxyPath = installToolProxy(stateDir, { socketPath, tools: tools.definitions });
-  return { launch: { command: process.execPath, proxyPath }, toolNames: tools.definitions.map((tool) => tool.name), stopServing };
+  const stop = () => {
+    stopServing();
+    stopDelivering();
+  };
+  return { launch: { command: process.execPath, proxyPath }, toolNames: tools.definitions.map((tool) => tool.name), stop };
 }
 
-export function registerCrossDaemon(server: PluginServerContext, { readOwnPeer, stateDir, cli }: CrossDaemonDependencies) {
+export function registerCrossDaemon(server: PluginServerContext, { readOwnPeer, stateDir, cli, ownDaemon }: CrossDaemonDependencies) {
   const settings = server.registerSettings(crossDaemonSettings);
   const peerStore = stateDir.then(createPeerStore);
-  const toolServer = Promise.all([stateDir, peerStore]).then(([dir, peers]) => startToolServer(dir, peers, cli));
+  const toolServer = Promise.all([stateDir, peerStore]).then(([dir, peers]) => startToolServer(dir, peers, { cli, ownDaemon }));
   toolServer.catch((error: unknown) => console.error("cross-daemon: the tool server did not start", error));
   const clearPeersUnlessSwitchedOn = async () => {
     const peers = await peerStore;
@@ -66,6 +82,6 @@ export function registerCrossDaemon(server: PluginServerContext, { readOwnPeer, 
   const unsubscribe = settings.subscribe(clearPeersUnlessSwitchedOn);
   return async () => {
     unsubscribe();
-    (await toolServer).stopServing();
+    (await toolServer).stop();
   };
 }

@@ -9,6 +9,7 @@ import type { Peer } from "../shared/cross-daemon.shared";
 export interface PaseoDaemon {
   home: string;
   readOwnPeer(relayEnabled: boolean): Promise<Peer | null>;
+  readOwnServerId(): Promise<string>;
 }
 
 type DaemonFunction = (...args: unknown[]) => unknown;
@@ -34,26 +35,33 @@ export async function loadPaseoDaemon(): Promise<PaseoDaemon> {
   ]);
   const home = control.resolvePaseoHome();
   if (typeof home !== "string") throw new Error("Paseo returned no home directory");
+  const readOwnPeer = async (relayEnabled: boolean): Promise<Peer | null> => {
+    const persisted = configuration.readPersistedConfig(home, { defaultsIfMissing: true });
+    const config = configuration.resolveConfigFromPersisted(home, persisted, { env: process.env });
+    const offer = await pairing.generateLocalPairingOffer({
+      paseoHome: home,
+      relayEnabled,
+      relayEndpoint: Reflect.get(Object(config), "relayEndpoint"),
+      relayPublicEndpoint: Reflect.get(Object(config), "relayPublicEndpoint"),
+      relayUseTls: Reflect.get(Object(config), "relayUseTls"),
+      relayPublicUseTls: Reflect.get(Object(config), "relayPublicUseTls"),
+      appBaseUrl: Reflect.get(Object(config), "appBaseUrl"),
+      includeQr: false,
+    });
+    const link: unknown = Reflect.get(Object(offer), "url");
+    if (typeof link !== "string" || link === "") return null;
+    const serverId: unknown = Reflect.get(Object(offers.parseConnectionOfferFromUrl(link)), "serverId");
+    if (typeof serverId !== "string") throw new Error("Paseo produced a pairing link it cannot parse");
+    return { serverId, name: hostname(), link };
+  };
   return {
     home,
-    async readOwnPeer(relayEnabled) {
-      const persisted = configuration.readPersistedConfig(home, { defaultsIfMissing: true });
-      const config = configuration.resolveConfigFromPersisted(home, persisted, { env: process.env });
-      const offer = await pairing.generateLocalPairingOffer({
-        paseoHome: home,
-        relayEnabled,
-        relayEndpoint: Reflect.get(Object(config), "relayEndpoint"),
-        relayPublicEndpoint: Reflect.get(Object(config), "relayPublicEndpoint"),
-        relayUseTls: Reflect.get(Object(config), "relayUseTls"),
-        relayPublicUseTls: Reflect.get(Object(config), "relayPublicUseTls"),
-        appBaseUrl: Reflect.get(Object(config), "appBaseUrl"),
-        includeQr: false,
-      });
-      const link: unknown = Reflect.get(Object(offer), "url");
-      if (typeof link !== "string" || link === "") return null;
-      const serverId: unknown = Reflect.get(Object(offers.parseConnectionOfferFromUrl(link)), "serverId");
-      if (typeof serverId !== "string") throw new Error("Paseo produced a pairing link it cannot parse");
-      return { serverId, name: hostname(), link };
+    readOwnPeer,
+    // The server ID travels inside the pairing link, which Paseo builds even for a daemon whose relay is off.
+    async readOwnServerId() {
+      const own = await readOwnPeer(true);
+      if (!own) throw new Error("Paseo built no pairing link with the relay on");
+      return own.serverId;
     },
   };
 }

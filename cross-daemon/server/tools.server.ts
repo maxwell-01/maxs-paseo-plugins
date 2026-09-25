@@ -1,6 +1,20 @@
 import { z } from "zod";
 import type { Peer } from "../shared/cross-daemon.shared";
+import { isAgentBusy, sendPrompt } from "./message-delivery.server";
+import type { MessageQueue } from "./message-queue.server";
 import type { PaseoCli } from "./paseo-cli.server";
+
+export interface DaemonIdentity {
+  name: string;
+  serverId: string | null;
+}
+
+interface ToolDependencies {
+  readPeers(): Peer[];
+  cli: PaseoCli;
+  queue: MessageQueue;
+  ownDaemon(): Promise<DaemonIdentity>;
+}
 
 export interface ToolCaller {
   callerAgentId: string | null;
@@ -69,18 +83,30 @@ function findPeer(peers: readonly Peer[], ref: string): Peer | string {
   return `No reachable daemon has the name or ID "${ref}". Reachable: ${reachable}.`;
 }
 
-export function createTools(deps: { readPeers(): Peer[]; cli: PaseoCli }): Tools {
-  const onPeer = async (ref: string, args: readonly string[]): Promise<ToolResult> => {
+function composeMessage(own: DaemonIdentity, callerAgentId: string | null, prompt: string): string {
+  const sender = callerAgentId ? `agent ${callerAgentId}` : "a user or script";
+  const origin = own.serverId ? `"${own.name}" (${own.serverId})` : `"${own.name}"`;
+  const lines = [`[cross-daemon message from ${sender} on daemon ${origin}]`, "", prompt];
+  if (callerAgentId && own.serverId) {
+    lines.push("", `To reply, call the cross-daemon send_agent_prompt tool with daemon "${own.serverId}" and agentId "${callerAgentId}".`);
+  }
+  return lines.join("\n");
+}
+
+export function createTools(deps: ToolDependencies): Tools {
+  const reachPeer = async (ref: string, action: (peer: Peer) => Promise<ToolResult>): Promise<ToolResult> => {
     const peer = findPeer(deps.readPeers(), ref);
     if (typeof peer === "string") return { text: peer, isError: true };
     try {
-      return { text: await deps.cli.run(peer.link, args) };
+      return await action(peer);
     } catch (error) {
       const reason = (error instanceof Error ? error.message : String(error)).replaceAll(peer.link, `<link to ${peer.name}>`);
       const prefix = UNREACHABLE.test(reason) ? `Could not reach ${peer.name}` : `paseo on ${peer.name} failed`;
       return { text: `${prefix}: ${reason}`, isError: true };
     }
   };
+  const onPeer = (ref: string, args: readonly string[]) =>
+    reachPeer(ref, async (peer) => ({ text: await deps.cli.run(peer.link, args) }));
 
   const tools = [
     defineTool({
@@ -114,6 +140,28 @@ export function createTools(deps: { readPeers(): Peer[]; cli: PaseoCli }): Tools
         tail: z.number().int().min(1).max(500).default(DEFAULT_ACTIVITY_ENTRIES).describe("How many recent entries to read."),
       }),
       run: ({ daemon, agentId, tail }) => onPeer(daemon, ["logs", agentId, "--tail", String(tail)]),
+    }),
+    defineTool({
+      name: "send_agent_prompt",
+      description:
+        "Send a message to an agent on another Paseo daemon. If the agent is working, the message is queued " +
+        "and delivered when it is idle, so its work is not interrupted.",
+      input: z.object({ daemon: daemonInput, agentId: agentIdInput, prompt: z.string().min(1) }),
+      run: async ({ daemon, agentId, prompt }, { callerAgentId }) => {
+        const text = composeMessage(await deps.ownDaemon(), callerAgentId, prompt);
+        return reachPeer(daemon, async (peer) => {
+          if (deps.queue.hasPendingFor(peer.serverId, agentId)) {
+            deps.queue.add({ peerServerId: peer.serverId, agentId, text, callerAgentId });
+            return { text: `Agent ${agentId} on ${peer.name} has earlier messages waiting. Yours is queued behind them.` };
+          }
+          if (await isAgentBusy(deps.cli, peer.link, agentId)) {
+            deps.queue.add({ peerServerId: peer.serverId, agentId, text, callerAgentId });
+            return { text: `Agent ${agentId} on ${peer.name} is working. Your message is queued and will be delivered when it is idle.` };
+          }
+          await sendPrompt(deps.cli, peer.link, agentId, text);
+          return { text: `Sent to agent ${agentId} on ${peer.name}.` };
+        });
+      },
     }),
   ];
   return {
