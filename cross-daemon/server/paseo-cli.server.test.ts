@@ -35,6 +35,13 @@ describe("createPaseoCli", () => {
     await expect(cli.run("https://app.paseo.sh/#offer=bWFj", [])).rejects.toThrow("timed out after 0.2 s");
   });
 
+  it("fails with the message from the CLI's JSON error", async () => {
+    const cli = fakePaseo(
+      'process.stderr.write(JSON.stringify({ error: { code: "INSPECT_FAILED", message: "Agent not found: abc" } })); process.exit(1);',
+    );
+    await expect(cli.run("https://app.paseo.sh/#offer=bWFj", ["inspect", "abc", "--json"])).rejects.toThrow(/^Agent not found: abc$/);
+  });
+
   it("fails with the CLI's error output", async () => {
     const cli = fakePaseo('process.stderr.write("Agent not found: abc"); process.exit(1);');
     await expect(cli.run("https://app.paseo.sh/#offer=bWFj", ["logs", "abc"])).rejects.toThrow("Agent not found: abc");
