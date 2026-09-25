@@ -1,11 +1,11 @@
-import { mkdtempSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { PluginServerContext, PluginSettingsState } from "@getpaseo/plugin/server";
 import type { PaseoApi } from "@getpaseo/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Peer } from "../shared/cross-daemon.shared";
 import { registerCrossDaemon } from "./cross-daemon.server";
+import { makeTempDir } from "./temp-dir.test-support";
 
 const tower: Peer = { serverId: "srv_tower", name: "tower", link: "https://app.paseo.sh/#offer=dG93ZXI" };
 const mac: Peer = { serverId: "srv_mac", name: "mac", link: "https://app.paseo.sh/#offer=bWFj" };
@@ -16,7 +16,7 @@ const off: State = { status: "ready", revision: "r2", values: { enabled: false }
 const invalid: State = { status: "invalid", revision: "r3", error: "schema version 9 is newer" };
 
 function startPlugin(initial: State, stored: Peer[] = [], stateDirOverride?: Promise<string>) {
-  const stateDir = join(mkdtempSync(join(tmpdir(), "cd-")), "cross-daemon");
+  const stateDir = join(makeTempDir("cd-"), "cross-daemon");
   mkdirSync(stateDir, { recursive: true });
   writeFileSync(join(stateDir, "peers.json"), JSON.stringify(stored));
   let state = initial;

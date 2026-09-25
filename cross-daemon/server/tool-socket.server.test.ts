@@ -1,8 +1,8 @@
 import { createConnection } from "node:net";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
+
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { makeTempDir } from "./temp-dir.test-support";
 import { serveTools } from "./tool-socket.server";
 
 describe("serveTools", () => {
@@ -10,7 +10,7 @@ describe("serveTools", () => {
   afterEach(() => stops.splice(0).forEach((stop) => stop()));
 
   it("starts on a fresh install, when the plugin's state folder does not exist yet", async () => {
-    const socketPath = join(mkdtempSync(join(tmpdir(), "cd-")), "not-yet", "tools.sock");
+    const socketPath = join(makeTempDir("cd-"), "not-yet", "tools.sock");
     stops.push(
       serveTools(socketPath, {
         definitions: [],

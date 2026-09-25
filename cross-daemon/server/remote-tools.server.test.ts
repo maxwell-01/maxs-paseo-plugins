@@ -1,10 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { Peer } from "../shared/cross-daemon.shared";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+
 import { createMessageQueue } from "./message-queue.server";
 import { createMessenger } from "./messenger.server";
+import { makeTempDir } from "./temp-dir.test-support";
 import { createTools } from "./tools.server";
 import { createWatchList } from "./watch-list.server";
 
@@ -20,8 +19,8 @@ function toolsWith(peers: Peer[], reply: (link: string, args: readonly string[])
   const tools = createTools({
     readPeers: () => peers,
     messenger: createMessenger({
-      queue: createMessageQueue(mkdtempSync(join(tmpdir(), "cd-queue-"))),
-      watches: createWatchList(mkdtempSync(join(tmpdir(), "cd-watch-"))),
+      queue: createMessageQueue(makeTempDir("cd-queue-")),
+      watches: createWatchList(makeTempDir("cd-watch-")),
       readPeers: () => peers,
       cli: { run: async () => "", runLocal: async () => "" },
     }),

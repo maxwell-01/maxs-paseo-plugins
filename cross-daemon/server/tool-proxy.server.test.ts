@@ -1,9 +1,9 @@
 import { spawn } from "node:child_process";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
+
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { afterEach, describe, expect, it } from "vitest";
+import { makeTempDir } from "./temp-dir.test-support";
 import { installToolProxy } from "./tool-proxy.server";
 import { serveTools } from "./tool-socket.server";
 import type { Tools } from "./tools.server";
@@ -44,7 +44,7 @@ describe("tool proxy started by an agent", () => {
   afterEach(() => stops.splice(0).forEach((stop) => stop()));
 
   it("lists its tools and forwards calls to the plugin, naming the calling agent", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "cd-"));
+    const dir = makeTempDir("cd-");
     const socketPath = join(dir, "tools.sock");
     stops.push(serveTools(socketPath, echoTools));
     const proxy = startProxy(installToolProxy(dir, { socketPath, tools: echoTools.definitions }), "agent-7");
@@ -63,7 +63,7 @@ describe("tool proxy started by an agent", () => {
   });
 
   it("reports an error to the agent when the plugin is not running", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "cd-"));
+    const dir = makeTempDir("cd-");
     const proxy = startProxy(installToolProxy(dir, { socketPath: join(dir, "missing.sock"), tools: echoTools.definitions }), "agent-7");
     stops.push(() => proxy.child.kill());
     const list = await proxy.request("tools/list");
@@ -74,7 +74,7 @@ describe("tool proxy started by an agent", () => {
   });
 
   it("answers a line that is not JSON with a parse error instead of dying", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "cd-"));
+    const dir = makeTempDir("cd-");
     const proxy = startProxy(installToolProxy(dir, { socketPath: join(dir, "missing.sock"), tools: [] }), "agent-7");
     stops.push(() => proxy.child.kill());
     expect(await proxy.sendRaw("not json")).toMatchObject({ id: null, error: { code: -32700 } });
