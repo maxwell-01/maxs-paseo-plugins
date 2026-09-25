@@ -2,11 +2,10 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, open, readdir, rename, rm, utimes, writeFile } from "node:fs/promises";
 import { basename, dirname, join, sep } from "node:path";
 import type { z } from "zod";
-import { listRepoNotes, MAX_NOTES_BYTES, repoKeySchema, writeRepoNotes } from "../shared/repo-notes.shared";
+import { MAX_NOTES_BYTES, type NotesVersion, repoKeySchema, writeRepoNotes } from "../shared/repo-notes.shared";
 
 const NOTES_FILE_NAME = "AGENTS.md";
 
-type NotesVersion = z.output<typeof listRepoNotes.output>["notes"][number];
 type NotesWrite = z.output<typeof writeRepoNotes.input>;
 
 export function resolveNotesFile(notesDir: string, key: string): string {

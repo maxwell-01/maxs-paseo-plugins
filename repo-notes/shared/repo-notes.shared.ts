@@ -24,6 +24,8 @@ export const listRepoNotes = defineRpc({
   output: z.object({ notes: z.array(z.object({ key: repoKeySchema, hash: hashSchema, modifiedAt: modifiedAtSchema })) }),
 });
 
+export type NotesVersion = z.output<typeof listRepoNotes.output>["notes"][number];
+
 export const readRepoNotes = defineRpc({
   name: "repo-notes.read",
   input: z.object({ key: repoKeySchema }),

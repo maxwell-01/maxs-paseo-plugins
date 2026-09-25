@@ -1,7 +1,7 @@
 {
   "name": "paseo-repo-notes",
   "version": "0.1.0",
-  "description": "Give every Paseo agent your own notes for its repo, kept out of the repo.",
+  "description": "Give every Paseo agent your own notes for its repo, kept out of the repo and synced across daemons.",
   "private": true,
   "type": "module",
   "scripts": {
