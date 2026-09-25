@@ -1,0 +1,22 @@
+{
+  "name": "paseo-repo-notes",
+  "version": "0.1.0",
+  "description": "Give every Paseo agent your own notes for its repo, kept out of the repo.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@getpaseo/client": "0.9.2",
+    "@getpaseo/plugin": "0.9.2",
+    "@getpaseo/protocol": "0.9.2",
+    "@types/node": "^20.9.0",
+    "@types/react": "^19.3.0",
+    "react": "^19.3.0",
+    "typescript": "^7.0.2",
+    "vitest": "^3.2.7",
+    "zod": "^4.6.2"
+  }
+}
