@@ -13,10 +13,20 @@ export interface DaemonRow {
   detail: string;
 }
 
-export function buildDaemonRows(hosts: readonly PluginHostSummary[], daemons: readonly DescribedDaemon[]): DaemonRow[] {
+// What the page learned from the hosts' plugins; null until they first answer.
+export interface DaemonReadings {
+  daemons: readonly DescribedDaemon[];
+  failedCount: number;
+}
+
+export function buildDaemonRows(hosts: readonly PluginHostSummary[], readings: DaemonReadings | null): DaemonRow[] {
   return hosts.map(({ serverId, label, status }) => {
-    const daemon = daemons.find((candidate) => candidate.serverId === serverId);
     if (status !== "online") return { serverId, label, state: "unavailable", detail: "Offline." };
+    if (!readings) return { serverId, label, state: "unavailable", detail: "Checking…" };
+    const daemon = readings.daemons.find((candidate) => candidate.serverId === serverId);
+    if (!daemon && readings.failedCount > 0) {
+      return { serverId, label, state: "unavailable", detail: "Could not read this daemon. It may be slow, or its plugin may be older." };
+    }
     if (!daemon) {
       return { serverId, label, state: "unavailable", detail: "The cross-daemon plugin is not installed on this daemon." };
     }

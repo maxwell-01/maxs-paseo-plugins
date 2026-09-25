@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Peer } from "../shared/cross-daemon.shared";
-import { type DaemonDescription, type DaemonPort, type PeerUpdate, syncPeers } from "./peer-sync.client";
+import type { PluginClientContext } from "@getpaseo/plugin/client";
+import { createDaemonPort, type DaemonDescription, type DaemonPort, type PeerUpdate, syncPeers } from "./peer-sync.client";
 
 function fakeDaemon(description: DaemonDescription | Error) {
   const received: PeerUpdate[] = [];
@@ -61,5 +62,15 @@ describe("syncPeers", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     await syncPeers([fakeDaemon(new Error("Plugin host is offline")).port]);
     expect(warn).toHaveBeenCalledWith("cross-daemon: a host did not answer the peer sync", expect.any(Error));
+  });
+});
+
+describe("createDaemonPort", () => {
+  it("reports a switch that could not be saved instead of treating it as saved", async () => {
+    const rpc = (async (contract: { name: string }) =>
+      contract.name.endsWith(".read")
+        ? { status: "ready", revision: "r1", values: { enabled: false } }
+        : { status: "conflict", error: "the settings changed elsewhere" }) as unknown as PluginClientContext["rpc"];
+    await expect(createDaemonPort(rpc).setSwitch(true)).rejects.toThrow("the settings changed elsewhere");
   });
 });

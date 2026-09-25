@@ -12,20 +12,20 @@ interface SyncScheduler {
 }
 
 declare global {
-  var __paseoCrossDaemonSchedulerV1: SyncScheduler | undefined;
+  var __paseoCrossDaemonSchedulerV2: SyncScheduler | undefined;
 }
 
 // Paseo evaluates this bundle once per connected host, so module state is per host. The scheduler
 // lives on globalThis so that one sync sees every host.
 function getSharedScheduler(): SyncScheduler {
-  globalThis.__paseoCrossDaemonSchedulerV1 ??= {
+  globalThis.__paseoCrossDaemonSchedulerV2 ??= {
     ports: new Set(),
     pending: null,
     resync: null,
     running: false,
     rerunRequested: false,
   };
-  return globalThis.__paseoCrossDaemonSchedulerV1;
+  return globalThis.__paseoCrossDaemonSchedulerV2;
 }
 
 // One sync at a time: an older sync finishing late would otherwise restore a link a newer one removed.

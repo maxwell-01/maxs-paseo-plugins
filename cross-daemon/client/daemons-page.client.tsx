@@ -11,14 +11,18 @@ const REFRESH_MS = 5_000;
 
 type ReachableDaemon = DescribedDaemon & { port: DaemonPort };
 
-async function describeAll(): Promise<ReachableDaemon[]> {
+async function describeAll(): Promise<{ daemons: ReachableDaemon[]; failedCount: number }> {
   const results = await Promise.allSettled(
     listRegisteredDaemons().map(async (port) => {
       const [described, peers] = await Promise.all([port.describe(), port.listPeers()]);
       return { serverId: described.serverId, switchedOn: described.switchedOn, peers, port };
     }),
   );
-  return results.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
+  const daemons = results.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
+  for (const result of results) {
+    if (result.status === "rejected") console.warn("cross-daemon: a host did not describe itself", result.reason);
+  }
+  return { daemons, failedCount: results.length - daemons.length };
 }
 
 export function DaemonsPage({ theme, layout }: PluginSurfaceProps) {
@@ -26,13 +30,19 @@ export function DaemonsPage({ theme, layout }: PluginSurfaceProps) {
   const queryClient = useQueryClient();
   const daemons = useQuery({ queryKey: DAEMONS_KEY, queryFn: describeAll, refetchInterval: REFRESH_MS });
   const toggle = useMutation({
-    mutationFn: async ({ port, switchedOn }: { port: DaemonPort; switchedOn: boolean }) => port.setSwitch(switchedOn),
+    mutationFn: async ({ port, switchedOn, label }: { port: DaemonPort; switchedOn: boolean; label: string }) => {
+      try {
+        await port.setSwitch(switchedOn);
+      } catch (error) {
+        throw new Error(`${label}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    },
     onSuccess: async () => {
       requestPeerSync();
       await queryClient.invalidateQueries({ queryKey: DAEMONS_KEY });
     },
   });
-  const rows = buildDaemonRows(hosts, daemons.data ?? []);
+  const rows = buildDaemonRows(hosts, daemons.data ?? null);
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: theme.colors.surface0 }} contentContainerStyle={{ padding: layout.compact ? 16 : 24 }}>
@@ -47,7 +57,7 @@ export function DaemonsPage({ theme, layout }: PluginSurfaceProps) {
         ) : null}
         <SettingsCard>
           {rows.map((row) => {
-            const daemon = daemons.data?.find((candidate) => candidate.serverId === row.serverId);
+            const daemon = daemons.data?.daemons.find((candidate) => candidate.serverId === row.serverId);
             return (
               <SettingsSwitch
                 key={row.serverId}
@@ -55,7 +65,7 @@ export function DaemonsPage({ theme, layout }: PluginSurfaceProps) {
                 hint={row.detail}
                 value={row.state === "on"}
                 disabled={row.state === "unavailable" || !daemon || toggle.isPending}
-                onValueChange={(switchedOn) => daemon && toggle.mutate({ port: daemon.port, switchedOn })}
+                onValueChange={(switchedOn) => daemon && toggle.mutate({ port: daemon.port, switchedOn, label: row.label })}
               />
             );
           })}

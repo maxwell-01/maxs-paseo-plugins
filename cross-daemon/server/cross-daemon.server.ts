@@ -66,16 +66,16 @@ export function registerCrossDaemon(server: PluginServerContext, { readOwnPeer, 
     const { config } = await paseo.config.get();
     const own = await readOwnPeer(config.relay?.enabled === true);
     const switchedOn = isSwitchedOn(await settings.read());
-    return { serverId: (await ownDaemon()).serverId, switchedOn, member: switchedOn ? own : null };
+    return { serverId: own?.serverId ?? (await ownDaemon()).serverId, switchedOn, member: switchedOn ? own : null };
   });
 
   server.handle(setPeers, async (input, { paseo }) => {
     const peers = await peerStore;
     const { config } = await paseo.config.get();
-    const own = await readOwnPeer(config.relay?.enabled === true);
+    const ownServerId = (await readOwnPeer(config.relay?.enabled === true))?.serverId ?? (await ownDaemon()).serverId;
     // Read the switch last, so a switch-off that lands during the awaits above is not overwritten.
     const switchedOn = isSwitchedOn(await settings.read());
-    const next = peersToStore({ switchedOn, ownServerId: own?.serverId ?? null, stored: peers.read(), ...input });
+    const next = peersToStore({ switchedOn, ownServerId, stored: peers.read(), ...input });
     peers.write(next);
     return { stored: next.length };
   });
