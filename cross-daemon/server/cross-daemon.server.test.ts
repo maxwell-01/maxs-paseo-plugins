@@ -91,9 +91,9 @@ describe("cross-daemon switch", () => {
 
   it("shares this daemon's link only while switched on", async () => {
     const plugin = startPlugin(on);
-    await expect(plugin.call("cross-daemon.describe")).resolves.toEqual({ serverId: "srv_tower", member: tower });
+    await expect(plugin.call("cross-daemon.describe")).resolves.toEqual({ serverId: "srv_tower", switchedOn: true, member: tower });
     await plugin.switchTo(off);
-    await expect(plugin.call("cross-daemon.describe")).resolves.toEqual({ serverId: "srv_tower", member: null });
+    await expect(plugin.call("cross-daemon.describe")).resolves.toEqual({ serverId: "srv_tower", switchedOn: false, member: null });
   });
 
   it("stores the other daemons it is given while switched on, but never itself", async () => {

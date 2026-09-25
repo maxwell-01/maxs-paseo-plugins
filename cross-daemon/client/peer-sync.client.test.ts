@@ -12,13 +12,15 @@ function fakeDaemon(description: DaemonDescription | Error) {
     async setPeers(update) {
       received.push(update);
     },
+    listPeers: async () => [],
+    setSwitch: async () => {},
   };
   return { port, received };
 }
 
 const peer = (name: string): Peer => ({ serverId: `srv_${name}`, name, link: `https://app.paseo.sh/#offer=${name}` });
-const on = (name: string): DaemonDescription => ({ serverId: `srv_${name}`, member: peer(name) });
-const off = (name: string): DaemonDescription => ({ serverId: `srv_${name}`, member: null });
+const on = (name: string): DaemonDescription => ({ serverId: `srv_${name}`, switchedOn: true, member: peer(name) });
+const off = (name: string): DaemonDescription => ({ serverId: `srv_${name}`, switchedOn: false, member: null });
 
 describe("syncPeers", () => {
   afterEach(() => vi.restoreAllMocks());
@@ -41,9 +43,9 @@ describe("syncPeers", () => {
 
   it("leaves out a daemon with no link, such as one with the relay off", async () => {
     const tower = fakeDaemon(on("tower"));
-    const noRelay = fakeDaemon({ serverId: null, member: null });
+    const noRelay = fakeDaemon({ serverId: "srv_norelay", switchedOn: true, member: null });
     await syncPeers([tower.port, noRelay.port]);
-    expect(tower.received).toEqual([{ peers: [], answeredServerIds: ["srv_tower"] }]);
+    expect(tower.received).toEqual([{ peers: [], answeredServerIds: ["srv_tower", "srv_norelay"] }]);
   });
 
   it("does not count a daemon that failed to answer, so its peers keep its link", async () => {

@@ -1,6 +1,9 @@
 import type { PluginClientContext } from "@getpaseo/plugin/client";
 import type { z } from "zod";
-import { describeDaemon, setPeers } from "../shared/cross-daemon.shared";
+import { settingsRpc } from "@getpaseo/plugin";
+import { crossDaemonSettings, describeDaemon, listPeers, setPeers } from "../shared/cross-daemon.shared";
+
+const switchSettings = settingsRpc(crossDaemonSettings.id);
 
 export type DaemonDescription = z.output<typeof describeDaemon.output>;
 export type PeerUpdate = z.input<typeof setPeers.input>;
@@ -8,6 +11,8 @@ export type PeerUpdate = z.input<typeof setPeers.input>;
 export interface DaemonPort {
   describe(): Promise<DaemonDescription>;
   setPeers(update: PeerUpdate): Promise<void>;
+  listPeers(): Promise<{ serverId: string; name: string }[]>;
+  setSwitch(switchedOn: boolean): Promise<void>;
 }
 
 export function createDaemonPort(rpc: PluginClientContext["rpc"]): DaemonPort {
@@ -15,6 +20,12 @@ export function createDaemonPort(rpc: PluginClientContext["rpc"]): DaemonPort {
     describe: () => rpc(describeDaemon, {}),
     setPeers: async (update) => {
       await rpc(setPeers, update);
+    },
+    listPeers: async () => (await rpc(listPeers, {})).peers,
+    setSwitch: async (switchedOn) => {
+      const current = await rpc(switchSettings.read, {});
+      const saved = await rpc(switchSettings.write, { values: { enabled: switchedOn }, revision: current.revision });
+      if (saved.status !== "saved") throw new Error(`Could not save the switch: ${saved.error}`);
     },
   };
 }
@@ -27,7 +38,7 @@ export async function syncPeers(ports: readonly DaemonPort[]): Promise<void> {
     return [];
   });
   const members = answered.flatMap(({ daemon }) => (daemon.member ? [daemon.member] : []));
-  const answeredServerIds = answered.flatMap(({ daemon }) => (daemon.serverId ? [daemon.serverId] : []));
+  const answeredServerIds = answered.map(({ daemon }) => daemon.serverId);
   const deliveries = await Promise.allSettled(
     answered.map(({ port, daemon }) =>
       port.setPeers({ peers: members.filter((member) => member.serverId !== daemon.serverId), answeredServerIds }),

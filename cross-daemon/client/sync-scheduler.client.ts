@@ -54,6 +54,10 @@ export function requestPeerSync(): void {
   }, SYNC_DEBOUNCE_MS);
 }
 
+export function listRegisteredDaemons(): DaemonPort[] {
+  return [...getSharedScheduler().ports];
+}
+
 export function registerDaemon(port: DaemonPort): () => void {
   const state = getSharedScheduler();
   state.ports.add(port);

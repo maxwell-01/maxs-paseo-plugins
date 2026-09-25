@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import type { PluginServerContext } from "@getpaseo/plugin/server";
-import { crossDaemonSettings, describeDaemon, listPeerNames, type Peer, setPeers } from "../shared/cross-daemon.shared";
+import { crossDaemonSettings, describeDaemon, listPeers, type Peer, setPeers } from "../shared/cross-daemon.shared";
 import { withCrossDaemonTools } from "./agent-injection.server";
 import type { PaseoCli } from "./paseo-cli.server";
 import { createMessenger, startDeliveryWorker } from "./messenger.server";
@@ -65,7 +65,8 @@ export function registerCrossDaemon(server: PluginServerContext, { readOwnPeer, 
   server.handle(describeDaemon, async (_input, { paseo }) => {
     const { config } = await paseo.config.get();
     const own = await readOwnPeer(config.relay?.enabled === true);
-    return { serverId: own?.serverId ?? null, member: isSwitchedOn(await settings.read()) ? own : null };
+    const switchedOn = isSwitchedOn(await settings.read());
+    return { serverId: (await ownDaemon()).serverId, switchedOn, member: switchedOn ? own : null };
   });
 
   server.handle(setPeers, async (input, { paseo }) => {
@@ -79,7 +80,9 @@ export function registerCrossDaemon(server: PluginServerContext, { readOwnPeer, 
     return { stored: next.length };
   });
 
-  server.handle(listPeerNames, async () => ({ names: (await peerStore).read().map((peer) => peer.name) }));
+  server.handle(listPeers, async () => ({
+    peers: (await peerStore).read().map(({ serverId, name }) => ({ serverId, name })),
+  }));
 
   clearPeersUnlessSwitchedOn().catch((error: unknown) => console.error("cross-daemon: could not clear peers at start", error));
   const unsubscribe = settings.subscribe(clearPeersUnlessSwitchedOn);
