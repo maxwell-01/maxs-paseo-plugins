@@ -1,43 +1,39 @@
 import type { PluginClientContext } from "@getpaseo/plugin/client";
-import { describeDaemon, type Peer, setPeers } from "../shared/cross-daemon.shared";
+import type { z } from "zod";
+import { describeDaemon, setPeers } from "../shared/cross-daemon.shared";
 
-export interface DaemonDescription {
-  serverId: string;
-  name: string;
-  enabled: boolean;
-  link: string | null;
-}
+export type DaemonDescription = z.output<typeof describeDaemon.output>;
+export type PeerUpdate = z.input<typeof setPeers.input>;
 
 export interface DaemonPort {
   describe(): Promise<DaemonDescription>;
-  setPeers(peers: Peer[]): Promise<void>;
+  setPeers(update: PeerUpdate): Promise<void>;
 }
 
 export function createDaemonPort(rpc: PluginClientContext["rpc"]): DaemonPort {
   return {
     describe: () => rpc(describeDaemon, {}),
-    setPeers: async (peers) => {
-      await rpc(setPeers, { peers });
+    setPeers: async (update) => {
+      await rpc(setPeers, update);
     },
   };
 }
 
-function asMeshMember(daemon: DaemonDescription): Peer | null {
-  return daemon.enabled && daemon.link ? { serverId: daemon.serverId, name: daemon.name, link: daemon.link } : null;
-}
-
 export async function syncPeers(ports: readonly DaemonPort[]): Promise<void> {
   const results = await Promise.allSettled(ports.map((port) => port.describe()));
-  const reachable = new Map<string, { port: DaemonPort; daemon: DaemonDescription }>();
-  results.forEach((result, index) => {
-    if (result.status === "fulfilled" && !reachable.has(result.value.serverId)) {
-      reachable.set(result.value.serverId, { port: ports[index], daemon: result.value });
-    }
+  const answered = results.flatMap((result, index) => {
+    if (result.status === "fulfilled") return [{ port: ports[index], daemon: result.value }];
+    console.warn("cross-daemon: a host did not answer the peer sync", result.reason);
+    return [];
   });
-  const mesh = [...reachable.values()].flatMap(({ daemon }) => asMeshMember(daemon) ?? []);
-  await Promise.allSettled(
-    [...reachable.values()].map(({ port, daemon }) =>
-      port.setPeers(asMeshMember(daemon) ? mesh.filter((peer) => peer.serverId !== daemon.serverId) : []),
+  const members = answered.flatMap(({ daemon }) => (daemon.member ? [daemon.member] : []));
+  const answeredServerIds = answered.flatMap(({ daemon }) => (daemon.serverId ? [daemon.serverId] : []));
+  const deliveries = await Promise.allSettled(
+    answered.map(({ port, daemon }) =>
+      port.setPeers({ peers: members.filter((member) => member.serverId !== daemon.serverId), answeredServerIds }),
     ),
   );
+  for (const delivery of deliveries) {
+    if (delivery.status === "rejected") console.warn("cross-daemon: a host rejected its peer list", delivery.reason);
+  }
 }

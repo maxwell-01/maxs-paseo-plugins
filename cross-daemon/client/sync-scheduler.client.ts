@@ -7,30 +7,55 @@ interface SyncScheduler {
   ports: Set<DaemonPort>;
   pending: ReturnType<typeof setTimeout> | null;
   resync: ReturnType<typeof setInterval> | null;
+  running: boolean;
+  rerunRequested: boolean;
 }
 
 declare global {
-  var __paseoCrossDaemonScheduler: SyncScheduler | undefined;
+  var __paseoCrossDaemonSchedulerV1: SyncScheduler | undefined;
 }
 
 // Paseo evaluates this bundle once per connected host, so module state is per host. The scheduler
 // lives on globalThis so that one sync sees every host.
-function scheduler(): SyncScheduler {
-  globalThis.__paseoCrossDaemonScheduler ??= { ports: new Set(), pending: null, resync: null };
-  return globalThis.__paseoCrossDaemonScheduler;
+function getSharedScheduler(): SyncScheduler {
+  globalThis.__paseoCrossDaemonSchedulerV1 ??= {
+    ports: new Set(),
+    pending: null,
+    resync: null,
+    running: false,
+    rerunRequested: false,
+  };
+  return globalThis.__paseoCrossDaemonSchedulerV1;
+}
+
+// One sync at a time: an older sync finishing late would otherwise restore a link a newer one removed.
+async function runSync(state: SyncScheduler): Promise<void> {
+  if (state.running) {
+    state.rerunRequested = true;
+    return;
+  }
+  state.running = true;
+  try {
+    do {
+      state.rerunRequested = false;
+      await syncPeers([...state.ports]);
+    } while (state.rerunRequested);
+  } finally {
+    state.running = false;
+  }
 }
 
 export function requestPeerSync(): void {
-  const state = scheduler();
+  const state = getSharedScheduler();
   if (state.pending) clearTimeout(state.pending);
   state.pending = setTimeout(() => {
     state.pending = null;
-    void syncPeers([...state.ports]);
+    void runSync(state);
   }, SYNC_DEBOUNCE_MS);
 }
 
 export function registerDaemon(port: DaemonPort): () => void {
-  const state = scheduler();
+  const state = getSharedScheduler();
   state.ports.add(port);
   state.resync ??= setInterval(requestPeerSync, RESYNC_INTERVAL_MS);
   requestPeerSync();

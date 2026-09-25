@@ -1,6 +1,6 @@
 import { type PluginSurfaceProps, useRpc, useSettings } from "@getpaseo/plugin/client";
 import { SettingsAction, SettingsCard, SettingsRow, SettingsSection, SettingsSwitch } from "@getpaseo/plugin/client/ui";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Text } from "react-native";
 import { crossDaemonSettings, listPeerNames } from "../shared/cross-daemon.shared";
 import { requestPeerSync } from "./sync-scheduler.client";
@@ -8,7 +8,8 @@ import { requestPeerSync } from "./sync-scheduler.client";
 const PEER_NAMES_KEY = ["cross-daemon", "peer-names"];
 const PEER_NAMES_REFRESH_MS = 5_000;
 
-function describeReach(names: readonly string[] | undefined): string {
+function describeReach(names: readonly string[] | undefined, failed: boolean): string {
+  if (failed) return "Could not read this daemon's peers.";
   if (!names) return "Checking…";
   if (names.length === 0) return "None yet. Switch this on for at least two daemons while the app is open.";
   return names.join(", ");
@@ -17,7 +18,6 @@ function describeReach(names: readonly string[] | undefined): string {
 export function CrossDaemonSettingsScreen({ theme }: PluginSurfaceProps) {
   const settings = useSettings(crossDaemonSettings);
   const callListPeerNames = useRpc(listPeerNames);
-  const queryClient = useQueryClient();
   const peerNames = useQuery({
     queryKey: PEER_NAMES_KEY,
     queryFn: () => callListPeerNames({}),
@@ -33,16 +33,23 @@ export function CrossDaemonSettingsScreen({ theme }: PluginSurfaceProps) {
         </Text>
         <SettingsCard>
           <SettingsAction label="Read settings again" actionLabel="Reload" onPress={settings.reload} />
+          {settings.status === "invalid" ? (
+            <SettingsAction
+              label="Replace invalid settings with defaults (switched off)"
+              actionLabel="Reset"
+              disabled={settings.saving}
+              onPress={async () => {
+                await settings.reset();
+              }}
+            />
+          ) : null}
         </SettingsCard>
       </SettingsSection>
     );
   }
 
   const saveEnabled = async (enabled: boolean) => {
-    if (await settings.save({ enabled }, settings.revision)) {
-      requestPeerSync();
-      await queryClient.invalidateQueries({ queryKey: PEER_NAMES_KEY });
-    }
+    if (await settings.save({ enabled }, settings.revision)) requestPeerSync();
   };
 
   return (
@@ -56,7 +63,11 @@ export function CrossDaemonSettingsScreen({ theme }: PluginSurfaceProps) {
           error={settings.saveError}
           onValueChange={(enabled) => void saveEnabled(enabled)}
         />
-        <SettingsRow label="Can reach" hint={describeReach(peerNames.data?.names)} />
+        <SettingsRow
+          label="Can reach"
+          hint={describeReach(peerNames.data?.names, peerNames.isError)}
+          error={peerNames.error?.message ?? null}
+        />
       </SettingsCard>
     </SettingsSection>
   );

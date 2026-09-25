@@ -4,7 +4,7 @@ import { registerDaemon, requestPeerSync } from "./sync-scheduler.client";
 
 function countingPort() {
   const port: DaemonPort = {
-    describe: vi.fn(async () => ({ serverId: "srv_tower", name: "tower", enabled: false, link: null })),
+    describe: vi.fn(async () => ({ serverId: "srv_tower", member: null })),
     setPeers: vi.fn(async () => {}),
   };
   return port;
@@ -33,6 +33,26 @@ describe("sync scheduler", () => {
     cleanups.push(registerDaemon(tower));
     await vi.advanceTimersByTimeAsync(1_000 + 60_000);
     expect(tower.describe).toHaveBeenCalledTimes(2);
+  });
+
+  it("never runs two syncs at once, and runs one more after a sync that a request arrived during", async () => {
+    let finishDescribe = () => {};
+    const slow: DaemonPort = {
+      describe: vi.fn(
+        () => new Promise<{ serverId: string; member: null }>((resolve) => {
+          finishDescribe = () => resolve({ serverId: "srv_slow", member: null });
+        }),
+      ),
+      setPeers: vi.fn(async () => {}),
+    };
+    cleanups.push(registerDaemon(slow));
+    await vi.advanceTimersByTimeAsync(1_000);
+    requestPeerSync();
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(slow.describe).toHaveBeenCalledTimes(1);
+    finishDescribe();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(slow.describe).toHaveBeenCalledTimes(2);
   });
 
   it("stops syncing a daemon once its plugin instance is disposed", async () => {
