@@ -2,6 +2,7 @@
   "name": "paseo-beam",
   "version": "0.1.0",
   "description": "Beam a Paseo workspace's working tree into your one running dev environment; beam out safely restores your checkout.",
+  "license": "MIT",
   "private": false,
   "type": "module",
   "scripts": {

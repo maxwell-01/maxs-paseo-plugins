@@ -2,7 +2,28 @@
   "name": "paseo-cross-daemon",
   "version": "0.2.0",
   "description": "Let Paseo agents on different daemons list and message each other.",
-  "private": true,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/maxwell-01/maxs-paseo-plugins.git",
+    "directory": "cross-daemon"
+  },
+  "keywords": [
+    "paseo",
+    "paseo-plugin"
+  ],
+  "files": [
+    "paseo-plugin.json",
+    "index.client.tsx",
+    "index.server.ts",
+    "client/",
+    "server/",
+    "shared/",
+    "!**/*.test.ts",
+    "!**/*.test-support.ts",
+    "README.md",
+    "LICENSE"
+  ],
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
