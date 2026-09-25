@@ -16,3 +16,7 @@ Append the plugin's folder to the repo URL:
 ```bash
 paseo plugin install https://github.com/maxwell-01/maxs-paseo-plugins.git:<folder>
 ```
+
+## License
+
+MIT. See [LICENSE](LICENSE).

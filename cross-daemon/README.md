@@ -87,7 +87,13 @@ cannot pose as the sender or as a reply target.
 Install it on every daemon that takes part, then switch each one on in the app:
 
 ```bash
-paseo plugin install https://github.com/maxwell-01/maxs-paseo-plugins.git:cross-daemon
+paseo plugin install paseo-cross-daemon
 ```
 
+That installs the npm package. To install from Git instead:
+`paseo plugin install https://github.com/maxwell-01/maxs-paseo-plugins.git:cross-daemon`.
 Update with `paseo plugin update cross-daemon`.
+
+## License
+
+MIT.
