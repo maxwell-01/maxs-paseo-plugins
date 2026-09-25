@@ -3,10 +3,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { PluginServerContext, PluginSettingsState } from "@getpaseo/plugin/server";
 import type { PaseoApi } from "@getpaseo/client";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { Peer } from "../shared/cross-daemon.shared";
 import { registerCrossDaemon } from "./cross-daemon.server";
-import { createPeerStore } from "./peer-store.server";
 
 const tower: Peer = { serverId: "srv_tower", name: "tower", link: "https://app.paseo.sh/#offer=dG93ZXI" };
 const mac: Peer = { serverId: "srv_mac", name: "mac", link: "https://app.paseo.sh/#offer=bWFj" };
@@ -23,6 +22,7 @@ function startPlugin(initial: State, stored: Peer[] = []) {
   let state = initial;
   const listeners = new Set<(next: State) => void>();
   const handlers = new Map<string, (input: unknown) => unknown>();
+  const hooks = new Map<string, (input: { request: unknown }) => unknown>();
   const context = { paseo: { config: { get: async () => ({ config: { relay: { enabled: true } } }) } } as unknown as PaseoApi };
   const server = {
     registerSettings: () => ({
@@ -36,9 +36,10 @@ function startPlugin(initial: State, stored: Peer[] = []) {
       handlers.set(contract.name, (input) => handler(input, context)),
     registerProvider: () => {},
     on: () => () => {},
-    before: () => () => {},
+    before: (name: string, hook: (input: { request: unknown }) => unknown) => hooks.set(name, hook),
   } as unknown as PluginServerContext;
-  registerCrossDaemon(server, { readOwnPeer: async () => tower, peerStore: Promise.resolve(createPeerStore(stateDir)) });
+  const dispose = registerCrossDaemon(server, { readOwnPeer: async () => tower, stateDir: Promise.resolve(stateDir) });
+  stops.push(async () => (await dispose)());
   return {
     storedPeers: () => JSON.parse(readFileSync(join(stateDir, "peers.json"), "utf8")),
     call: async (name: string, input: unknown = {}) => handlers.get(name)!(input),
@@ -47,8 +48,15 @@ function startPlugin(initial: State, stored: Peer[] = []) {
       await Promise.all([...listeners].map((listener) => listener(next)));
     },
     settle: () => new Promise((resolve) => setTimeout(resolve, 10)),
+    createAgent: async (config: object) => hooks.get("agent.create")!({ request: { config } }),
+    stateDir,
   };
 }
+
+const stops: (() => Promise<void>)[] = [];
+afterEach(async () => {
+  await Promise.all(stops.splice(0).map((stop) => stop()));
+});
 
 describe("cross-daemon switch", () => {
   it("clears peers left from before a restart when the daemon starts switched off", async () => {
@@ -114,5 +122,23 @@ describe("cross-daemon switch", () => {
     const plugin = startPlugin(off);
     await expect(plugin.call("cross-daemon.set-peers", { peers: [mac], answeredServerIds: ["srv_mac"] })).resolves.toEqual({ stored: 0 });
     expect(plugin.storedPeers()).toEqual([]);
+  });
+});
+
+describe("agent tools", () => {
+  it("gives every new agent the cross-daemon tool server, reaching this plugin's socket", async () => {
+    const plugin = startPlugin(off);
+    const created = await plugin.createAgent({ provider: "claude", cwd: "/repo" });
+    expect(created).toMatchObject({
+      config: {
+        mcpServers: {
+          "cross-daemon": {
+            command: process.execPath,
+            args: [join(plugin.stateDir, "tool-proxy.cjs")],
+            env: { CROSS_DAEMON_TOOL_SOCKET: join(plugin.stateDir, "tools.sock") },
+          },
+        },
+      },
+    });
   });
 });
