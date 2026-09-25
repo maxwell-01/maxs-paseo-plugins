@@ -68,3 +68,13 @@ which agent sent it, and the receiver cannot reply to it.
 
 A target that starts a turn between the plugin's idle check and its send is still interrupted, as
 it would be by Paseo's own `send_agent_prompt`.
+
+## Install
+
+Install it on every daemon that takes part, then switch each one on in the app:
+
+```bash
+paseo plugin install https://github.com/maxwell-01/maxs-paseo-plugins.git:cross-daemon
+```
+
+Update with `paseo plugin update cross-daemon`.

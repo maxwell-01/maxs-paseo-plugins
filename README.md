@@ -6,6 +6,7 @@ own `package.json`, tests and README.
 | Plugin | What it does |
 | --- | --- |
 | [beam](beam/) | Mirrors a workspace's working tree onto your main checkout, so a running dev environment shows its changes. |
+| [cross-daemon](cross-daemon/) | Lets agents on different Paseo daemons list and message each other, without interrupting a working agent. |
 
 ## Install
 
