@@ -11,6 +11,8 @@ const queuedMessageSchema = z.object({
   text: z.string(),
   callerAgentId: z.string().nullable(),
   notifyOnFinish: z.boolean().default(false),
+  // Set just before a send, so a send cut off by a restart is not repeated.
+  inFlight: z.boolean().default(false),
   queuedAt: z.string(),
 });
 export type QueuedMessage = z.infer<typeof queuedMessageSchema>;
@@ -20,15 +22,21 @@ export function createMessageQueue(stateDir: string) {
   const list = (): QueuedMessage[] => readPrivateJson(queueFile, z.array(queuedMessageSchema), []);
   return {
     list,
-    add(message: Omit<QueuedMessage, "id" | "queuedAt" | "notifyOnFinish"> & { notifyOnFinish?: boolean }): void {
-      const queued = { notifyOnFinish: false, ...message, id: randomUUID(), queuedAt: new Date().toISOString() };
+    add(message: Omit<QueuedMessage, "id" | "queuedAt" | "notifyOnFinish" | "inFlight"> & { notifyOnFinish?: boolean }, queuedAt: Date): void {
+      const queued = { notifyOnFinish: false, ...message, id: randomUUID(), queuedAt: queuedAt.toISOString(), inFlight: false };
       writePrivateJson(queueFile, [...list(), queued]);
     },
     remove(id: string): void {
       writePrivateJson(queueFile, list().filter((message) => message.id !== id));
     },
-    hasPendingFor(peerServerId: string | null, agentId: string): boolean {
-      return list().some((message) => message.peerServerId === peerServerId && message.agentId === agentId);
+    markInFlight(id: string): void {
+      writePrivateJson(queueFile, list().map((message) => (message.id === id ? { ...message, inFlight: true } : message)));
+    },
+    clearInFlight(id: string): void {
+      writePrivateJson(queueFile, list().map((message) => (message.id === id ? { ...message, inFlight: false } : message)));
+    },
+    countPendingFor(peerServerId: string | null, agentId: string): number {
+      return list().filter((message) => message.peerServerId === peerServerId && message.agentId === agentId).length;
     },
   };
 }

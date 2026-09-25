@@ -1,5 +1,4 @@
 import type { PluginServerContext } from "@getpaseo/plugin/server";
-import { hostname } from "node:os";
 import { join } from "node:path";
 import { registerCrossDaemon } from "./server/cross-daemon.server";
 import { createPaseoCli } from "./server/paseo-cli.server";
@@ -15,6 +14,6 @@ export default function contribute(server: PluginServerContext) {
       run: async (link, args, options) => createPaseoCli(resolvePaseoCli((await daemon).home)).run(link, args, options),
       runLocal: async (args, options) => createPaseoCli(resolvePaseoCli((await daemon).home)).runLocal(args, options),
     },
-    ownDaemon: async () => ({ name: hostname(), serverId: await (await daemon).readOwnServerId() }),
+    ownDaemon: async () => (await daemon).readOwnIdentity(),
   });
 }

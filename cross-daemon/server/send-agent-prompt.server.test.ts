@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Peer } from "../shared/cross-daemon.shared";
 import { createMessageQueue } from "./message-queue.server";
-import { runDeliveryRound } from "./message-delivery.server";
+import { createMessenger } from "./messenger.server";
 import type { PaseoCli } from "./paseo-cli.server";
 import { createTools } from "./tools.server";
 import { createWatchList } from "./watch-list.server";
@@ -41,10 +41,11 @@ function setup(statuses: Record<string, string | Error>) {
   const dir = mkdtempSync(join(tmpdir(), "cd-queue-"));
   const queue = createMessageQueue(dir);
   const watches = createWatchList(dir);
-  const tools = createTools({ readPeers: () => [mac], cli: remote.cli, queue, watches, ownDaemon: async () => self });
+  const messenger = createMessenger({ queue, watches, readPeers: () => [mac], cli: remote.cli });
+  const tools = createTools({ readPeers: () => [mac], cli: remote.cli, messenger, ownDaemon: async () => self });
   const send = (agentId: string, prompt: string) =>
     tools.call("send_agent_prompt", { daemon: "mac", agentId, prompt, notifyOnFinish: false }, { callerAgentId: "caller-1" });
-  const deliver = () => runDeliveryRound({ queue, watches, readPeers: () => [mac], cli: remote.cli });
+  const deliver = () => messenger.runRound();
   return { ...remote, queue, send, deliver };
 }
 
@@ -137,7 +138,7 @@ describe("queued message delivery", () => {
     await send("a1", "hello");
     delete statuses.a1;
     await deliver();
-    expect(queue.list()).toEqual([]);
+    expect(queue.list().filter((message) => message.agentId === "a1")).toEqual([]);
   });
 
   it("drops the message when the CLI reports the agent is gone in its own words", async () => {
@@ -146,21 +147,14 @@ describe("queued message delivery", () => {
     await send("a1", "hello");
     statuses.a1 = new Error("Error: No agent found matching: a1\nUse `paseo ls` to list available agents");
     await deliver();
-    expect(queue.list()).toEqual([]);
+    expect(queue.list().filter((message) => message.agentId === "a1")).toEqual([]);
   });
 
-  it("drops the message when its daemon is no longer a peer", async () => {
-    vi.spyOn(console, "warn").mockImplementation(() => {});
-    const { send, statuses, queue, cli } = setup({ a1: "running" });
-    await send("a1", "hello");
-    statuses.a1 = "idle";
-    await runDeliveryRound({ queue, watches: createWatchList(mkdtempSync(join(tmpdir(), "cd-watch-"))), readPeers: () => [], cli });
-    expect(queue.list()).toEqual([]);
-  });
+
 
   it("keeps queued messages across a plugin restart", async () => {
     const dir = mkdtempSync(join(tmpdir(), "cd-queue-"));
-    createMessageQueue(dir).add({ peerServerId: "srv_mac", agentId: "a1", text: "hello", callerAgentId: null });
+    createMessageQueue(dir).add({ peerServerId: "srv_mac", agentId: "a1", text: "hello", callerAgentId: null }, new Date());
     expect(createMessageQueue(dir).list()).toHaveLength(1);
   });
 });

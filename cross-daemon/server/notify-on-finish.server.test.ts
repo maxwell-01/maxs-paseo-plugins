@@ -3,8 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { Peer } from "../shared/cross-daemon.shared";
-import { runDeliveryRound } from "./message-delivery.server";
 import { createMessageQueue } from "./message-queue.server";
+import { createMessenger } from "./messenger.server";
 import type { PaseoCli } from "./paseo-cli.server";
 import { createTools } from "./tools.server";
 import { createWatchList } from "./watch-list.server";
@@ -63,10 +63,11 @@ function setup() {
   const queue = createMessageQueue(dir);
   const watches = createWatchList(dir);
   const readPeers = () => [mac];
-  const tools = createTools({ readPeers, cli: daemons.cli, queue, watches, ownDaemon: async () => ({ name: "tower", serverId: "srv_tower" }) });
+  const messenger = createMessenger({ queue, watches, readPeers, cli: daemons.cli });
+  const tools = createTools({ readPeers, cli: daemons.cli, messenger, ownDaemon: async () => ({ name: "tower", serverId: "srv_tower" }) });
   const send = (agentId: string, input: object = {}, callerAgentId: string | null = "caller-1") =>
     tools.call("send_agent_prompt", { daemon: "mac", agentId, prompt: "Run the tests.", ...input }, { callerAgentId });
-  const tick = () => runDeliveryRound({ queue, watches, readPeers, cli: daemons.cli });
+  const tick = () => messenger.runRound();
   const noticesTo = (agentId: string) => daemons.delivered.filter((entry) => entry.where === "local" && entry.agentId === agentId);
   return { ...daemons, queue, watches, send, tick, noticesTo };
 }
