@@ -1,0 +1,44 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { DaemonPort } from "./peer-sync.client";
+import { registerDaemon, requestPeerSync } from "./sync-scheduler.client";
+
+function countingPort() {
+  const port: DaemonPort = {
+    describe: vi.fn(async () => ({ serverId: "srv_tower", name: "tower", enabled: false, link: null })),
+    setPeers: vi.fn(async () => {}),
+  };
+  return port;
+}
+
+describe("sync scheduler", () => {
+  const cleanups: (() => void)[] = [];
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => {
+    cleanups.splice(0).forEach((cleanup) => cleanup());
+    vi.useRealTimers();
+  });
+
+  it("syncs once for a burst of daemons registering together, as when the app connects to every host", async () => {
+    const tower = countingPort();
+    const mac = countingPort();
+    cleanups.push(registerDaemon(tower), registerDaemon(mac));
+    requestPeerSync();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(tower.describe).toHaveBeenCalledTimes(1);
+    expect(mac.describe).toHaveBeenCalledTimes(1);
+  });
+
+  it("syncs again every minute while the app stays open, so a switch changed elsewhere spreads", async () => {
+    const tower = countingPort();
+    cleanups.push(registerDaemon(tower));
+    await vi.advanceTimersByTimeAsync(1_000 + 60_000);
+    expect(tower.describe).toHaveBeenCalledTimes(2);
+  });
+
+  it("stops syncing a daemon once its plugin instance is disposed", async () => {
+    const tower = countingPort();
+    registerDaemon(tower)();
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(tower.describe).not.toHaveBeenCalled();
+  });
+});

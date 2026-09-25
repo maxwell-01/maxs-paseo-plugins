@@ -1,5 +1,5 @@
 import type { PluginServerContext } from "@getpaseo/plugin/server";
-import { crossDaemonSettings, describeDaemon, type Peer, setPeers } from "../shared/cross-daemon.shared";
+import { crossDaemonSettings, describeDaemon, listPeerNames, type Peer, setPeers } from "../shared/cross-daemon.shared";
 import type { createPeerStore } from "./peer-store.server";
 import { isSwitchedOn, peersToStore } from "./switch-policy.server";
 
@@ -31,6 +31,8 @@ export function registerCrossDaemon(server: PluginServerContext, { readOwnPeer, 
     store.write(next);
     return { stored: next.length };
   });
+
+  server.handle(listPeerNames, async () => ({ names: (await peerStore).read().map((peer) => peer.name) }));
 
   clearPeersUnlessSwitchedOn().catch((error: unknown) => console.error("cross-daemon: could not clear peers at start", error));
   return settings.subscribe(clearPeersUnlessSwitchedOn);

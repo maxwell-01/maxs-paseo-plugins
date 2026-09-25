@@ -28,3 +28,9 @@ export const setPeers = defineRpc({
   input: z.object({ peers: z.array(peerSchema), answeredServerIds: z.array(z.string()) }),
   output: z.object({ stored: z.number() }),
 });
+
+export const listPeerNames = defineRpc({
+  name: "cross-daemon.list-peer-names",
+  input: z.object({}),
+  output: z.object({ names: z.array(z.string()) }),
+});
