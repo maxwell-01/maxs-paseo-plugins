@@ -2,11 +2,19 @@ import { mkdtempSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { createPeerStore } from "./peer-store.server";
+import { z } from "zod";
+import { readPrivateJson, writePrivateJson } from "./private-json.server";
 
 const tower = { serverId: "srv_tower", name: "tower", link: "https://app.paseo.sh/#offer=dG93ZXI" };
 
-describe("createPeerStore", () => {
+const peersSchema = z.array(z.object({ serverId: z.string(), name: z.string(), link: z.string() }));
+
+function createPeerStore(dir: string) {
+  const file = join(dir, "peers.json");
+  return { read: () => readPrivateJson(file, peersSchema, []), write: (value: unknown) => writePrivateJson(file, value) };
+}
+
+describe("private JSON files", () => {
   it("reads no peers before any are written", () => {
     const store = createPeerStore(join(mkdtempSync(join(tmpdir(), "cd-")), "state"));
     expect(store.read()).toEqual([]);
