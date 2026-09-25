@@ -10,8 +10,12 @@ that are switched on can reach each other. A switched-off daemon shares no link 
 
 Switching off clears that daemon's peer list at once. The other daemons drop it at their next sync.
 
+A daemon that does not answer a sync, for example a sleeping Mac, keeps its place on its peers'
+lists until it answers switched off.
+
 ## Links
 
-Each daemon gives its own relay pairing link, the same as `paseo pair`. A pairing link grants full
-control of that daemon, so peers are stored owner-only in `$PASEO_HOME/plugin-data/cross-daemon/`.
-A daemon on a custom relay endpoint is not supported: its link always names Paseo's default relay.
+Each daemon gives its own relay pairing link, the same as `paseo pair`, only while it is switched
+on. A pairing link grants full control of that daemon. Peers are stored owner-only in
+`$PASEO_HOME/plugin-data/cross-daemon/`, which keeps other users out but not the daemon's own
+agents: they run as the same user. The cross-daemon tools never print a link.
