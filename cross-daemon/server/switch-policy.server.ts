@@ -7,7 +7,7 @@ export function isSwitchedOn(state: PluginSettingsState<typeof crossDaemonSettin
 
 interface StoredPeerUpdate {
   switchedOn: boolean;
-  ownServerId: string | null;
+  ownServerId: string;
   stored: readonly Peer[];
   peers: readonly Peer[];
   answeredServerIds: readonly string[];

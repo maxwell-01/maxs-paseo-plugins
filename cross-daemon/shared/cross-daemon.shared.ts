@@ -20,7 +20,7 @@ export type Peer = z.infer<typeof peerSchema>;
 export const describeDaemon = defineRpc({
   name: "cross-daemon.describe",
   input: z.object({}),
-  output: z.object({ serverId: z.string().nullable(), member: peerSchema.nullable() }),
+  output: z.object({ serverId: z.string(), switchedOn: z.boolean(), member: peerSchema.nullable() }),
 });
 
 export const setPeers = defineRpc({
@@ -29,8 +29,9 @@ export const setPeers = defineRpc({
   output: z.object({ stored: z.number() }),
 });
 
-export const listPeerNames = defineRpc({
-  name: "cross-daemon.list-peer-names",
+// Names and server IDs only: a peer's link never leaves the daemon.
+export const listPeers = defineRpc({
+  name: "cross-daemon.list-peers",
   input: z.object({}),
-  output: z.object({ names: z.array(z.string()) }),
+  output: z.object({ peers: z.array(z.object({ serverId: z.string(), name: z.string() })) }),
 });

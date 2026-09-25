@@ -15,7 +15,7 @@ const on: State = { status: "ready", revision: "r1", values: { enabled: true } }
 const off: State = { status: "ready", revision: "r2", values: { enabled: false } };
 const invalid: State = { status: "invalid", revision: "r3", error: "schema version 9 is newer" };
 
-function startPlugin(initial: State, stored: Peer[] = [], stateDirOverride?: Promise<string>) {
+function startPlugin(initial: State, stored: Peer[] = [], stateDirOverride?: Promise<string>, relayEnabled = true) {
   const stateDir = join(makeTempDir("cd-"), "cross-daemon");
   mkdirSync(stateDir, { recursive: true });
   writeFileSync(join(stateDir, "peers.json"), JSON.stringify(stored));
@@ -23,7 +23,7 @@ function startPlugin(initial: State, stored: Peer[] = [], stateDirOverride?: Pro
   const listeners = new Set<(next: State) => void>();
   const handlers = new Map<string, (input: unknown) => unknown>();
   const hooks = new Map<string, (input: { request: unknown }) => unknown>();
-  const context = { paseo: { config: { get: async () => ({ config: { relay: { enabled: true } } }) } } as unknown as PaseoApi };
+  const context = { paseo: { config: { get: async () => ({ config: { relay: { enabled: relayEnabled } } }) } } as unknown as PaseoApi };
   const server = {
     registerSettings: () => ({
       read: async () => state,
@@ -38,7 +38,7 @@ function startPlugin(initial: State, stored: Peer[] = [], stateDirOverride?: Pro
     on: () => () => {},
     before: (name: string, hook: (input: { request: unknown }) => unknown) => hooks.set(name, hook),
   } as unknown as PluginServerContext;
-  const dispose = registerCrossDaemon(server, { readOwnPeer: async () => tower, stateDir: stateDirOverride ?? Promise.resolve(stateDir),
+  const dispose = registerCrossDaemon(server, { readOwnPeer: async (relayOn: boolean) => (relayOn ? tower : null), stateDir: stateDirOverride ?? Promise.resolve(stateDir),
     cli: { run: async () => "[]", runLocal: async () => "[]" },
     ownDaemon: async () => ({ name: "tower", serverId: "srv_tower" }),
   });
@@ -91,9 +91,9 @@ describe("cross-daemon switch", () => {
 
   it("shares this daemon's link only while switched on", async () => {
     const plugin = startPlugin(on);
-    await expect(plugin.call("cross-daemon.describe")).resolves.toEqual({ serverId: "srv_tower", member: tower });
+    await expect(plugin.call("cross-daemon.describe")).resolves.toEqual({ serverId: "srv_tower", switchedOn: true, member: tower });
     await plugin.switchTo(off);
-    await expect(plugin.call("cross-daemon.describe")).resolves.toEqual({ serverId: "srv_tower", member: null });
+    await expect(plugin.call("cross-daemon.describe")).resolves.toEqual({ serverId: "srv_tower", switchedOn: false, member: null });
   });
 
   it("stores the other daemons it is given while switched on, but never itself", async () => {
@@ -121,6 +121,16 @@ describe("cross-daemon switch", () => {
     const plugin = startPlugin(on, [mac]);
     await plugin.call("cross-daemon.set-peers", { peers: [renewed], answeredServerIds: ["srv_mac"] });
     expect(plugin.storedPeers()).toEqual([renewed]);
+  });
+
+  it("lists its peers by name and server ID, never by link", async () => {
+    const plugin = startPlugin(on, [mac]);
+    await expect(plugin.call("cross-daemon.list-peers")).resolves.toEqual({ peers: [{ serverId: "srv_mac", name: "mac" }] });
+  });
+
+  it("still reports its server ID when its relay is off, so the app can match it to a host", async () => {
+    const plugin = startPlugin(on, [], undefined, false);
+    await expect(plugin.call("cross-daemon.describe")).resolves.toEqual({ serverId: "srv_tower", switchedOn: true, member: null });
   });
 
   it("stores no peers while switched off", async () => {

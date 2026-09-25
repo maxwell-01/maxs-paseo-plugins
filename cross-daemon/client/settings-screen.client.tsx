@@ -2,10 +2,10 @@ import { type PluginSurfaceProps, useRpc, useSettings } from "@getpaseo/plugin/c
 import { SettingsAction, SettingsCard, SettingsRow, SettingsSection, SettingsSwitch } from "@getpaseo/plugin/client/ui";
 import { useQuery } from "@tanstack/react-query";
 import { Text } from "react-native";
-import { crossDaemonSettings, listPeerNames } from "../shared/cross-daemon.shared";
+import { crossDaemonSettings, listPeers } from "../shared/cross-daemon.shared";
 import { requestPeerSync } from "./sync-scheduler.client";
 
-const PEER_NAMES_KEY = ["cross-daemon", "peer-names"];
+const PEERS_KEY = ["cross-daemon", "peers"];
 const PEER_NAMES_REFRESH_MS = 5_000;
 
 function describeReach(names: readonly string[] | undefined, failed: boolean): string {
@@ -17,10 +17,10 @@ function describeReach(names: readonly string[] | undefined, failed: boolean): s
 
 export function CrossDaemonSettingsScreen({ theme }: PluginSurfaceProps) {
   const settings = useSettings(crossDaemonSettings);
-  const callListPeerNames = useRpc(listPeerNames);
-  const peerNames = useQuery({
-    queryKey: PEER_NAMES_KEY,
-    queryFn: () => callListPeerNames({}),
+  const callListPeers = useRpc(listPeers);
+  const peers = useQuery({
+    queryKey: PEERS_KEY,
+    queryFn: () => callListPeers({}),
     refetchInterval: PEER_NAMES_REFRESH_MS,
   });
 
@@ -65,8 +65,8 @@ export function CrossDaemonSettingsScreen({ theme }: PluginSurfaceProps) {
         />
         <SettingsRow
           label="Can reach"
-          hint={describeReach(peerNames.data?.names, peerNames.isError)}
-          error={peerNames.error?.message ?? null}
+          hint={describeReach(peers.data?.peers.map((peer) => peer.name), peers.isError)}
+          error={peers.error?.message ?? null}
         />
       </SettingsCard>
     </SettingsSection>

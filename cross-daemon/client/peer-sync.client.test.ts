@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Peer } from "../shared/cross-daemon.shared";
-import { type DaemonDescription, type DaemonPort, type PeerUpdate, syncPeers } from "./peer-sync.client";
+import type { PluginClientContext } from "@getpaseo/plugin/client";
+import { createDaemonPort, type DaemonDescription, type DaemonPort, type PeerUpdate, syncPeers } from "./peer-sync.client";
 
 function fakeDaemon(description: DaemonDescription | Error) {
   const received: PeerUpdate[] = [];
@@ -12,13 +13,15 @@ function fakeDaemon(description: DaemonDescription | Error) {
     async setPeers(update) {
       received.push(update);
     },
+    listPeers: async () => [],
+    setSwitch: async () => {},
   };
   return { port, received };
 }
 
 const peer = (name: string): Peer => ({ serverId: `srv_${name}`, name, link: `https://app.paseo.sh/#offer=${name}` });
-const on = (name: string): DaemonDescription => ({ serverId: `srv_${name}`, member: peer(name) });
-const off = (name: string): DaemonDescription => ({ serverId: `srv_${name}`, member: null });
+const on = (name: string): DaemonDescription => ({ serverId: `srv_${name}`, switchedOn: true, member: peer(name) });
+const off = (name: string): DaemonDescription => ({ serverId: `srv_${name}`, switchedOn: false, member: null });
 
 describe("syncPeers", () => {
   afterEach(() => vi.restoreAllMocks());
@@ -41,9 +44,9 @@ describe("syncPeers", () => {
 
   it("leaves out a daemon with no link, such as one with the relay off", async () => {
     const tower = fakeDaemon(on("tower"));
-    const noRelay = fakeDaemon({ serverId: null, member: null });
+    const noRelay = fakeDaemon({ serverId: "srv_norelay", switchedOn: true, member: null });
     await syncPeers([tower.port, noRelay.port]);
-    expect(tower.received).toEqual([{ peers: [], answeredServerIds: ["srv_tower"] }]);
+    expect(tower.received).toEqual([{ peers: [], answeredServerIds: ["srv_tower", "srv_norelay"] }]);
   });
 
   it("does not count a daemon that failed to answer, so its peers keep its link", async () => {
@@ -59,5 +62,15 @@ describe("syncPeers", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     await syncPeers([fakeDaemon(new Error("Plugin host is offline")).port]);
     expect(warn).toHaveBeenCalledWith("cross-daemon: a host did not answer the peer sync", expect.any(Error));
+  });
+});
+
+describe("createDaemonPort", () => {
+  it("reports a switch that could not be saved instead of treating it as saved", async () => {
+    const rpc = (async (contract: { name: string }) =>
+      contract.name.endsWith(".read")
+        ? { status: "ready", revision: "r1", values: { enabled: false } }
+        : { status: "conflict", error: "the settings changed elsewhere" }) as unknown as PluginClientContext["rpc"];
+    await expect(createDaemonPort(rpc).setSwitch(true)).rejects.toThrow("the settings changed elsewhere");
   });
 });
