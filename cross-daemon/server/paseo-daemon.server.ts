@@ -1,6 +1,9 @@
 import { createRequire } from "node:module";
 import { hostname } from "node:os";
+import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { z } from "zod";
+import type { PaseoCliCommand } from "./paseo-cli.server";
 import type { Peer } from "../shared/cross-daemon.shared";
 
 export interface PaseoDaemon {
@@ -53,4 +56,15 @@ export async function loadPaseoDaemon(): Promise<PaseoDaemon> {
       return { serverId, name: hostname(), link };
     },
   };
+}
+
+const cliPackageSchema = z.object({ bin: z.object({ paseo: z.string() }) });
+
+// Run the CLI that ships with the running daemon, with the daemon's own Node, so a GUI-launched
+// daemon without paseo on its PATH can still use it.
+export function resolvePaseoCli(): PaseoCliCommand {
+  const requireFromDaemon = createRequire(process.argv[1]);
+  const packagePath = requireFromDaemon.resolve("@getpaseo/cli/package.json");
+  const { bin } = cliPackageSchema.parse(requireFromDaemon(packagePath));
+  return { command: process.execPath, args: [join(dirname(packagePath), bin.paseo)] };
 }
