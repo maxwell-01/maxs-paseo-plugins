@@ -1,11 +1,11 @@
-import { chmodSync, existsSync, mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { chmodSync, existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createPaseoCli } from "./paseo-cli.server";
+import { makeTempDir } from "./temp-dir.test-support";
 
 function fakePaseo(body: string, timeoutMs?: number) {
-  const script = join(mkdtempSync(join(tmpdir(), "cd-cli-")), "paseo.mjs");
+  const script = join(makeTempDir("cd-cli-"), "paseo.mjs");
   writeFileSync(script, body);
   chmodSync(script, 0o755);
   return createPaseoCli({ command: process.execPath, args: [script], home: "/tmp/paseo-home" }, timeoutMs);

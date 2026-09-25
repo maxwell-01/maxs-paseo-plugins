@@ -1,11 +1,10 @@
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Peer } from "../shared/cross-daemon.shared";
 import { createMessageQueue } from "./message-queue.server";
 import { createMessenger } from "./messenger.server";
 import type { PaseoCli } from "./paseo-cli.server";
+import { makeTempDir } from "./temp-dir.test-support";
 import { createTools } from "./tools.server";
 import { createWatchList } from "./watch-list.server";
 
@@ -38,7 +37,7 @@ function fakeRemote(statuses: Record<string, string | Error>) {
 
 function setup(statuses: Record<string, string | Error>) {
   const remote = fakeRemote(statuses);
-  const dir = mkdtempSync(join(tmpdir(), "cd-queue-"));
+  const dir = makeTempDir("cd-queue-");
   const queue = createMessageQueue(dir);
   const watches = createWatchList(dir);
   const messenger = createMessenger({ queue, watches, readPeers: () => [mac], cli: remote.cli });
@@ -150,10 +149,8 @@ describe("queued message delivery", () => {
     expect(queue.list().filter((message) => message.agentId === "a1")).toEqual([]);
   });
 
-
-
   it("keeps queued messages across a plugin restart", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "cd-queue-"));
+    const dir = makeTempDir("cd-queue-");
     createMessageQueue(dir).add({ peerServerId: "srv_mac", agentId: "a1", text: "hello", callerAgentId: null }, new Date());
     expect(createMessageQueue(dir).list()).toHaveLength(1);
   });

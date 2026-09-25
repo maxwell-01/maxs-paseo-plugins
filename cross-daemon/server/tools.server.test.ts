@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+
 import { createMessageQueue } from "./message-queue.server";
 import { createMessenger } from "./messenger.server";
+import { makeTempDir } from "./temp-dir.test-support";
 import { composeMessage, createTools } from "./tools.server";
 import { createWatchList } from "./watch-list.server";
 
@@ -17,7 +16,7 @@ const unusedCli = {
   },
 };
 const newMessenger = () => {
-  const dir = mkdtempSync(join(tmpdir(), "cd-tools-"));
+  const dir = makeTempDir("cd-tools-");
   return createMessenger({ queue: createMessageQueue(dir), watches: createWatchList(dir), readPeers: () => [], cli: unusedCli });
 };
 

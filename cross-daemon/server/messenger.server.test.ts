@@ -1,11 +1,11 @@
-import { mkdtempSync, readdirSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Peer } from "../shared/cross-daemon.shared";
 import { createMessageQueue } from "./message-queue.server";
 import { createMessenger } from "./messenger.server";
 import type { PaseoCli } from "./paseo-cli.server";
+import { makeTempDir } from "./temp-dir.test-support";
 import { createWatchList } from "./watch-list.server";
 
 const mac: Peer = { serverId: "srv_mac", name: "mac", link: "https://app.paseo.sh/#offer=bWFj" };
@@ -72,7 +72,7 @@ function fakeDaemons() {
 
 function setup(options: { now?: () => number } = {}) {
   const daemons = fakeDaemons();
-  const dir = mkdtempSync(join(tmpdir(), "cd-messenger-"));
+  const dir = makeTempDir("cd-messenger-");
   const queue = createMessageQueue(dir);
   const watches = createWatchList(dir);
   const messenger = createMessenger({ queue, watches, readPeers: () => [mac], cli: daemons.cli, now: options.now });
