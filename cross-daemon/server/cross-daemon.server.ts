@@ -2,6 +2,7 @@ import { join } from "node:path";
 import type { PluginServerContext } from "@getpaseo/plugin/server";
 import { crossDaemonSettings, describeDaemon, listPeerNames, type Peer, setPeers } from "../shared/cross-daemon.shared";
 import { withCrossDaemonTools } from "./agent-injection.server";
+import type { PaseoCli } from "./paseo-cli.server";
 import { createPeerStore } from "./peer-store.server";
 import { isSwitchedOn, peersToStore } from "./switch-policy.server";
 import { installToolProxy } from "./tool-proxy.server";
@@ -11,20 +12,21 @@ import { createTools } from "./tools.server";
 interface CrossDaemonDependencies {
   readOwnPeer(relayEnabled: boolean): Promise<Peer | null>;
   stateDir: Promise<string>;
+  cli: PaseoCli;
 }
 
-function startToolServer(stateDir: string, peers: ReturnType<typeof createPeerStore>) {
-  const tools = createTools({ readPeers: () => peers.read() });
+function startToolServer(stateDir: string, peers: ReturnType<typeof createPeerStore>, cli: PaseoCli) {
+  const tools = createTools({ readPeers: () => peers.read(), cli });
   const socketPath = join(stateDir, "tools.sock");
   const stopServing = serveTools(socketPath, tools);
   const proxyPath = installToolProxy(stateDir, { socketPath, tools: tools.definitions });
   return { launch: { command: process.execPath, proxyPath }, toolNames: tools.definitions.map((tool) => tool.name), stopServing };
 }
 
-export function registerCrossDaemon(server: PluginServerContext, { readOwnPeer, stateDir }: CrossDaemonDependencies) {
+export function registerCrossDaemon(server: PluginServerContext, { readOwnPeer, stateDir, cli }: CrossDaemonDependencies) {
   const settings = server.registerSettings(crossDaemonSettings);
   const peerStore = stateDir.then(createPeerStore);
-  const toolServer = Promise.all([stateDir, peerStore]).then(([dir, peers]) => startToolServer(dir, peers));
+  const toolServer = Promise.all([stateDir, peerStore]).then(([dir, peers]) => startToolServer(dir, peers, cli));
   toolServer.catch((error: unknown) => console.error("cross-daemon: the tool server did not start", error));
   const clearPeersUnlessSwitchedOn = async () => {
     const peers = await peerStore;

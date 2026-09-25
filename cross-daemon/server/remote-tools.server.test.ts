@@ -1,0 +1,79 @@
+import { describe, expect, it } from "vitest";
+import type { Peer } from "../shared/cross-daemon.shared";
+import { createTools } from "./tools.server";
+
+const mac: Peer = { serverId: "srv_mac", name: "mac", link: "https://app.paseo.sh/#offer=bWFj" };
+const laptopA: Peer = { serverId: "srv_a", name: "laptop", link: "https://app.paseo.sh/#offer=YQ" };
+const laptopB: Peer = { serverId: "srv_b", name: "laptop", link: "https://app.paseo.sh/#offer=Yg" };
+const caller = { callerAgentId: "agent-1" };
+
+function toolsWith(peers: Peer[], reply: (link: string, args: readonly string[]) => string | Error = () => "[]") {
+  const calls: { link: string; args: string[] }[] = [];
+  const tools = createTools({
+    readPeers: () => peers,
+    cli: {
+      async run(link, args) {
+        calls.push({ link, args: [...args] });
+        const result = reply(link, args);
+        if (result instanceof Error) throw result;
+        return result;
+      },
+    },
+  });
+  return { tools, calls };
+}
+
+describe("tools that reach another daemon", () => {
+  it("lists another daemon's workspaces through its link", async () => {
+    const { tools, calls } = toolsWith([mac], () => '[{"workspaceId":"wks_1","name":"Checkout"}]');
+    const result = await tools.call("list_workspaces", { daemon: "mac" }, caller);
+    expect(calls).toEqual([{ link: mac.link, args: ["workspace", "ls", "--json"] }]);
+    expect(JSON.parse(result.text)).toEqual([{ workspaceId: "wks_1", name: "Checkout" }]);
+  });
+
+  it("lists every agent on another daemon, not only those in one folder", async () => {
+    const { tools, calls } = toolsWith([mac]);
+    await tools.call("list_agents", { daemon: "mac" }, caller);
+    expect(calls[0].args).toEqual(["ls", "--global", "--json"]);
+  });
+
+  it("reads an agent's recent activity on another daemon", async () => {
+    const { tools, calls } = toolsWith([mac], () => "[User] hi");
+    const result = await tools.call("get_agent_activity", { daemon: "mac", agentId: "44c0eee", tail: 5 }, caller);
+    expect(calls[0].args).toEqual(["logs", "44c0eee", "--tail", "5"]);
+    expect(result.text).toBe("[User] hi");
+  });
+
+  it("finds a daemon by server ID as well as by name", async () => {
+    const { tools, calls } = toolsWith([mac]);
+    await tools.call("list_agents", { daemon: "srv_mac" }, caller);
+    expect(calls[0].link).toBe(mac.link);
+  });
+
+  it("asks for a server ID when two daemons share a name", async () => {
+    const { tools, calls } = toolsWith([laptopA, laptopB]);
+    const result = await tools.call("list_agents", { daemon: "laptop" }, caller);
+    expect(result).toEqual({ text: 'Two or more daemons are named "laptop". Use a server ID: srv_a, srv_b.', isError: true });
+    expect(calls).toEqual([]);
+  });
+
+  it("refuses a daemon that is not a switched-on peer", async () => {
+    const { tools, calls } = toolsWith([mac]);
+    const result = await tools.call("list_agents", { daemon: "tower" }, caller);
+    expect(result).toEqual({ text: 'No reachable daemon is named "tower". Reachable: mac (srv_mac).', isError: true });
+    expect(calls).toEqual([]);
+  });
+
+  it("rejects an agent ID that the CLI could read as an option", async () => {
+    const { tools, calls } = toolsWith([mac]);
+    const result = await tools.call("get_agent_activity", { daemon: "mac", agentId: "--home=/tmp" }, caller);
+    expect(result.isError).toBe(true);
+    expect(calls).toEqual([]);
+  });
+
+  it("reports a failed call without revealing the daemon's link", async () => {
+    const { tools } = toolsWith([mac], (link) => new Error(`connect failed for ${link}`));
+    const result = await tools.call("list_agents", { daemon: "mac" }, caller);
+    expect(result).toEqual({ text: "Could not reach mac: connect failed for <link to mac>", isError: true });
+  });
+});

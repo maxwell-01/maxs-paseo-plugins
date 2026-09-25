@@ -38,7 +38,9 @@ function startPlugin(initial: State, stored: Peer[] = [], stateDirOverride?: Pro
     on: () => () => {},
     before: (name: string, hook: (input: { request: unknown }) => unknown) => hooks.set(name, hook),
   } as unknown as PluginServerContext;
-  const dispose = registerCrossDaemon(server, { readOwnPeer: async () => tower, stateDir: stateDirOverride ?? Promise.resolve(stateDir) });
+  const dispose = registerCrossDaemon(server, { readOwnPeer: async () => tower, stateDir: stateDirOverride ?? Promise.resolve(stateDir),
+    cli: { run: async () => "[]" },
+  });
   stops.push(async () => {
     await dispose().catch(() => {});
   });

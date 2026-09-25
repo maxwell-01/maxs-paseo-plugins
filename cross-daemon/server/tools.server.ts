@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { Peer } from "../shared/cross-daemon.shared";
+import type { PaseoCli } from "./paseo-cli.server";
 
 export interface ToolCaller {
   callerAgentId: string | null;
@@ -47,7 +48,38 @@ const NO_PEERS =
   "No other daemon is reachable. In the Paseo app, turn on Allow cross-daemon comms in the Cross-daemon " +
   "settings of this daemon and at least one other, then keep the app open until they sync.";
 
-export function createTools(deps: { readPeers(): Peer[] }): Tools {
+const DEFAULT_ACTIVITY_ENTRIES = 30;
+
+const daemonInput = z.string().min(1).describe("The daemon's name or server ID, from list_daemons.");
+const agentIdInput = z
+  .string()
+  .regex(/^[A-Za-z0-9_-]+$/, "an agent ID or its prefix")
+  .describe("The agent's ID or ID prefix, from list_agents.");
+
+function findPeer(peers: readonly Peer[], ref: string): Peer | string {
+  const byServerId = peers.find((peer) => peer.serverId === ref);
+  if (byServerId) return byServerId;
+  const byName = peers.filter((peer) => peer.name.toLowerCase() === ref.toLowerCase());
+  if (byName.length === 1) return byName[0];
+  if (byName.length > 1) {
+    return `Two or more daemons are named "${ref}". Use a server ID: ${byName.map((peer) => peer.serverId).join(", ")}.`;
+  }
+  const reachable = peers.map((peer) => `${peer.name} (${peer.serverId})`).join(", ") || "none";
+  return `No reachable daemon is named "${ref}". Reachable: ${reachable}.`;
+}
+
+export function createTools(deps: { readPeers(): Peer[]; cli: PaseoCli }): Tools {
+  const onPeer = async (ref: string, args: readonly string[]): Promise<ToolResult> => {
+    const peer = findPeer(deps.readPeers(), ref);
+    if (typeof peer === "string") return { text: peer, isError: true };
+    try {
+      return { text: await deps.cli.run(peer.link, args) };
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      return { text: `Could not reach ${peer.name}: ${reason.replaceAll(peer.link, `<link to ${peer.name}>`)}`, isError: true };
+    }
+  };
+
   const tools = [
     defineTool({
       name: "list_daemons",
@@ -58,6 +90,28 @@ export function createTools(deps: { readPeers(): Peer[] }): Tools {
         if (daemons.length === 0) return { text: NO_PEERS };
         return { text: JSON.stringify({ daemons }) };
       },
+    }),
+    defineTool({
+      name: "list_workspaces",
+      description: "List the workspaces on another Paseo daemon.",
+      input: z.object({ daemon: daemonInput }),
+      run: ({ daemon }) => onPeer(daemon, ["workspace", "ls", "--json"]),
+    }),
+    defineTool({
+      name: "list_agents",
+      description: "List the agents on another Paseo daemon, with their status and folder.",
+      input: z.object({ daemon: daemonInput }),
+      run: ({ daemon }) => onPeer(daemon, ["ls", "--global", "--json"]),
+    }),
+    defineTool({
+      name: "get_agent_activity",
+      description: "Read the recent activity of an agent on another Paseo daemon.",
+      input: z.object({
+        daemon: daemonInput,
+        agentId: agentIdInput,
+        tail: z.number().int().min(1).max(500).default(DEFAULT_ACTIVITY_ENTRIES).describe("How many recent entries to read."),
+      }),
+      run: ({ daemon, agentId, tail }) => onPeer(daemon, ["logs", agentId, "--tail", String(tail)]),
     }),
   ];
   return {
