@@ -4,9 +4,10 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Peer } from "../shared/cross-daemon.shared";
 import { createMessageQueue } from "./message-queue.server";
-import { deliverQueuedMessages } from "./message-delivery.server";
+import { runDeliveryRound } from "./message-delivery.server";
 import type { PaseoCli } from "./paseo-cli.server";
 import { createTools } from "./tools.server";
+import { createWatchList } from "./watch-list.server";
 
 const mac: Peer = { serverId: "srv_mac", name: "mac", link: "https://app.paseo.sh/#offer=bWFj" };
 const self = { name: "tower", serverId: "srv_tower" };
@@ -20,7 +21,7 @@ function fakeRemote(statuses: Record<string, string | Error>) {
       const status = statuses[agentId];
       if (status instanceof Error) throw status;
       if (status === undefined) throw new Error(`Agent not found: ${agentId}`);
-      if (command === "inspect") return JSON.stringify({ Id: agentId, Status: status });
+      if (command === "inspect") return JSON.stringify({ Id: agentId, Status: status, UpdatedAt: "2020-01-01T00:00:00.000Z" });
       if (command === "send") {
         delivered.push({ agentId, text: options?.promptText ?? "" });
         statuses[agentId] = "running";
@@ -28,17 +29,22 @@ function fakeRemote(statuses: Record<string, string | Error>) {
       }
       throw new Error(`unexpected command ${command}`);
     },
+    async runLocal() {
+      throw new Error("no local calls expected");
+    },
   };
   return { cli, delivered, statuses };
 }
 
 function setup(statuses: Record<string, string | Error>) {
   const remote = fakeRemote(statuses);
-  const queue = createMessageQueue(mkdtempSync(join(tmpdir(), "cd-queue-")));
-  const tools = createTools({ readPeers: () => [mac], cli: remote.cli, queue, ownDaemon: async () => self });
+  const dir = mkdtempSync(join(tmpdir(), "cd-queue-"));
+  const queue = createMessageQueue(dir);
+  const watches = createWatchList(dir);
+  const tools = createTools({ readPeers: () => [mac], cli: remote.cli, queue, watches, ownDaemon: async () => self });
   const send = (agentId: string, prompt: string) =>
-    tools.call("send_agent_prompt", { daemon: "mac", agentId, prompt }, { callerAgentId: "caller-1" });
-  const deliver = () => deliverQueuedMessages({ queue, readPeers: () => [mac], cli: remote.cli });
+    tools.call("send_agent_prompt", { daemon: "mac", agentId, prompt, notifyOnFinish: false }, { callerAgentId: "caller-1" });
+  const deliver = () => runDeliveryRound({ queue, watches, readPeers: () => [mac], cli: remote.cli });
   return { ...remote, queue, send, deliver };
 }
 
@@ -148,7 +154,7 @@ describe("queued message delivery", () => {
     const { send, statuses, queue, cli } = setup({ a1: "running" });
     await send("a1", "hello");
     statuses.a1 = "idle";
-    await deliverQueuedMessages({ queue, readPeers: () => [], cli });
+    await runDeliveryRound({ queue, watches: createWatchList(mkdtempSync(join(tmpdir(), "cd-watch-"))), readPeers: () => [], cli });
     expect(queue.list()).toEqual([]);
   });
 

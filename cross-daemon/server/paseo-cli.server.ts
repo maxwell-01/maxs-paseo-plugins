@@ -24,6 +24,8 @@ function readCliError(stderr: string): string {
 export interface PaseoCliCommand {
   command: string;
   args: string[];
+  // This daemon's PASEO_HOME, for calls to its own agents.
+  home: string;
 }
 
 export interface PaseoCliOptions {
@@ -33,6 +35,7 @@ export interface PaseoCliOptions {
 
 export interface PaseoCli {
   run(link: string, args: readonly string[], options?: PaseoCliOptions): Promise<string>;
+  runLocal(args: readonly string[], options?: PaseoCliOptions): Promise<string>;
 }
 
 async function withPromptFile<T>(promptText: string | undefined, use: (extraArgs: string[]) => Promise<T>): Promise<T> {
@@ -47,23 +50,32 @@ async function withPromptFile<T>(promptText: string | undefined, use: (extraArgs
   }
 }
 
+function runPaseo(cli: PaseoCliCommand, args: readonly string[], env: NodeJS.ProcessEnv, timeoutMs: number, options?: PaseoCliOptions) {
+  return withPromptFile(options?.promptText, (promptArgs) =>
+    new Promise<string>((resolve, reject) => {
+      execFile(
+        cli.command,
+        [...cli.args, ...args, ...promptArgs],
+        { env: { ...env, ELECTRON_RUN_AS_NODE: "1" }, timeout: timeoutMs, maxBuffer: CLI_MAX_OUTPUT_BYTES },
+        (error, stdout, stderr) => {
+          if (error?.killed) reject(new Error(`paseo timed out after ${timeoutMs / 1000} s`));
+          else if (error) reject(new Error(readCliError(stderr) || error.message));
+          else resolve(stdout.trim());
+        },
+      );
+    }),
+  );
+}
+
 export function createPaseoCli(cli: PaseoCliCommand, timeoutMs = CLI_TIMEOUT_MS): PaseoCli {
   return {
     run(link, args, options) {
-      const env: NodeJS.ProcessEnv = { ...process.env, ELECTRON_RUN_AS_NODE: "1" };
+      const env = { ...process.env };
       delete env.PASEO_PASSWORD;
-      return withPromptFile(options?.promptText, (promptArgs) => new Promise((resolve, reject) => {
-        execFile(
-          cli.command,
-          [...cli.args, "--host", link, ...args, ...promptArgs],
-          { env, timeout: timeoutMs, maxBuffer: CLI_MAX_OUTPUT_BYTES },
-          (error, stdout, stderr) => {
-            if (error?.killed) reject(new Error(`paseo timed out after ${timeoutMs / 1000} s`));
-            else if (error) reject(new Error(readCliError(stderr) || error.message));
-            else resolve(stdout.trim());
-          },
-        );
-      }));
+      return runPaseo(cli, ["--host", link, ...args], env, timeoutMs, options);
+    },
+    runLocal(args, options) {
+      return runPaseo(cli, ["--home", cli.home, ...args], process.env, timeoutMs, options);
     },
   };
 }

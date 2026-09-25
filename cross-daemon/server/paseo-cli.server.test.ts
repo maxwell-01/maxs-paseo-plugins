@@ -8,7 +8,7 @@ function fakePaseo(body: string, timeoutMs?: number) {
   const script = join(mkdtempSync(join(tmpdir(), "cd-cli-")), "paseo.mjs");
   writeFileSync(script, body);
   chmodSync(script, 0o755);
-  return createPaseoCli({ command: process.execPath, args: [script] }, timeoutMs);
+  return createPaseoCli({ command: process.execPath, args: [script], home: "/tmp/paseo-home" }, timeoutMs);
 }
 
 describe("createPaseoCli", () => {

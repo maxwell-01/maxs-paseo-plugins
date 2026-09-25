@@ -6,6 +6,7 @@ import type { PaseoCli } from "./paseo-cli.server";
 import { startDeliveryWorker } from "./message-delivery.server";
 import { createMessageQueue } from "./message-queue.server";
 import { createPeerStore } from "./peer-store.server";
+import { createWatchList } from "./watch-list.server";
 import { isSwitchedOn, peersToStore } from "./switch-policy.server";
 import { installToolProxy } from "./tool-proxy.server";
 import { serveTools } from "./tool-socket.server";
@@ -26,11 +27,12 @@ function startToolServer(
   { cli, ownDaemon }: Pick<CrossDaemonDependencies, "cli" | "ownDaemon">,
 ) {
   const queue = createMessageQueue(stateDir);
+  const watches = createWatchList(stateDir);
   const readPeers = () => peers.read();
-  const tools = createTools({ readPeers, cli, queue, ownDaemon });
+  const tools = createTools({ readPeers, cli, queue, watches, ownDaemon });
   const socketPath = join(stateDir, "tools.sock");
   const stopServing = serveTools(socketPath, tools);
-  const stopDelivering = startDeliveryWorker({ queue, readPeers, cli }, DELIVERY_INTERVAL_MS);
+  const stopDelivering = startDeliveryWorker({ queue, watches, readPeers, cli }, DELIVERY_INTERVAL_MS);
   const proxyPath = installToolProxy(stateDir, { socketPath, tools: tools.definitions });
   const stop = () => {
     stopServing();

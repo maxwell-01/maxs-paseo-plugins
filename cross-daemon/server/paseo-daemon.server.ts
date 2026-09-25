@@ -70,9 +70,9 @@ const cliPackageSchema = z.object({ bin: z.object({ paseo: z.string() }) });
 
 // Run the CLI that ships with the running daemon, with the daemon's own Node, so a GUI-launched
 // daemon without paseo on its PATH can still use it.
-export function resolvePaseoCli(): PaseoCliCommand {
+export function resolvePaseoCli(home: string): PaseoCliCommand {
   const requireFromDaemon = createRequire(process.argv[1]);
   const packagePath = requireFromDaemon.resolve("@getpaseo/cli/package.json");
   const { bin } = cliPackageSchema.parse(requireFromDaemon(packagePath));
-  return { command: process.execPath, args: [join(dirname(packagePath), bin.paseo)] };
+  return { command: process.execPath, args: [join(dirname(packagePath), bin.paseo)], home };
 }

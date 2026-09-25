@@ -1,8 +1,9 @@
 import { z } from "zod";
 import type { Peer } from "../shared/cross-daemon.shared";
-import { isAgentBusy, sendPrompt } from "./message-delivery.server";
+import { readAgentState, sendPrompt } from "./message-delivery.server";
 import type { MessageQueue } from "./message-queue.server";
 import type { PaseoCli } from "./paseo-cli.server";
+import type { WatchList } from "./watch-list.server";
 
 export interface DaemonIdentity {
   name: string;
@@ -13,6 +14,7 @@ interface ToolDependencies {
   readPeers(): Peer[];
   cli: PaseoCli;
   queue: MessageQueue;
+  watches: WatchList;
   ownDaemon(): Promise<DaemonIdentity>;
 }
 
@@ -146,20 +148,35 @@ export function createTools(deps: ToolDependencies): Tools {
       description:
         "Send a message to an agent on another Paseo daemon. If the agent is working, the message is queued " +
         "and delivered when it is idle, so its work is not interrupted.",
-      input: z.object({ daemon: daemonInput, agentId: agentIdInput, prompt: z.string().min(1) }),
-      run: async ({ daemon, agentId, prompt }, { callerAgentId }) => {
+      input: z.object({
+        daemon: daemonInput,
+        agentId: agentIdInput,
+        prompt: z.string().min(1),
+        notifyOnFinish: z
+          .boolean()
+          .default(true)
+          .describe("Be told, with its last message, when the agent finishes. The notice waits until you are idle."),
+      }),
+      run: async ({ daemon, agentId, prompt, notifyOnFinish }, { callerAgentId }) => {
         const text = composeMessage(await deps.ownDaemon(), callerAgentId, prompt);
+        const willNotify = notifyOnFinish && callerAgentId !== null;
+        const promise = willNotify ? " You will be told when it finishes." : "";
         return reachPeer(daemon, async (peer) => {
+          const queueIt = () => deps.queue.add({ peerServerId: peer.serverId, agentId, text, callerAgentId, notifyOnFinish: willNotify });
           if (deps.queue.hasPendingFor(peer.serverId, agentId)) {
-            deps.queue.add({ peerServerId: peer.serverId, agentId, text, callerAgentId });
-            return { text: `Agent ${agentId} on ${peer.name} has earlier messages waiting. Yours is queued behind them.` };
+            queueIt();
+            return { text: `Agent ${agentId} on ${peer.name} has earlier messages waiting. Yours is queued behind them.${promise}` };
           }
-          if (await isAgentBusy(deps.cli, peer.link, agentId)) {
-            deps.queue.add({ peerServerId: peer.serverId, agentId, text, callerAgentId });
-            return { text: `Agent ${agentId} on ${peer.name} is working. Your message is queued and will be delivered when it is idle.` };
+          const before = await readAgentState(deps.cli, peer, agentId);
+          if (before.busy) {
+            queueIt();
+            return { text: `Agent ${agentId} on ${peer.name} is working. Your message is queued and will be delivered when it is idle.${promise}` };
           }
-          await sendPrompt(deps.cli, peer.link, agentId, text);
-          return { text: `Sent to agent ${agentId} on ${peer.name}.` };
+          await sendPrompt(deps.cli, peer, agentId, text);
+          if (willNotify) {
+            deps.watches.add({ peerServerId: peer.serverId, agentId, callerAgentId, updatedAtBeforeSend: before.updatedAt });
+          }
+          return { text: `Sent to agent ${agentId} on ${peer.name}.${promise}` };
         });
       },
     }),

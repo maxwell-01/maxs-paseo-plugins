@@ -39,7 +39,7 @@ function startPlugin(initial: State, stored: Peer[] = [], stateDirOverride?: Pro
     before: (name: string, hook: (input: { request: unknown }) => unknown) => hooks.set(name, hook),
   } as unknown as PluginServerContext;
   const dispose = registerCrossDaemon(server, { readOwnPeer: async () => tower, stateDir: stateDirOverride ?? Promise.resolve(stateDir),
-    cli: { run: async () => "[]" },
+    cli: { run: async () => "[]", runLocal: async () => "[]" },
     ownDaemon: async () => ({ name: "tower", serverId: "srv_tower" }),
   });
   stops.push(async () => {

@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMessageQueue } from "./message-queue.server";
 import { createTools } from "./tools.server";
+import { createWatchList } from "./watch-list.server";
 
 const ownDaemon = async () => ({ name: "tower", serverId: "srv_tower" });
 const newQueue = () => createMessageQueue(mkdtempSync(join(tmpdir(), "cd-queue-")));
@@ -19,8 +20,12 @@ function toolsWith(peers: Peer[], reply: (link: string, args: readonly string[])
   const tools = createTools({
     readPeers: () => peers,
     queue: newQueue(),
+    watches: createWatchList(mkdtempSync(join(tmpdir(), "cd-watch-"))),
     ownDaemon,
     cli: {
+      async runLocal() {
+        throw new Error("no local calls expected");
+      },
       async run(link, args) {
         calls.push({ link, args: [...args] });
         const result = reply(link, args);
