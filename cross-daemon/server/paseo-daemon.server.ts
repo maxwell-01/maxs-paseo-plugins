@@ -9,7 +9,7 @@ import type { Peer } from "../shared/cross-daemon.shared";
 export interface PaseoDaemon {
   home: string;
   readOwnPeer(relayEnabled: boolean): Promise<Peer | null>;
-  readOwnServerId(): Promise<string>;
+  readOwnIdentity(): Promise<{ name: string; serverId: string }>;
 }
 
 type DaemonFunction = (...args: unknown[]) => unknown;
@@ -58,10 +58,10 @@ export async function loadPaseoDaemon(): Promise<PaseoDaemon> {
     home,
     readOwnPeer,
     // The server ID travels inside the pairing link, which Paseo builds even for a daemon whose relay is off.
-    async readOwnServerId() {
+    async readOwnIdentity() {
       const own = await readOwnPeer(true);
       if (!own) throw new Error("Paseo built no pairing link with the relay on");
-      return own.serverId;
+      return { name: own.name, serverId: own.serverId };
     },
   };
 }
@@ -70,9 +70,9 @@ const cliPackageSchema = z.object({ bin: z.object({ paseo: z.string() }) });
 
 // Run the CLI that ships with the running daemon, with the daemon's own Node, so a GUI-launched
 // daemon without paseo on its PATH can still use it.
-export function resolvePaseoCli(): PaseoCliCommand {
+export function resolvePaseoCli(home: string): PaseoCliCommand {
   const requireFromDaemon = createRequire(process.argv[1]);
   const packagePath = requireFromDaemon.resolve("@getpaseo/cli/package.json");
   const { bin } = cliPackageSchema.parse(requireFromDaemon(packagePath));
-  return { command: process.execPath, args: [join(dirname(packagePath), bin.paseo)] };
+  return { command: process.execPath, args: [join(dirname(packagePath), bin.paseo)], home };
 }

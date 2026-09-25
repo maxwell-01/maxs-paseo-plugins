@@ -5,10 +5,14 @@ import { readPrivateJson, writePrivateJson } from "./private-json.server";
 
 const queuedMessageSchema = z.object({
   id: z.string(),
-  peerServerId: z.string(),
+  // Null for an agent on this daemon: a notice to the agent that sent a message.
+  peerServerId: z.string().nullable(),
   agentId: z.string(),
   text: z.string(),
   callerAgentId: z.string().nullable(),
+  notifyOnFinish: z.boolean().default(false),
+  // Set just before a send, so a send cut off by a restart is not repeated.
+  inFlight: z.boolean().default(false),
   queuedAt: z.string(),
 });
 export type QueuedMessage = z.infer<typeof queuedMessageSchema>;
@@ -18,14 +22,18 @@ export function createMessageQueue(stateDir: string) {
   const list = (): QueuedMessage[] => readPrivateJson(queueFile, z.array(queuedMessageSchema), []);
   return {
     list,
-    add(message: Omit<QueuedMessage, "id" | "queuedAt">): void {
-      writePrivateJson(queueFile, [...list(), { ...message, id: randomUUID(), queuedAt: new Date().toISOString() }]);
+    add(message: Omit<QueuedMessage, "id" | "queuedAt" | "notifyOnFinish" | "inFlight"> & { notifyOnFinish?: boolean }, queuedAt: Date): void {
+      const queued = { notifyOnFinish: false, ...message, id: randomUUID(), queuedAt: queuedAt.toISOString(), inFlight: false };
+      writePrivateJson(queueFile, [...list(), queued]);
     },
     remove(id: string): void {
       writePrivateJson(queueFile, list().filter((message) => message.id !== id));
     },
-    hasPendingFor(peerServerId: string, agentId: string): boolean {
-      return list().some((message) => message.peerServerId === peerServerId && message.agentId === agentId);
+    setInFlight(id: string, inFlight: boolean): void {
+      writePrivateJson(queueFile, list().map((message) => (message.id === id ? { ...message, inFlight } : message)));
+    },
+    countPendingFor(peerServerId: string | null, agentId: string): number {
+      return list().filter((message) => message.peerServerId === peerServerId && message.agentId === agentId).length;
     },
   };
 }

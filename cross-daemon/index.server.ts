@@ -1,5 +1,4 @@
 import type { PluginServerContext } from "@getpaseo/plugin/server";
-import { hostname } from "node:os";
 import { join } from "node:path";
 import { registerCrossDaemon } from "./server/cross-daemon.server";
 import { createPaseoCli } from "./server/paseo-cli.server";
@@ -11,7 +10,10 @@ export default function contribute(server: PluginServerContext) {
     readOwnPeer: async (relayEnabled) => (await daemon).readOwnPeer(relayEnabled),
     stateDir: daemon.then(({ home }) => join(home, "plugin-data", "cross-daemon")),
     // Found per call, so a daemon without the CLI still runs the switch and the sync.
-    cli: { run: async (link, args, options) => createPaseoCli(resolvePaseoCli()).run(link, args, options) },
-    ownDaemon: async () => ({ name: hostname(), serverId: await (await daemon).readOwnServerId() }),
+    cli: {
+      run: async (link, args, options) => createPaseoCli(resolvePaseoCli((await daemon).home)).run(link, args, options),
+      runLocal: async (args, options) => createPaseoCli(resolvePaseoCli((await daemon).home)).runLocal(args, options),
+    },
+    ownDaemon: async () => (await daemon).readOwnIdentity(),
   });
 }

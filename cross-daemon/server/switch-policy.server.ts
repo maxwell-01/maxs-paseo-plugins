@@ -5,7 +5,7 @@ export function isSwitchedOn(state: PluginSettingsState<typeof crossDaemonSettin
   return state.status === "ready" && state.values.enabled;
 }
 
-interface PeerUpdate {
+interface StoredPeerUpdate {
   switchedOn: boolean;
   ownServerId: string | null;
   stored: readonly Peer[];
@@ -15,7 +15,7 @@ interface PeerUpdate {
 
 // A daemon that did not answer this sync may be asleep or still connecting, so its stored link stays
 // until it answers switched off.
-export function peersToStore(update: PeerUpdate): Peer[] {
+export function peersToStore(update: StoredPeerUpdate): Peer[] {
   if (!update.switchedOn) return [];
   const answered = new Set([...update.answeredServerIds, ...update.peers.map((peer) => peer.serverId)]);
   const silent = update.stored.filter((peer) => !answered.has(peer.serverId));

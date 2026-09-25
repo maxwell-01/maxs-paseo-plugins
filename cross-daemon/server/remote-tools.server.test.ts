@@ -4,10 +4,11 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMessageQueue } from "./message-queue.server";
+import { createMessenger } from "./messenger.server";
 import { createTools } from "./tools.server";
+import { createWatchList } from "./watch-list.server";
 
 const ownDaemon = async () => ({ name: "tower", serverId: "srv_tower" });
-const newQueue = () => createMessageQueue(mkdtempSync(join(tmpdir(), "cd-queue-")));
 
 const mac: Peer = { serverId: "srv_mac", name: "mac", link: "https://app.paseo.sh/#offer=bWFj" };
 const laptopA: Peer = { serverId: "srv_a", name: "laptop", link: "https://app.paseo.sh/#offer=YQ" };
@@ -18,9 +19,17 @@ function toolsWith(peers: Peer[], reply: (link: string, args: readonly string[])
   const calls: { link: string; args: string[] }[] = [];
   const tools = createTools({
     readPeers: () => peers,
-    queue: newQueue(),
+    messenger: createMessenger({
+      queue: createMessageQueue(mkdtempSync(join(tmpdir(), "cd-queue-"))),
+      watches: createWatchList(mkdtempSync(join(tmpdir(), "cd-watch-"))),
+      readPeers: () => peers,
+      cli: { run: async () => "", runLocal: async () => "" },
+    }),
     ownDaemon,
     cli: {
+      async runLocal() {
+        throw new Error("no local calls expected");
+      },
       async run(link, args) {
         calls.push({ link, args: [...args] });
         const result = reply(link, args);

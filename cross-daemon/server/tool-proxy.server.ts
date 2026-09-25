@@ -1,8 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { OWNER_ONLY_DIR } from "./private-json.server";
 import type { ToolDefinition } from "./tools.server";
 
-const OWNER_ONLY_DIR = 0o700;
 const PROXY_FILE = "tool-proxy.cjs";
 
 // The MCP server an agent's provider launches. It lists its tools itself and forwards each call to the
@@ -13,7 +13,8 @@ function toolProxyMain(settings: { socketPath: string; tools: unknown[] }): void
   const net: typeof import("node:net") = require("node:net");
   const readline: typeof import("node:readline") = require("node:readline");
   const callerAgentId = process.env.PASEO_AGENT_ID ?? null;
-  const pluginTimeoutMs = 120_000;
+  // Above a send's worst case: three CLI calls of up to 90 s each, plus waiting for another send.
+  const pluginTimeoutMs = 360_000;
 
   const askPlugin = (request: object) =>
     new Promise<Record<string, unknown>>((resolve) => {
@@ -22,7 +23,7 @@ function toolProxyMain(settings: { socketPath: string; tools: unknown[] }): void
       socket.setEncoding("utf8");
       socket.setTimeout(pluginTimeoutMs, () => {
         socket.destroy();
-        resolve({ error: `The cross-daemon plugin did not answer within ${pluginTimeoutMs / 1000} s` });
+        resolve({ error: `The cross-daemon plugin did not answer within ${pluginTimeoutMs / 1000} s. A message may still be delivered; check before sending again.` });
       });
       socket.on("data", (chunk: string) => {
         reply += chunk;

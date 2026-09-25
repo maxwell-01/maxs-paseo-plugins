@@ -1,4 +1,4 @@
-import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -8,7 +8,7 @@ function fakePaseo(body: string, timeoutMs?: number) {
   const script = join(mkdtempSync(join(tmpdir(), "cd-cli-")), "paseo.mjs");
   writeFileSync(script, body);
   chmodSync(script, 0o755);
-  return createPaseoCli({ command: process.execPath, args: [script] }, timeoutMs);
+  return createPaseoCli({ command: process.execPath, args: [script], home: "/tmp/paseo-home" }, timeoutMs);
 }
 
 describe("createPaseoCli", () => {
@@ -45,5 +45,25 @@ describe("createPaseoCli", () => {
   it("fails with the CLI's error output", async () => {
     const cli = fakePaseo('process.stderr.write("Agent not found: abc"); process.exit(1);');
     await expect(cli.run("https://app.paseo.sh/#offer=bWFj", ["logs", "abc"])).rejects.toThrow("Agent not found: abc");
+  });
+});
+
+describe("prompts passed through a file", () => {
+  it("passes the prompt in a file, keeps it out of the arguments, and removes the file afterwards", async () => {
+    const cli = fakePaseo(
+      'import { readFileSync, existsSync } from "node:fs"; const args = process.argv.slice(2); const file = args[args.indexOf("--prompt-file") + 1]; process.stdout.write(JSON.stringify({ args, text: readFileSync(file, "utf8"), file }));',
+    );
+    const output = JSON.parse(await cli.run("https://app.paseo.sh/#offer=bWFj", ["send", "a1"], { promptText: "--home /etc secret plan" }));
+    expect(output.text).toBe("--home /etc secret plan");
+    expect(output.args.join(" ")).not.toContain("secret plan");
+    expect(existsSync(output.file)).toBe(false);
+  });
+
+  it("removes the prompt file when the call fails", async () => {
+    const cli = fakePaseo(
+      'const args = process.argv.slice(2); process.stderr.write(args[args.indexOf("--prompt-file") + 1]); process.exit(1);',
+    );
+    const error = await cli.run("https://app.paseo.sh/#offer=bWFj", ["send", "a1"], { promptText: "hi" }).catch((failure: Error) => failure);
+    expect(existsSync(String(error instanceof Error ? error.message : ""))).toBe(false);
   });
 });
