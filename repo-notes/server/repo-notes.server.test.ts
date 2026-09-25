@@ -20,14 +20,19 @@ function tempDir(): string {
 
 function startPlugin(notesDir: Promise<string>) {
   const hooks = new Map<string, (input: { request: unknown }) => unknown>();
+  const handlers = new Map<string, (input: unknown) => unknown>();
   const server = {
+    handle: (contract: { name: string }, handler: (input: unknown) => unknown) => handlers.set(contract.name, handler),
     before: (name: string, hook: (input: { request: unknown }) => unknown) => {
       hooks.set(name, hook);
       return () => hooks.delete(name);
     },
   } as unknown as PluginServerContext;
   registerRepoNotes(server, { notesDir });
-  return { createAgent: async (config: object) => hooks.get("agent.create")!({ request: { config } }) };
+  return {
+    createAgent: async (config: object) => hooks.get("agent.create")!({ request: { config } }),
+    call: async (name: string, input: unknown) => handlers.get(name)!(input),
+  };
 }
 
 function cloneOfMyStuff(): string {
@@ -79,5 +84,20 @@ describe("registerRepoNotes", () => {
     const request = { config: { provider: "claude", cwd: cloneOfMyStuff() } };
     expect(await startPlugin(Promise.resolve(notesDir)).createAgent(request.config)).toEqual(request);
     expect(logError).toHaveBeenCalledWith("repo-notes: gave a new agent no notes", expect.any(Error));
+  });
+});
+
+describe("sync RPCs", () => {
+  it("gives a note written through one daemon's RPC to a new agent there", async () => {
+    const plugin = startPlugin(Promise.resolve(tempDir()));
+    await plugin.call("repo-notes.write", { key: "github.com/maxwell-01/mystuff", content: "Squash on merge.", modifiedAt: 1_750_000_000_000, expectedHash: null });
+
+    expect(await plugin.call("repo-notes.list", {})).toMatchObject({ notes: [{ key: "github.com/maxwell-01/mystuff", modifiedAt: 1_750_000_000_000 }] });
+    expect(await plugin.call("repo-notes.read", { key: "github.com/maxwell-01/mystuff" })).toMatchObject({
+      notes: { content: "Squash on merge.", modifiedAt: 1_750_000_000_000 },
+    });
+    expect(await plugin.call("repo-notes.read", { key: "github.com/x/none" })).toEqual({ notes: null });
+    const created = await plugin.createAgent({ provider: "claude", cwd: cloneOfMyStuff() });
+    expect(created).toMatchObject({ config: { systemPrompt: expect.stringContaining("Squash on merge.") } });
   });
 });

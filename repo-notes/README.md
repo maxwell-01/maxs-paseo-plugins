@@ -17,7 +17,12 @@ The key is in lower case, because GitHub ignores case. Every clone and worktree 
 A remote that uses an SSH alias, such as `gh-work:owner/repo`, gets its own key under that alias.
 
 Write the file yourself, or ask an agent: "add to my notes for this repo: ...". The file is never
-committed anywhere.
+committed anywhere. Keep it a plain file: a symlink is replaced by a copy when notes arrive from
+another daemon.
+
+Before notes from another daemon replace yours, your old text is kept beside them as
+`AGENTS.md.replaced`. There is one such copy per repo. To go back to it, copy its text into
+`AGENTS.md` and save; renaming the file keeps its old time, so the next sync would replace it again.
 
 ## What an agent gets
 
