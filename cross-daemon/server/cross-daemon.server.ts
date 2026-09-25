@@ -13,26 +13,32 @@ interface CrossDaemonDependencies {
   stateDir: Promise<string>;
 }
 
-async function startToolServer(stateDir: string) {
-  const peers = createPeerStore(stateDir);
+function startToolServer(stateDir: string, peers: ReturnType<typeof createPeerStore>) {
   const tools = createTools({ readPeers: () => peers.read() });
   const socketPath = join(stateDir, "tools.sock");
   const stopServing = serveTools(socketPath, tools);
-  const launch = { command: process.execPath, proxyPath: installToolProxy(stateDir), socketPath };
-  return { peers, toolNames: tools.definitions.map((tool) => tool.name), launch, stopServing };
+  const proxyPath = installToolProxy(stateDir, { socketPath, tools: tools.definitions });
+  return { launch: { command: process.execPath, proxyPath }, toolNames: tools.definitions.map((tool) => tool.name), stopServing };
 }
 
 export function registerCrossDaemon(server: PluginServerContext, { readOwnPeer, stateDir }: CrossDaemonDependencies) {
   const settings = server.registerSettings(crossDaemonSettings);
-  const toolServer = stateDir.then(startToolServer);
+  const peerStore = stateDir.then(createPeerStore);
+  const toolServer = Promise.all([stateDir, peerStore]).then(([dir, peers]) => startToolServer(dir, peers));
+  toolServer.catch((error: unknown) => console.error("cross-daemon: the tool server did not start", error));
   const clearPeersUnlessSwitchedOn = async () => {
-    const { peers } = await toolServer;
+    const peers = await peerStore;
     if (!isSwitchedOn(await settings.read())) peers.write([]);
   };
 
+  // A plugin fault must not stop agents being created: they start without the cross-daemon tools.
   server.before("agent.create", async ({ request }) => {
-    const { launch, toolNames } = await toolServer;
-    return { ...request, config: withCrossDaemonTools(request.config, launch, toolNames) };
+    try {
+      const { launch, toolNames } = await toolServer;
+      return { ...request, config: withCrossDaemonTools(request.config, launch, toolNames) };
+    } catch {
+      return request;
+    }
   });
 
   server.handle(describeDaemon, async (_input, { paseo }) => {
@@ -42,7 +48,7 @@ export function registerCrossDaemon(server: PluginServerContext, { readOwnPeer, 
   });
 
   server.handle(setPeers, async (input, { paseo }) => {
-    const { peers } = await toolServer;
+    const peers = await peerStore;
     const { config } = await paseo.config.get();
     const own = await readOwnPeer(config.relay?.enabled === true);
     // Read the switch last, so a switch-off that lands during the awaits above is not overwritten.
@@ -52,7 +58,7 @@ export function registerCrossDaemon(server: PluginServerContext, { readOwnPeer, 
     return { stored: next.length };
   });
 
-  server.handle(listPeerNames, async () => ({ names: (await toolServer).peers.read().map((peer) => peer.name) }));
+  server.handle(listPeerNames, async () => ({ names: (await peerStore).read().map((peer) => peer.name) }));
 
   clearPeersUnlessSwitchedOn().catch((error: unknown) => console.error("cross-daemon: could not clear peers at start", error));
   const unsubscribe = settings.subscribe(clearPeersUnlessSwitchedOn);

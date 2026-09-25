@@ -1,19 +1,22 @@
-import { chmodSync, rmSync } from "node:fs";
+import { chmodSync, mkdirSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
+import { dirname } from "node:path";
 import { z } from "zod";
 import type { Tools } from "./tools.server";
 
-const OWNER_ONLY = 0o600;
+const OWNER_ONLY_FILE = 0o600;
+const OWNER_ONLY_DIR = 0o700;
 
-const toolRequestSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("list") }),
-  z.object({ type: z.literal("call"), name: z.string(), arguments: z.unknown(), callerAgentId: z.string().nullable() }),
-]);
+const toolCallSchema = z.object({
+  type: z.literal("call"),
+  name: z.string(),
+  arguments: z.unknown(),
+  callerAgentId: z.string().nullable(),
+});
 
 async function answer(tools: Tools, body: string): Promise<unknown> {
-  const request = toolRequestSchema.safeParse(JSON.parse(body));
+  const request = toolCallSchema.safeParse(JSON.parse(body));
   if (!request.success) return { error: `Malformed tool request: ${z.prettifyError(request.error)}` };
-  if (request.data.type === "list") return { tools: tools.definitions };
   try {
     return await tools.call(request.data.name, request.data.arguments ?? {}, { callerAgentId: request.data.callerAgentId });
   } catch (error) {
@@ -24,6 +27,7 @@ async function answer(tools: Tools, body: string): Promise<unknown> {
 // One request per connection: the tool proxy writes a JSON request and half-closes; the reply is
 // the whole response stream.
 export function serveTools(socketPath: string, tools: Tools): () => void {
+  mkdirSync(dirname(socketPath), { recursive: true, mode: OWNER_ONLY_DIR });
   rmSync(socketPath, { force: true });
   const server = createServer({ allowHalfOpen: true }, (socket) => {
     let body = "";
@@ -38,7 +42,8 @@ export function serveTools(socketPath: string, tools: Tools): () => void {
     });
     socket.on("error", (error) => console.warn("cross-daemon: tool connection failed", error));
   });
-  server.listen(socketPath, () => chmodSync(socketPath, OWNER_ONLY));
+  server.on("error", (error) => console.error("cross-daemon: the tool socket failed", error));
+  server.listen(socketPath, () => chmodSync(socketPath, OWNER_ONLY_FILE));
   return () => {
     server.close();
     rmSync(socketPath, { force: true });

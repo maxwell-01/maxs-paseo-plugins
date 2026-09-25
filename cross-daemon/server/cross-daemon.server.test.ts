@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { PluginServerContext, PluginSettingsState } from "@getpaseo/plugin/server";
 import type { PaseoApi } from "@getpaseo/client";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Peer } from "../shared/cross-daemon.shared";
 import { registerCrossDaemon } from "./cross-daemon.server";
 
@@ -15,7 +15,7 @@ const on: State = { status: "ready", revision: "r1", values: { enabled: true } }
 const off: State = { status: "ready", revision: "r2", values: { enabled: false } };
 const invalid: State = { status: "invalid", revision: "r3", error: "schema version 9 is newer" };
 
-function startPlugin(initial: State, stored: Peer[] = []) {
+function startPlugin(initial: State, stored: Peer[] = [], stateDirOverride?: Promise<string>) {
   const stateDir = join(mkdtempSync(join(tmpdir(), "cd-")), "cross-daemon");
   mkdirSync(stateDir, { recursive: true });
   writeFileSync(join(stateDir, "peers.json"), JSON.stringify(stored));
@@ -38,8 +38,10 @@ function startPlugin(initial: State, stored: Peer[] = []) {
     on: () => () => {},
     before: (name: string, hook: (input: { request: unknown }) => unknown) => hooks.set(name, hook),
   } as unknown as PluginServerContext;
-  const dispose = registerCrossDaemon(server, { readOwnPeer: async () => tower, stateDir: Promise.resolve(stateDir) });
-  stops.push(async () => (await dispose)());
+  const dispose = registerCrossDaemon(server, { readOwnPeer: async () => tower, stateDir: stateDirOverride ?? Promise.resolve(stateDir) });
+  stops.push(async () => {
+    await dispose().catch(() => {});
+  });
   return {
     storedPeers: () => JSON.parse(readFileSync(join(stateDir, "peers.json"), "utf8")),
     call: async (name: string, input: unknown = {}) => handlers.get(name)!(input),
@@ -135,10 +137,16 @@ describe("agent tools", () => {
           "cross-daemon": {
             command: process.execPath,
             args: [join(plugin.stateDir, "tool-proxy.cjs")],
-            env: { CROSS_DAEMON_TOOL_SOCKET: join(plugin.stateDir, "tools.sock") },
           },
         },
       },
     });
+  });
+
+  it("still creates agents, without the tools, when the tool server cannot start", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const plugin = startPlugin(off, [], Promise.reject(new Error("disk full")));
+    const request = { config: { provider: "claude", cwd: "/repo" } };
+    await expect(plugin.createAgent(request.config)).resolves.toEqual(request);
   });
 });

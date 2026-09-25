@@ -27,3 +27,16 @@ Each daemon gives its own relay pairing link, the same as `paseo pair`, only whi
 on. A pairing link grants full control of that daemon. Peers are stored owner-only in
 `$PASEO_HOME/plugin-data/cross-daemon/`, which keeps other users out but not the daemon's own
 agents: they run as the same user. The cross-daemon tools never print a link.
+
+## Agent tools
+
+Every new Claude, Codex or OpenCode agent on a daemon with the plugin gets a `cross-daemon` MCP
+server. Other providers are left unchanged: Paseo refuses to create them with MCP servers or tool
+approvals. Claude and Codex agents get the tools pre-approved; OpenCode does not, because a tool
+policy turns off its auto-accept.
+
+An agent keeps the tools it was created with. Agents created before the plugin, or before an
+update that adds a tool, do not see the new tools.
+
+Codex does not pass `PASEO_AGENT_ID` to MCP servers, so a message from a Codex agent cannot say
+which agent sent it, and the receiver cannot reply to it.

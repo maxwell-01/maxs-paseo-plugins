@@ -15,35 +15,39 @@ const echoTools: Tools = {
   },
 };
 
-function startProxy(proxyPath: string, socketPath: string, agentId: string) {
-  const child = spawn(process.execPath, [proxyPath], {
-    env: { ...process.env, CROSS_DAEMON_TOOL_SOCKET: socketPath, PASEO_AGENT_ID: agentId },
-  });
+function startProxy(proxyPath: string, agentId: string) {
+  const child = spawn(process.execPath, [proxyPath], { env: { ...process.env, PASEO_AGENT_ID: agentId } });
   const replies = createInterface({ input: child.stdout });
-  const pending = new Map<number, (reply: unknown) => void>();
+  const pending = new Map<number, (reply: any) => void>();
   replies.on("line", (line) => {
     const reply = JSON.parse(line);
     pending.get(reply.id)?.(reply);
   });
   let nextId = 1;
   const request = (method: string, params: unknown = {}) =>
-    new Promise<any>((resolve) => {
+    new Promise<{ result?: any; error?: { code: number; message: string } }>((resolve) => {
       const id = nextId++;
       pending.set(id, resolve);
       child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
     });
-  return { child, request };
+  const sendRaw = (line: string) =>
+    new Promise<any>((resolve) => {
+      pending.set(-1, resolve);
+      replies.once("line", (reply) => resolve(JSON.parse(reply)));
+      child.stdin.write(`${line}\n`);
+    });
+  return { child, request, sendRaw };
 }
 
 describe("tool proxy started by an agent", () => {
   const stops: (() => void)[] = [];
   afterEach(() => stops.splice(0).forEach((stop) => stop()));
 
-  it("forwards tool listing and calls to the plugin, naming the calling agent", async () => {
+  it("lists its tools and forwards calls to the plugin, naming the calling agent", async () => {
     const dir = mkdtempSync(join(tmpdir(), "cd-"));
     const socketPath = join(dir, "tools.sock");
     stops.push(serveTools(socketPath, echoTools));
-    const proxy = startProxy(installToolProxy(dir), socketPath, "agent-7");
+    const proxy = startProxy(installToolProxy(dir, { socketPath, tools: echoTools.definitions }), "agent-7");
     stops.push(() => proxy.child.kill());
 
     const init = await proxy.request("initialize", { protocolVersion: "2025-06-18" });
@@ -60,10 +64,22 @@ describe("tool proxy started by an agent", () => {
 
   it("reports an error to the agent when the plugin is not running", async () => {
     const dir = mkdtempSync(join(tmpdir(), "cd-"));
-    const proxy = startProxy(installToolProxy(dir), join(dir, "missing.sock"), "agent-7");
+    const proxy = startProxy(installToolProxy(dir, { socketPath: join(dir, "missing.sock"), tools: echoTools.definitions }), "agent-7");
     stops.push(() => proxy.child.kill());
+    const list = await proxy.request("tools/list");
+    expect(list.result.tools.map((tool: { name: string }) => tool.name)).toEqual(["echo"]);
     const call = await proxy.request("tools/call", { name: "echo", arguments: {} });
     expect(call.result.isError).toBe(true);
     expect(call.result.content[0].text).toContain("cross-daemon plugin is not running");
+  });
+
+  it("answers a line that is not JSON with a parse error instead of dying", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "cd-"));
+    const proxy = startProxy(installToolProxy(dir, { socketPath: join(dir, "missing.sock"), tools: [] }), "agent-7");
+    stops.push(() => proxy.child.kill());
+    expect(await proxy.sendRaw("not json")).toMatchObject({ id: null, error: { code: -32700 } });
+    expect(await proxy.sendRaw("null")).toMatchObject({ id: null, error: { code: -32600 } });
+    const ping = await proxy.request("ping");
+    expect(ping.result).toEqual({});
   });
 });
