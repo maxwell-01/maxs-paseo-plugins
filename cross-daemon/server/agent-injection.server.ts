@@ -1,4 +1,7 @@
-import type { AgentSessionConfig } from "@getpaseo/protocol/agent-types";
+import type { PluginBeforeRequests } from "@getpaseo/plugin/server";
+
+// Paseo compiles plugins against the SDK only, so the config type comes from there, not @getpaseo/protocol.
+type AgentSessionConfig = PluginBeforeRequests["agent.create"]["config"];
 
 const TOOL_SERVER_NAME = "cross-daemon";
 // Paseo refuses to create an agent with MCP servers or tool approvals on providers without them.
