@@ -13,6 +13,8 @@ describe("parseRepoKey", () => {
     ["git@github.com:maxwell-01/myStuff.git", "github.com/maxwell-01/mystuff"],
     ["ssh://git@gitlab.example.com:2222/group/sub/app.git", "gitlab.example.com/group/sub/app"],
     ["https://github.com/maxwell-01/myStuff/", "github.com/maxwell-01/mystuff"],
+    ["github.com:maxwell-01/myStuff.git", "github.com/maxwell-01/mystuff"],
+    ["git@github.com:maxwell-01/myStuff.GIT", "github.com/maxwell-01/mystuff"],
   ])("gives %s the key %s, so every clone of one repo shares its notes", (url, key) => {
     expect(parseRepoKey(url)).toBe(key);
   });
@@ -21,7 +23,7 @@ describe("parseRepoKey", () => {
     expect(parseRepoKey("https://GitHub.com/Maxwell-01/MYSTUFF.git")).toBe(parseRepoKey("git@github.com:maxwell-01/myStuff.git"));
   });
 
-  it.each(["/srv/git/app.git", "https://github.com/only-owner", "file:///srv/git/app.git", "git@github.com:a/..", ""])(
+  it.each(["/srv/git/app.git", "https://github.com/only-owner", "file:///srv/git/app.git", "git@github.com:a/..", "C:/src/app", "git@github.com:owner/repo.", ""])(
     "gives no key for %j, which has no host and repo or could leave the notes folder",
     (url) => {
       expect(parseRepoKey(url)).toBeNull();

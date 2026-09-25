@@ -22,7 +22,21 @@ function describeNotes({ key, path, notes }: RepoNotes): string {
   ].join("\n\n");
 }
 
+const SECTION_START = "<repo-notes>";
+const SECTION_END = "</repo-notes>";
+const NOTES_SECTION = /\s*<repo-notes>[\s\S]*?<\/repo-notes>/g;
+
+// Paseo copies a parent agent's system prompt into its child agents and schedules, so a prompt can
+// arrive with notes already in it.
+export function withoutRepoNotes(config: AgentSessionConfig): AgentSessionConfig {
+  if (!config.systemPrompt?.includes(SECTION_START)) return config;
+  const ownPrompt = config.systemPrompt.replace(NOTES_SECTION, "").trim();
+  const { systemPrompt: _inherited, ...rest } = config;
+  return ownPrompt === "" ? rest : { ...rest, systemPrompt: ownPrompt };
+}
+
 export function withRepoNotes(config: AgentSessionConfig, repo: RepoNotes): AgentSessionConfig {
-  const section = describeNotes(repo);
-  return { ...config, systemPrompt: config.systemPrompt ? `${config.systemPrompt}\n\n${section}` : section };
+  const section = `${SECTION_START}\n${describeNotes(repo)}\n${SECTION_END}`;
+  const { systemPrompt } = withoutRepoNotes(config);
+  return { ...config, systemPrompt: systemPrompt ? `${systemPrompt}\n\n${section}` : section };
 }

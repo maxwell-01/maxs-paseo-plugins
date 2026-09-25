@@ -3,11 +3,12 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { PluginServerContext } from "@getpaseo/plugin/server";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { registerRepoNotes } from "./repo-notes.server";
 
 const dirs: string[] = [];
 afterEach(() => {
+  vi.restoreAllMocks();
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
@@ -55,8 +56,28 @@ describe("registerRepoNotes", () => {
   });
 
   it("still lets the agent start, without notes, when the plugin cannot find its notes folder", async () => {
+    const logError = vi.spyOn(console, "error").mockImplementation(() => {});
     const request = { config: { provider: "claude", cwd: cloneOfMyStuff() } };
     const plugin = startPlugin(Promise.reject(new Error("Paseo home not found")));
     expect(await plugin.createAgent(request.config)).toEqual(request);
+    expect(logError).toHaveBeenCalledWith("repo-notes: gave a new agent no notes", expect.any(Error));
+  });
+
+  it("still lets the agent start, without notes, when git fails in its folder", async () => {
+    const logError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const request = { config: { provider: "claude", cwd: join(tempDir(), "missing") } };
+    expect(await startPlugin(Promise.resolve(tempDir())).createAgent(request.config)).toEqual(request);
+    expect(logError).toHaveBeenCalledWith("repo-notes: gave a new agent no notes", expect.any(Error));
+  });
+
+  it("gives no notes, and logs it, when the notes file is too large for a prompt", async () => {
+    const logError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const notesDir = tempDir();
+    const notesFolder = join(notesDir, "repos", "github.com", "maxwell-01", "mystuff");
+    mkdirSync(notesFolder, { recursive: true });
+    writeFileSync(join(notesFolder, "AGENTS.md"), "x".repeat(100_001));
+    const request = { config: { provider: "claude", cwd: cloneOfMyStuff() } };
+    expect(await startPlugin(Promise.resolve(notesDir)).createAgent(request.config)).toEqual(request);
+    expect(logError).toHaveBeenCalledWith("repo-notes: gave a new agent no notes", expect.any(Error));
   });
 });
