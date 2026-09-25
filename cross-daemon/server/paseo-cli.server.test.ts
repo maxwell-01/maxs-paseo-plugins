@@ -4,11 +4,11 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createPaseoCli } from "./paseo-cli.server";
 
-function fakePaseo(body: string) {
+function fakePaseo(body: string, timeoutMs?: number) {
   const script = join(mkdtempSync(join(tmpdir(), "cd-cli-")), "paseo.mjs");
   writeFileSync(script, body);
   chmodSync(script, 0o755);
-  return createPaseoCli({ command: process.execPath, args: [script] });
+  return createPaseoCli({ command: process.execPath, args: [script] }, timeoutMs);
 }
 
 describe("createPaseoCli", () => {
@@ -19,13 +19,20 @@ describe("createPaseoCli", () => {
   });
 
   it("does not hand this daemon's password to another daemon", async () => {
+    const saved = process.env.PASEO_PASSWORD;
     process.env.PASEO_PASSWORD = "local-secret";
     const cli = fakePaseo("process.stdout.write(String(process.env.PASEO_PASSWORD));");
     try {
       await expect(cli.run("https://app.paseo.sh/#offer=bWFj", [])).resolves.toBe("undefined");
     } finally {
-      delete process.env.PASEO_PASSWORD;
+      if (saved === undefined) delete process.env.PASEO_PASSWORD;
+      else process.env.PASEO_PASSWORD = saved;
     }
+  });
+
+  it("says a call timed out when it had to be stopped", async () => {
+    const cli = fakePaseo("setTimeout(() => {}, 10_000);", 200);
+    await expect(cli.run("https://app.paseo.sh/#offer=bWFj", [])).rejects.toThrow("timed out after 0.2 s");
   });
 
   it("fails with the CLI's error output", async () => {

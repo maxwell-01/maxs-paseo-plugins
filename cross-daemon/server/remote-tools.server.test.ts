@@ -60,20 +60,31 @@ describe("tools that reach another daemon", () => {
   it("refuses a daemon that is not a switched-on peer", async () => {
     const { tools, calls } = toolsWith([mac]);
     const result = await tools.call("list_agents", { daemon: "tower" }, caller);
-    expect(result).toEqual({ text: 'No reachable daemon is named "tower". Reachable: mac (srv_mac).', isError: true });
+    expect(result).toEqual({ text: 'No reachable daemon has the name or ID "tower". Reachable: mac (srv_mac).', isError: true });
     expect(calls).toEqual([]);
   });
 
   it("rejects an agent ID that the CLI could read as an option", async () => {
     const { tools, calls } = toolsWith([mac]);
-    const result = await tools.call("get_agent_activity", { daemon: "mac", agentId: "--home=/tmp" }, caller);
-    expect(result.isError).toBe(true);
+    for (const agentId of ["--help", "-f"]) {
+      const result = await tools.call("get_agent_activity", { daemon: "mac", agentId }, caller);
+      expect(result.isError).toBe(true);
+    }
     expect(calls).toEqual([]);
   });
 
-  it("reports a failed call without revealing the daemon's link", async () => {
-    const { tools } = toolsWith([mac], (link) => new Error(`connect failed for ${link}`));
+  it("reports an unreachable daemon without revealing its link", async () => {
+    const { tools } = toolsWith([mac], (link) => new Error(`Cannot connect to daemon at ${link}: Connection timed out`));
     const result = await tools.call("list_agents", { daemon: "mac" }, caller);
-    expect(result).toEqual({ text: "Could not reach mac: connect failed for <link to mac>", isError: true });
+    expect(result).toEqual({
+      text: "Could not reach mac: Cannot connect to daemon at <link to mac>: Connection timed out",
+      isError: true,
+    });
+  });
+
+  it("does not blame the connection when the daemon answered with an error", async () => {
+    const { tools } = toolsWith([mac], () => new Error("No agent found matching: abc"));
+    const result = await tools.call("get_agent_activity", { daemon: "mac", agentId: "abc" }, caller);
+    expect(result).toEqual({ text: "paseo on mac failed: No agent found matching: abc", isError: true });
   });
 });

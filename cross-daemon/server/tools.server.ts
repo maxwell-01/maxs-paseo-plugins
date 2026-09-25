@@ -49,11 +49,12 @@ const NO_PEERS =
   "settings of this daemon and at least one other, then keep the app open until they sync.";
 
 const DEFAULT_ACTIVITY_ENTRIES = 30;
+const UNREACHABLE = /cannot connect|timed out|unreachable|ECONNREFUSED/i;
 
 const daemonInput = z.string().min(1).describe("The daemon's name or server ID, from list_daemons.");
 const agentIdInput = z
   .string()
-  .regex(/^[A-Za-z0-9_-]+$/, "an agent ID or its prefix")
+  .regex(/^[A-Za-z0-9][A-Za-z0-9_-]*$/, "an agent ID or its prefix")
   .describe("The agent's ID or ID prefix, from list_agents.");
 
 function findPeer(peers: readonly Peer[], ref: string): Peer | string {
@@ -65,7 +66,7 @@ function findPeer(peers: readonly Peer[], ref: string): Peer | string {
     return `Two or more daemons are named "${ref}". Use a server ID: ${byName.map((peer) => peer.serverId).join(", ")}.`;
   }
   const reachable = peers.map((peer) => `${peer.name} (${peer.serverId})`).join(", ") || "none";
-  return `No reachable daemon is named "${ref}". Reachable: ${reachable}.`;
+  return `No reachable daemon has the name or ID "${ref}". Reachable: ${reachable}.`;
 }
 
 export function createTools(deps: { readPeers(): Peer[]; cli: PaseoCli }): Tools {
@@ -75,8 +76,9 @@ export function createTools(deps: { readPeers(): Peer[]; cli: PaseoCli }): Tools
     try {
       return { text: await deps.cli.run(peer.link, args) };
     } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error);
-      return { text: `Could not reach ${peer.name}: ${reason.replaceAll(peer.link, `<link to ${peer.name}>`)}`, isError: true };
+      const reason = (error instanceof Error ? error.message : String(error)).replaceAll(peer.link, `<link to ${peer.name}>`);
+      const prefix = UNREACHABLE.test(reason) ? `Could not reach ${peer.name}` : `paseo on ${peer.name} failed`;
+      return { text: `${prefix}: ${reason}`, isError: true };
     }
   };
 
