@@ -1,7 +1,8 @@
 # Repo notes
 
 A [Paseo](https://paseo.sh) plugin that gives every new agent your own notes for its repo: how you
-like to work there, kept out of the repo. Requires **Paseo 0.9.2 or newer**.
+like to work there, kept out of the repo and the same on every daemon. Requires **Paseo 0.9.2 or
+newer**, installed on every daemon that shares notes.
 
 ## Where the notes are
 
@@ -38,7 +39,31 @@ A notes file larger than 100 KB is not given to agents; the plugin logs it.
 An agent in a folder with no `origin` remote gets nothing. If the plugin fails, the agent still
 starts, without notes, and the fault is in `paseo plugin logs repo-notes`.
 
+## Sync between daemons
+
+While the app is open, it syncs every host that has the plugin: at connect and every minute. For
+each repo, the most recently changed notes, by each daemon's own clock, win and go to every other
+daemon, with their change time. If two daemons have the same change time, the same one wins
+everywhere.
+
+The app is the only party that can reach every daemon, so notes move only while it is open. A
+daemon that does not answer in 10 seconds, for example a sleeping Mac, is left out and catches up
+at a later sync.
+
+A sync never overwrites notes that changed on a daemon after the sync listed them; they are compared
+again at the next sync. Notes with a change time more than five minutes in the future are refused,
+and a notes file over 100 KB is neither synced nor replaced. Sync faults show in the app's console
+and in `paseo plugin logs repo-notes`.
+
+Notes you write on one daemon go into the prompts of agents on every daemon, so install the plugin
+only on daemons you trust.
+
+Deleting a notes file does not delete it on other daemons: the next sync brings it back. Empty the
+file instead.
+
 ## Install
+
+Install it on every daemon that shares notes:
 
 ```bash
 paseo plugin install https://github.com/maxwell-01/maxs-paseo-plugins.git:repo-notes
