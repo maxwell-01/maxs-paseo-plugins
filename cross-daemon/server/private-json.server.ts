@@ -3,8 +3,8 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSy
 import { dirname } from "node:path";
 import type { z } from "zod";
 
-const OWNER_ONLY_FILE = 0o600;
-const OWNER_ONLY_DIR = 0o700;
+export const OWNER_ONLY_FILE = 0o600;
+export const OWNER_ONLY_DIR = 0o700;
 
 function parseJsonOrUndefined(text: string): unknown {
   try {

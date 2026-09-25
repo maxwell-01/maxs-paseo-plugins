@@ -24,6 +24,7 @@ function fakeDaemons() {
   const sends: { where: string; agentId: string; text: string }[] = [];
   let sendFailure: Error | null = null;
   let inspectDelayMs = 0;
+  const inspectDelays: number[] = [];
   const resolve = (where: string, ref: string) => {
     const matches = [...agents.keys()].filter((key) => key.startsWith(`${where}/${ref}`));
     if (matches.length === 0) throw new Error(`Agent not found: ${ref}`);
@@ -35,8 +36,10 @@ function fakeDaemons() {
     const id = resolve(where, ref);
     const agent = agents.get(`${where}/${id}`)!;
     if (command === "inspect") {
-      await new Promise((done) => setTimeout(done, inspectDelayMs));
-      return JSON.stringify({ Id: id, Status: agent.status, UpdatedAt: agent.updatedAt, Archived: agent.archived ?? false });
+      // The daemon reads the agent when the call starts; the answer arrives after the delay.
+      const answer = JSON.stringify({ Id: id, Status: agent.status, UpdatedAt: agent.updatedAt, Archived: agent.archived ?? false });
+      await new Promise((done) => setTimeout(done, inspectDelays.shift() ?? inspectDelayMs));
+      return answer;
     }
     if (command === "send") {
       if (sendFailure) throw sendFailure;
@@ -63,6 +66,7 @@ function fakeDaemons() {
     slowInspect: (ms: number) => {
       inspectDelayMs = ms;
     },
+    delayNextInspects: (...ms: number[]) => inspectDelays.push(...ms),
   };
 }
 
@@ -87,6 +91,16 @@ describe("never interrupting a working agent", () => {
     t.slowInspect(20);
     const outcomes = await Promise.all([t.send(FULL_ID), t.send(FULL_ID)]);
     expect(outcomes.map((outcome) => outcome.kind).sort()).toEqual(["queued", "sent"]);
+    expect(t.sends).toHaveLength(1);
+  });
+
+  it("does not send on a stale idle reading taken before another send finished", async () => {
+    const t = setup();
+    t.put("mac", FULL_ID, "idle");
+    t.delayNextInspects(50, 0);
+    const late = t.send(FULL_ID);
+    const early = await t.send(FULL_ID);
+    expect([early.kind, (await late).kind]).toEqual(["sent", "queued"]);
     expect(t.sends).toHaveLength(1);
   });
 
@@ -148,6 +162,22 @@ describe("messages that cannot be delivered", () => {
   });
 });
 
+describe("finish watches", () => {
+  it("gives up on an agent not seen to finish within 24 hours, and tells the sender", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    let now = Date.parse("2026-01-01T00:00:00Z");
+    const t = setup({ now: () => now });
+    t.put("mac", FULL_ID, "idle");
+    t.put("local", "caller-1", "idle");
+    await t.messenger.send({ peer: mac, agentRef: FULL_ID, text: "hello", callerAgentId: "caller-1", notifyOnFinish: true });
+    now += 25 * 60 * 60 * 1000;
+    await t.messenger.runRound();
+    await t.messenger.runRound();
+    expect(t.watches.list()).toEqual([]);
+    expect(t.noticesTo("caller-1")[0].text).toContain("did not see agent");
+  });
+});
+
 describe("sends that may have gone through", () => {
   it("does not send again a message whose send was cut off by a restart, and tells the sender", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -155,7 +185,7 @@ describe("sends that may have gone through", () => {
     t.put("mac", FULL_ID, "running");
     t.put("local", "caller-1", "idle");
     await t.send(FULL_ID);
-    t.queue.markInFlight(t.queue.list()[0].id);
+    t.queue.setInFlight(t.queue.list()[0].id, true);
     t.setStatus("mac", FULL_ID, "idle");
     await t.messenger.runRound();
     await t.messenger.runRound();

@@ -2,10 +2,9 @@ import { chmodSync, mkdirSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
 import { dirname } from "node:path";
 import { z } from "zod";
+import { OWNER_ONLY_DIR, OWNER_ONLY_FILE } from "./private-json.server";
 import type { Tools } from "./tools.server";
 
-const OWNER_ONLY_FILE = 0o600;
-const OWNER_ONLY_DIR = 0o700;
 
 const toolCallSchema = z.object({
   type: z.literal("call"),

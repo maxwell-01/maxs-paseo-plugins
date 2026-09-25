@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { Peer } from "../shared/cross-daemon.shared";
 import { randomBytes } from "node:crypto";
-import { MaybeDeliveredError, type Messenger } from "./messenger.server";
+import { describeError, MaybeDeliveredError, type Messenger } from "./messenger.server";
 import type { PaseoCli } from "./paseo-cli.server";
 
 export interface DaemonIdentity {
@@ -110,7 +110,7 @@ export function createTools(deps: ToolDependencies): Tools {
     try {
       return await action(peer);
     } catch (error) {
-      const reason = (error instanceof Error ? error.message : String(error)).replaceAll(peer.link, `<link to ${peer.name}>`);
+      const reason = describeError(error, peer);
       const prefix = UNREACHABLE.test(reason) ? `Could not reach ${peer.name}` : `paseo on ${peer.name} failed`;
       return { text: `${prefix}: ${reason}`, isError: true };
     }

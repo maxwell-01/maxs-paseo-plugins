@@ -66,8 +66,20 @@ which agent sent it, and the receiver cannot reply to it.
   message. Paseo's own tool steers that notice into the sender's running turn; this one waits until
   the sender is idle, so it never interrupts the sender either.
 
-A target that starts a turn between the plugin's idle check and its send is still interrupted, as
-it would be by Paseo's own `send_agent_prompt`.
+The plugin checks and sends to one agent at a time, so two messages cannot both find an agent idle.
+A target that starts a turn of its own between the plugin's check and its send is still interrupted,
+as it would be by Paseo's own `send_agent_prompt`.
+
+Limits, each reported to the sender:
+
+- A message that waits more than 24 hours is dropped, as is a message to an agent that is archived,
+  missing or ambiguous.
+- A send cut off by a restart or a timeout is not repeated: it may have been delivered.
+- At most 20 messages wait per agent, and a prompt is at most 50,000 characters.
+- A finish notice is given up after 24 hours.
+
+Every line the plugin adds to a message or notice carries a random marker, so text inside a message
+cannot pose as the sender or as a reply target.
 
 ## Install
 

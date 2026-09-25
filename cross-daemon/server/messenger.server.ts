@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import type { Peer } from "../shared/cross-daemon.shared";
 import type { MessageQueue, QueuedMessage } from "./message-queue.server";
@@ -13,13 +14,18 @@ const inspectedAgentSchema = z.object({
   UpdatedAt: z.string(),
   Archived: z.boolean().default(false),
 });
-// Errors after which retrying cannot help.
 const PERMANENT_FAILURE = /agent not found|no agent found|ambiguous|is archived/i;
 // The CLI stopped by the plugin's own timeout: the daemon may already have taken the message.
 const CUT_OFF = /^paseo timed out/;
 
 // Null means this daemon: a notice to the agent that sent a message.
 type Daemon = Peer | null;
+
+// Keeps pairing links out of anything an agent or a log sees.
+export function describeError(error: unknown, daemon: Daemon): string {
+  const reason = error instanceof Error ? error.message : String(error);
+  return daemon ? reason.replaceAll(daemon.link, `<link to ${daemon.name}>`) : reason;
+}
 
 export class MaybeDeliveredError extends Error {}
 
@@ -45,17 +51,14 @@ function runOn(cli: PaseoCli, daemon: Daemon, args: readonly string[], options?:
   return daemon ? cli.run(daemon.link, args, options) : cli.runLocal(args, options);
 }
 
-function describeError(error: unknown, daemon: Daemon): string {
-  const reason = error instanceof Error ? error.message : String(error);
-  return daemon ? reason.replaceAll(daemon.link, `<link to ${daemon.name}>`) : reason;
-}
-
 function composeFinishNotice(peer: Peer, agentId: string, lastMessage: string): string {
+  const marker = randomBytes(4).toString("hex");
   return [
-    `[cross-daemon notice] Agent ${agentId} on daemon "${peer.name}" (${peer.serverId}) finished the task you sent it.`,
-    "",
-    "Its last message:",
+    `[cross-daemon notice ${marker}] Agent ${agentId} on daemon "${peer.name}" (${peer.serverId}) finished the task you sent it. ` +
+      `Its last message is between the two ${marker} lines.`,
+    `----- ${marker} begin -----`,
     lastMessage || "(none)",
+    `----- ${marker} end -----`,
   ].join("\n");
 }
 
@@ -64,10 +67,10 @@ export function createMessenger({ queue, watches, readPeers, cli, now = Date.now
 
   // One check-then-send at a time per agent, shared by the tool and the delivery rounds, so two
   // messages can never both find an agent idle and the second interrupt the first.
-  async function withAgentLock<T>(daemon: Daemon, agentId: string, action: (waited: boolean) => Promise<T>): Promise<T> {
+  async function withAgentLock<T>(daemon: Daemon, agentId: string, action: () => Promise<T>): Promise<T> {
     const key = `${daemon?.serverId ?? "local"}/${agentId}`;
-    const previous = agentLocks.get(key);
-    const run = (previous ?? Promise.resolve()).catch(() => {}).then(() => action(previous !== undefined));
+    const previous = agentLocks.get(key) ?? Promise.resolve();
+    const run = previous.catch(() => {}).then(action);
     agentLocks.set(key, run);
     try {
       return await run;
@@ -98,31 +101,34 @@ export function createMessenger({ queue, watches, readPeers, cli, now = Date.now
   }
 
   function watchIfAsked(peer: Peer, agentId: string, callerAgentId: string | null, notify: boolean, updatedAt: string) {
-    if (notify && callerAgentId) watches.add({ peerServerId: peer.serverId, agentId, callerAgentId, updatedAtBeforeSend: updatedAt });
+    if (notify && callerAgentId) {
+      watches.add({ peerServerId: peer.serverId, agentId, callerAgentId, updatedAtBeforeSend: updatedAt }, new Date(now()));
+    }
   }
 
   async function send(request: SendRequest): Promise<SendOutcome> {
     const { peer, text, callerAgentId, notifyOnFinish } = request;
-    const first = await inspect(peer, request.agentRef);
-    return withAgentLock(peer, first.id, async (waited) => {
-      const waiting = queue.countPendingFor(peer.serverId, first.id);
+    // Outside the lock this only resolves a prefix to the full ID: the reading may be stale by the
+    // time the lock is held, so the agent is read again inside it.
+    const { id: agentId } = await inspect(peer, request.agentRef);
+    return withAgentLock(peer, agentId, async () => {
+      const waiting = queue.countPendingFor(peer.serverId, agentId);
       if (waiting >= MAX_WAITING_PER_AGENT) {
-        throw new Error(`${MAX_WAITING_PER_AGENT} messages are already waiting for agent ${first.id}. Try again once it has read them.`);
+        throw new Error(`${MAX_WAITING_PER_AGENT} messages are already waiting for agent ${agentId}. Try again once it has read them.`);
       }
-      const queueIt = () =>
-        queue.add({ peerServerId: peer.serverId, agentId: first.id, text, callerAgentId, notifyOnFinish }, new Date(now()));
+      const queueIt = () => queue.add({ peerServerId: peer.serverId, agentId, text, callerAgentId, notifyOnFinish }, new Date(now()));
       if (waiting > 0) {
         queueIt();
-        return { kind: "queued-behind", agentId: first.id };
+        return { kind: "queued-behind", agentId };
       }
-      const state = waited ? await inspect(peer, first.id) : first;
+      const state = await inspect(peer, agentId);
       if (state.busy) {
         queueIt();
-        return { kind: "queued", agentId: first.id };
+        return { kind: "queued", agentId };
       }
-      await deliver(peer, first.id, text);
-      watchIfAsked(peer, first.id, callerAgentId, notifyOnFinish, state.updatedAt);
-      return { kind: "sent", agentId: first.id };
+      await deliver(peer, agentId, text);
+      watchIfAsked(peer, agentId, callerAgentId, notifyOnFinish, state.updatedAt);
+      return { kind: "sent", agentId };
     });
   }
 
@@ -149,7 +155,7 @@ export function createMessenger({ queue, watches, readPeers, cli, now = Date.now
       try {
         const before = await inspect(daemon, message.agentId);
         if (before.busy) return;
-        queue.markInFlight(message.id);
+        queue.setInFlight(message.id, true);
         await deliver(daemon, message.agentId, message.text);
         queue.remove(message.id);
         if (daemon) watchIfAsked(daemon, message.agentId, message.callerAgentId, message.notifyOnFinish, before.updatedAt);
@@ -160,12 +166,17 @@ export function createMessenger({ queue, watches, readPeers, cli, now = Date.now
           return;
         }
         console.warn(`cross-daemon: will retry a message to agent ${message.agentId} on ${where}: ${reason}`);
-        queue.clearInFlight(message.id);
+        queue.setInFlight(message.id, false);
       }
     });
   }
 
   async function checkWatch(watch: Watch): Promise<void> {
+    if (now() - Date.parse(watch.watchedAt) > MAX_MESSAGE_AGE_MS) {
+      watches.remove(watch.id);
+      tellSender(watch.callerAgentId, `[cross-daemon notice] Gave up after 24 hours: did not see agent ${watch.agentId} finish.`);
+      return;
+    }
     const peer = readPeers().find((candidate) => candidate.serverId === watch.peerServerId);
     if (!peer) return;
     try {
@@ -189,13 +200,13 @@ export function createMessenger({ queue, watches, readPeers, cli, now = Date.now
   // agent is tried: once it is delivered the agent is busy, and the next one waits.
   async function runRound(): Promise<void> {
     try {
-      await Promise.all(watches.list().map(checkWatch));
+      await Promise.allSettled(watches.list().map(checkWatch));
       const oldestPerAgent = new Map<string, QueuedMessage>();
       for (const message of queue.list()) {
         const key = `${message.peerServerId ?? "local"}/${message.agentId}`;
         if (!oldestPerAgent.has(key)) oldestPerAgent.set(key, message);
       }
-      await Promise.all([...oldestPerAgent.values()].map(deliverQueued));
+      await Promise.allSettled([...oldestPerAgent.values()].map(deliverQueued));
     } catch (error) {
       console.error("cross-daemon: a delivery round failed", error);
     }
