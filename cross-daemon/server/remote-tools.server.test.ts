@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { Peer } from "../shared/cross-daemon.shared";
+import { createAgentLifecycle } from "./agent-lifecycle.server";
 
 import { createMessageQueue } from "./message-queue.server";
 import { createMessenger } from "./messenger.server";
+import { createStartedAgents } from "./started-agents.server";
 import { makeTempDir } from "./temp-dir.test-support";
 import { createTools } from "./tools.server";
 import { createWatchList } from "./watch-list.server";
@@ -23,6 +25,11 @@ function toolsWith(peers: Peer[], reply: (link: string, args: readonly string[])
       watches: createWatchList(makeTempDir("cd-watch-")),
       readPeers: () => peers,
       cli: { run: async () => "", runLocal: async () => "" },
+    }),
+    lifecycle: createAgentLifecycle({
+      cli: { run: async () => "", runLocal: async () => "" },
+      watches: createWatchList(makeTempDir("cd-watch-")),
+      startedAgents: createStartedAgents(makeTempDir("cd-started-")),
     }),
     ownDaemon,
     cli: {

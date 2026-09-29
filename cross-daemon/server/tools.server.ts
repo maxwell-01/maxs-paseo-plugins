@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { Peer } from "../shared/cross-daemon.shared";
 import { randomBytes } from "node:crypto";
+import type { AgentLifecycle } from "./agent-lifecycle.server";
 import { describeError, MaybeDeliveredError, type Messenger } from "./messenger.server";
 import type { PaseoCli } from "./paseo-cli.server";
 
@@ -13,6 +14,7 @@ interface ToolDependencies {
   readPeers(): Peer[];
   cli: PaseoCli;
   messenger: Messenger;
+  lifecycle: AgentLifecycle;
   ownDaemon(): Promise<DaemonIdentity>;
 }
 
@@ -84,6 +86,13 @@ function findPeer(peers: readonly Peer[], ref: string): Peer | string {
 }
 
 const MAX_PROMPT_CHARACTERS = 50_000;
+// paseo run takes its prompt on the command line, and Linux caps one argument at 128 KiB.
+const MAX_FIRST_PROMPT_CHARACTERS = 30_000;
+
+const notifyOnFinishInput = z
+  .boolean()
+  .default(true)
+  .describe("Be told, with its last message, when the agent finishes. The notice waits until you are idle.");
 
 // A random marker the prompt cannot know in advance: only lines carrying it come from the plugin,
 // so a prompt that pastes in a fake header cannot claim another sender or reply target.
@@ -155,15 +164,13 @@ export function createTools(deps: ToolDependencies): Tools {
       name: "send_agent_prompt",
       description:
         "Send a message to an agent on another Paseo daemon. If the agent is working, the message is queued " +
-        "and delivered when it is idle, so its work is not interrupted.",
+        "and delivered when it is idle, so its work is not interrupted. To hand over new work, start a fresh " +
+        "agent with create_agent instead of messaging an unrelated one.",
       input: z.object({
         daemon: daemonInput,
         agentId: agentIdInput,
         prompt: z.string().min(1).max(MAX_PROMPT_CHARACTERS),
-        notifyOnFinish: z
-          .boolean()
-          .default(true)
-          .describe("Be told, with its last message, when the agent finishes. The notice waits until you are idle."),
+        notifyOnFinish: notifyOnFinishInput,
       }),
       run: async ({ daemon, agentId, prompt, notifyOnFinish }, { callerAgentId }) => {
         const text = composeMessage(await deps.ownDaemon(), callerAgentId, prompt);
@@ -185,6 +192,48 @@ export function createTools(deps: ToolDependencies): Tools {
           }
         });
       },
+    }),
+    defineTool({
+      name: "create_agent",
+      description:
+        "Start a new agent on another Paseo daemon, in the given folder, with your prompt as its first message. " +
+        "Prefer this for new work over messaging an unrelated idle agent. Returns the new agent's ID; " +
+        "archive it with archive_agent when its work is done.",
+      input: z.object({
+        daemon: daemonInput,
+        cwd: z.string().startsWith("/", "an absolute path").describe("The folder on that daemon to start the agent in."),
+        prompt: z.string().min(1).max(MAX_FIRST_PROMPT_CHARACTERS),
+        provider: z
+          .string()
+          .regex(/^[A-Za-z0-9][A-Za-z0-9._/-]*$/, "a provider, or provider/model")
+          .optional()
+          .describe("The provider, or provider/model, such as claude or codex/gpt-5.4. Defaults to the daemon's own."),
+        title: z.string().min(1).max(200).optional().describe("A title for the agent."),
+        notifyOnFinish: notifyOnFinishInput,
+      }),
+      run: async ({ daemon, cwd, prompt, provider, title, notifyOnFinish }, { callerAgentId }) => {
+        const firstMessage = composeMessage(await deps.ownDaemon(), callerAgentId, prompt);
+        const promise = notifyOnFinish && callerAgentId ? " You will be told when it finishes." : "";
+        return reachPeer(daemon, async (peer) => {
+          const started = await deps.lifecycle.start(peer, { cwd, firstMessage, provider, title }, callerAgentId, notifyOnFinish);
+          return { text: `Started agent ${started.agentId} on ${peer.name} in ${JSON.stringify(started.cwd)}.${promise}` };
+        });
+      },
+    }),
+    defineTool({
+      name: "archive_agent",
+      description:
+        "Archive an idle agent on another Paseo daemon that you started with create_agent. " +
+        "It refuses any other agent, and one that is still working.",
+      input: z.object({ daemon: daemonInput, agentId: agentIdInput }),
+      run: ({ daemon, agentId }) =>
+        reachPeer(daemon, async (peer) => {
+          const outcome = await deps.lifecycle.archive(peer, agentId);
+          const target = `Agent ${outcome.agentId} on ${peer.name}`;
+          if (outcome.kind === "archived") return { text: `Archived agent ${outcome.agentId} on ${peer.name}.` };
+          if (outcome.kind === "busy") return { text: `${target} is still working. Archive it once it is idle.`, isError: true };
+          return { text: `${target} was not started with create_agent from this daemon, so archive_agent will not close it.`, isError: true };
+        }),
     }),
   ];
   return {

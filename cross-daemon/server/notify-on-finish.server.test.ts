@@ -1,9 +1,11 @@
 
 import { describe, expect, it } from "vitest";
 import type { Peer } from "../shared/cross-daemon.shared";
+import { createAgentLifecycle } from "./agent-lifecycle.server";
 import { createMessageQueue } from "./message-queue.server";
 import { createMessenger } from "./messenger.server";
 import type { PaseoCli } from "./paseo-cli.server";
+import { createStartedAgents } from "./started-agents.server";
 import { makeTempDir } from "./temp-dir.test-support";
 import { createTools } from "./tools.server";
 import { createWatchList } from "./watch-list.server";
@@ -63,7 +65,13 @@ function setup() {
   const watches = createWatchList(dir);
   const readPeers = () => [mac];
   const messenger = createMessenger({ queue, watches, readPeers, cli: daemons.cli });
-  const tools = createTools({ readPeers, cli: daemons.cli, messenger, ownDaemon: async () => ({ name: "tower", serverId: "srv_tower" }) });
+  const tools = createTools({
+    readPeers,
+    cli: daemons.cli,
+    messenger,
+    lifecycle: createAgentLifecycle({ cli: daemons.cli, watches, startedAgents: createStartedAgents(dir) }),
+    ownDaemon: async () => ({ name: "tower", serverId: "srv_tower" }),
+  });
   const send = (agentId: string, input: object = {}, callerAgentId: string | null = "caller-1") =>
     tools.call("send_agent_prompt", { daemon: "mac", agentId, prompt: "Run the tests.", ...input }, { callerAgentId });
   const tick = () => messenger.runRound();

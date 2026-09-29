@@ -51,6 +51,12 @@ function runOn(cli: PaseoCli, daemon: Daemon, args: readonly string[], options?:
   return daemon ? cli.run(daemon.link, args, options) : cli.runLocal(args, options);
 }
 
+export async function inspectAgent(cli: PaseoCli, daemon: Daemon, agentRef: string) {
+  const inspected = inspectedAgentSchema.parse(JSON.parse(await runOn(cli, daemon, ["inspect", agentRef, "--json"])));
+  if (inspected.Archived) throw new Error(`Agent ${inspected.Id} is archived`);
+  return { id: inspected.Id, busy: BUSY_STATUSES.has(inspected.Status), updatedAt: inspected.UpdatedAt };
+}
+
 function composeFinishNotice(peer: Peer, agentId: string, lastMessage: string): string {
   const marker = randomBytes(4).toString("hex");
   return [
@@ -79,11 +85,7 @@ export function createMessenger({ queue, watches, readPeers, cli, now = Date.now
     }
   }
 
-  async function inspect(daemon: Daemon, agentRef: string) {
-    const inspected = inspectedAgentSchema.parse(JSON.parse(await runOn(cli, daemon, ["inspect", agentRef, "--json"])));
-    if (inspected.Archived) throw new Error(`Agent ${inspected.Id} is archived`);
-    return { id: inspected.Id, busy: BUSY_STATUSES.has(inspected.Status), updatedAt: inspected.UpdatedAt };
-  }
+  const inspect = (daemon: Daemon, agentRef: string) => inspectAgent(cli, daemon, agentRef);
 
   async function deliver(daemon: Daemon, agentId: string, text: string): Promise<void> {
     try {
