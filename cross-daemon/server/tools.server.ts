@@ -207,7 +207,7 @@ export function createTools(deps: ToolDependencies): Tools {
           .string()
           .regex(/^[A-Za-z0-9][A-Za-z0-9._/-]*$/, "a provider, or provider/model")
           .optional()
-          .describe("The provider, or provider/model, such as claude or codex/gpt-5.4. Defaults to the daemon's own."),
+          .describe("The provider, or provider/model, such as claude or codex/gpt-5.4. A daemon with no default provider refuses the call without one, so pass one when unsure."),
         title: z.string().min(1).max(200).optional().describe("A title for the agent."),
         notifyOnFinish: notifyOnFinishInput,
       }),
