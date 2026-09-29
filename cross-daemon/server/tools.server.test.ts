@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
+import { createAgentLifecycle } from "./agent-lifecycle.server";
 import { createMessageQueue } from "./message-queue.server";
 import { createMessenger } from "./messenger.server";
+import { createStartedAgents } from "./started-agents.server";
 import { makeTempDir } from "./temp-dir.test-support";
 import { composeMessage, createTools } from "./tools.server";
 import { createWatchList } from "./watch-list.server";
@@ -15,23 +17,26 @@ const unusedCli = {
     throw new Error("list_daemons must not call the CLI");
   },
 };
-const newMessenger = () => {
+const toolsWith = (peers: { serverId: string; name: string; link: string }[]) => {
   const dir = makeTempDir("cd-tools-");
-  return createMessenger({ queue: createMessageQueue(dir), watches: createWatchList(dir), readPeers: () => [], cli: unusedCli });
+  const watches = createWatchList(dir);
+  const messenger = createMessenger({ queue: createMessageQueue(dir), watches, readPeers: () => [], cli: unusedCli });
+  const lifecycle = createAgentLifecycle({ cli: unusedCli, watches, startedAgents: createStartedAgents(dir) });
+  return createTools({ readPeers: () => peers, cli: unusedCli, messenger, lifecycle, ownDaemon });
 };
 
 const mac = { serverId: "srv_mac", name: "mac", link: "https://app.paseo.sh/#offer=mac" };
 
 describe("list_daemons", () => {
   it("lists the reachable daemons by name and server ID, never by link", async () => {
-    const tools = createTools({ readPeers: () => [mac], cli: unusedCli, messenger: newMessenger(), ownDaemon });
+    const tools = toolsWith([mac]);
     const result = await tools.call("list_daemons", {}, { callerAgentId: "agent-1" });
     expect(JSON.parse(result.text)).toEqual({ daemons: [{ name: "mac", serverId: "srv_mac" }] });
     expect(result.text).not.toContain("offer=");
   });
 
   it("explains how to connect a daemon when none are reachable", async () => {
-    const tools = createTools({ readPeers: () => [], cli: unusedCli, messenger: newMessenger(), ownDaemon });
+    const tools = toolsWith([]);
     const result = await tools.call("list_daemons", {}, { callerAgentId: "agent-1" });
     expect(result.text).toContain("Allow cross-daemon comms");
     expect(result.isError).toBeFalsy();
@@ -40,7 +45,7 @@ describe("list_daemons", () => {
 
 describe("tool calls", () => {
   it("rejects a tool it does not have", async () => {
-    const tools = createTools({ readPeers: () => [], cli: unusedCli, messenger: newMessenger(), ownDaemon });
+    const tools = toolsWith([]);
     await expect(tools.call("drop_tables", {}, { callerAgentId: null })).resolves.toEqual({
       text: "Unknown cross-daemon tool: drop_tables",
       isError: true,
@@ -48,13 +53,15 @@ describe("tool calls", () => {
   });
 
   it("publishes each tool with a JSON input schema", () => {
-    const tools = createTools({ readPeers: () => [], cli: unusedCli, messenger: newMessenger(), ownDaemon });
+    const tools = toolsWith([]);
     expect(tools.definitions.map((tool) => tool.name)).toEqual([
       "list_daemons",
       "list_workspaces",
       "list_agents",
       "get_agent_activity",
       "send_agent_prompt",
+      "create_agent",
+      "archive_agent",
     ]);
     expect(tools.definitions[0].inputSchema).toMatchObject({ type: "object" });
   });

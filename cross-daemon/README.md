@@ -1,7 +1,7 @@
 # Cross-daemon
 
-A [Paseo](https://paseo.sh) plugin that lets agents on different Paseo daemons list and message each
-other. Requires **Paseo 0.9.2 or newer**, installed on every daemon that takes part.
+A [Paseo](https://paseo.sh) plugin that lets agents on different Paseo daemons list, message, start
+and archive each other. Requires **Paseo 0.9.2 or newer**, installed on every daemon that takes part.
 
 ## Switching a daemon on
 
@@ -51,8 +51,30 @@ which agent sent it, and the receiver cannot reply to it.
 | `list_agents(daemon)` | That daemon's agents, with status and folder. |
 | `get_agent_activity(daemon, agentId, tail)` | An agent's recent activity. |
 | `send_agent_prompt(daemon, agentId, prompt, notifyOnFinish)` | Sends a message; see below. |
+| `create_agent(daemon, cwd, prompt, provider?, title?, notifyOnFinish)` | Starts a new agent; see below. |
+| `archive_agent(daemon, agentId)` | Archives an agent that `create_agent` started. |
 
 `daemon` is a name or a server ID; use the server ID when two daemons share a name.
+
+## Starting and archiving agents
+
+To hand new work to another daemon, start a fresh agent with `create_agent`. Do not message an
+unrelated idle agent and ask it to relay the job.
+
+- The agent starts in exactly `cwd`, an absolute path on that daemon, in a new workspace of its own.
+- Its first message carries the same sender header as `send_agent_prompt`, so it can reply.
+- The tool returns the new agent's ID, for `get_agent_activity`, `send_agent_prompt` and
+  `archive_agent`.
+- With `notifyOnFinish` (on by default), the caller is told when the agent finishes, as for
+  `send_agent_prompt`.
+- `paseo run` takes the prompt on its command line, so a first prompt is at most 30,000 characters,
+  and other users of the calling machine can see it in `ps`.
+- If the start times out, or the first prompt does not start, the tool says so. It does not report
+  a start it cannot confirm.
+
+`archive_agent` closes only agents that `create_agent` on this daemon started, so it cannot close
+someone's own session by mistake. The record of those agents survives a restart. It refuses an agent
+that is still working, and does not force one to stop.
 
 ## Sending without interrupting
 

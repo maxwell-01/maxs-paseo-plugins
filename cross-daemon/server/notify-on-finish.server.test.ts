@@ -1,72 +1,13 @@
 
 import { describe, expect, it } from "vitest";
-import type { Peer } from "../shared/cross-daemon.shared";
-import { createMessageQueue } from "./message-queue.server";
-import { createMessenger } from "./messenger.server";
-import type { PaseoCli } from "./paseo-cli.server";
+import { fakeDaemons, fakeTools } from "./fake-daemons.test-support";
 import { makeTempDir } from "./temp-dir.test-support";
-import { createTools } from "./tools.server";
-import { createWatchList } from "./watch-list.server";
-
-const mac: Peer = { serverId: "srv_mac", name: "mac", link: "https://app.paseo.sh/#offer=bWFj" };
-
-type Where = "mac" | "local";
-interface FakeAgent {
-  status: string;
-  updatedAt: string;
-  lastText: string;
-}
-
-// Agents on the remote daemon and on this one, driven through the same commands the CLI offers.
-function fakeDaemons() {
-  const agents = new Map<string, FakeAgent>();
-  const delivered: { where: Where; agentId: string; text: string }[] = [];
-  let startTurnOnSend = true;
-  const handle = async (where: Where, args: readonly string[], promptText?: string) => {
-    const [command, agentId] = args;
-    const agent = agents.get(`${where}/${agentId}`);
-    if (!agent) throw new Error(`Agent not found: ${agentId}`);
-    if (command === "inspect") return JSON.stringify({ Id: agentId, Status: agent.status, UpdatedAt: agent.updatedAt });
-    if (command === "logs") return agent.lastText;
-    if (command === "send") {
-      delivered.push({ where, agentId, text: promptText ?? "" });
-      if (startTurnOnSend) Object.assign(agent, { status: "running", updatedAt: new Date().toISOString() });
-      return "{}";
-    }
-    throw new Error(`unexpected command ${command}`);
-  };
-  const cli: PaseoCli = {
-    run: (link, args, options) => handle(link === mac.link ? "mac" : (() => { throw new Error("unknown link"); })(), args, options?.promptText),
-    runLocal: (args, options) => handle("local", args, options?.promptText),
-  };
-  const put = (where: Where, agentId: string, status: string) =>
-    agents.set(`${where}/${agentId}`, { status, updatedAt: "2020-01-01T00:00:00.000Z", lastText: "" });
-  const finish = (where: Where, agentId: string, lastText: string) =>
-    Object.assign(agents.get(`${where}/${agentId}`)!, { status: "idle", updatedAt: new Date().toISOString(), lastText });
-  const setStatus = (where: Where, agentId: string, status: string) => Object.assign(agents.get(`${where}/${agentId}`)!, { status });
-  return {
-    cli,
-    delivered,
-    put,
-    finish,
-    setStatus,
-    holdTurnsAfterSend: () => {
-      startTurnOnSend = false;
-    },
-  };
-}
 
 function setup() {
   const daemons = fakeDaemons();
-  const dir = makeTempDir("cd-notify-");
-  const queue = createMessageQueue(dir);
-  const watches = createWatchList(dir);
-  const readPeers = () => [mac];
-  const messenger = createMessenger({ queue, watches, readPeers, cli: daemons.cli });
-  const tools = createTools({ readPeers, cli: daemons.cli, messenger, ownDaemon: async () => ({ name: "tower", serverId: "srv_tower" }) });
+  const { tools, queue, watches, tick } = fakeTools(makeTempDir("cd-notify-"), daemons);
   const send = (agentId: string, input: object = {}, callerAgentId: string | null = "caller-1") =>
     tools.call("send_agent_prompt", { daemon: "mac", agentId, prompt: "Run the tests.", ...input }, { callerAgentId });
-  const tick = () => messenger.runRound();
   const noticesTo = (agentId: string) => daemons.delivered.filter((entry) => entry.where === "local" && entry.agentId === agentId);
   return { ...daemons, queue, watches, send, tick, noticesTo };
 }

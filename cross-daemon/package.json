@@ -1,7 +1,7 @@
 {
   "name": "paseo-cross-daemon",
-  "version": "0.2.0",
-  "description": "Let Paseo agents on different daemons list and message each other.",
+  "version": "0.3.0",
+  "description": "Let Paseo agents on different daemons list, message, start and archive each other.",
   "license": "MIT",
   "repository": {
     "type": "git",
