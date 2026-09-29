@@ -215,8 +215,21 @@ export function createTools(deps: ToolDependencies): Tools {
         const firstMessage = composeMessage(await deps.ownDaemon(), callerAgentId, prompt);
         const promise = notifyOnFinish && callerAgentId ? " You will be told when it finishes." : "";
         return reachPeer(daemon, async (peer) => {
-          const started = await deps.lifecycle.start(peer, { cwd, firstMessage, provider, title }, callerAgentId, notifyOnFinish);
-          return { text: `Started agent ${started.agentId} on ${peer.name} in ${JSON.stringify(started.cwd)}.${promise}` };
+          try {
+            const outcome = await deps.lifecycle.start(peer, { cwd, firstMessage, provider, title }, callerAgentId, notifyOnFinish);
+            if (outcome.kind === "started") {
+              return { text: `Started agent ${outcome.agentId} on ${peer.name} in ${JSON.stringify(outcome.cwd)}.${promise}` };
+            }
+            return {
+              text:
+                `Agent ${outcome.agentId} was created on ${peer.name}, but its first prompt did not start. ` +
+                "Check it with get_agent_activity, or archive it with archive_agent.",
+              isError: true,
+            };
+          } catch (error) {
+            if (error instanceof MaybeDeliveredError) return { text: error.message, isError: true };
+            throw error;
+          }
         });
       },
     }),
@@ -229,8 +242,8 @@ export function createTools(deps: ToolDependencies): Tools {
       run: ({ daemon, agentId }) =>
         reachPeer(daemon, async (peer) => {
           const outcome = await deps.lifecycle.archive(peer, agentId);
-          const target = `Agent ${outcome.agentId} on ${peer.name}`;
           if (outcome.kind === "archived") return { text: `Archived agent ${outcome.agentId} on ${peer.name}.` };
+          const target = `Agent ${outcome.agentId} on ${peer.name}`;
           if (outcome.kind === "busy") return { text: `${target} is still working. Archive it once it is idle.`, isError: true };
           return { text: `${target} was not started with create_agent from this daemon, so archive_agent will not close it.`, isError: true };
         }),

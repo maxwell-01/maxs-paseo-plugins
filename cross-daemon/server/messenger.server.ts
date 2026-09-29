@@ -1,25 +1,15 @@
 import { randomBytes } from "node:crypto";
-import { z } from "zod";
 import type { Peer } from "../shared/cross-daemon.shared";
 import type { MessageQueue, QueuedMessage } from "./message-queue.server";
-import type { PaseoCli, PaseoCliOptions } from "./paseo-cli.server";
+import { type Daemon, inspectAgent, runOn } from "./agent-state.server";
+import type { PaseoCli } from "./paseo-cli.server";
 import type { Watch, WatchList } from "./watch-list.server";
 
-const BUSY_STATUSES = new Set(["running", "initializing"]);
 const MAX_MESSAGE_AGE_MS = 24 * 60 * 60 * 1000;
 const MAX_WAITING_PER_AGENT = 20;
-const inspectedAgentSchema = z.object({
-  Id: z.string(),
-  Status: z.string(),
-  UpdatedAt: z.string(),
-  Archived: z.boolean().default(false),
-});
 const PERMANENT_FAILURE = /agent not found|no agent found|ambiguous|is archived/i;
 // The CLI stopped by the plugin's own timeout: the daemon may already have taken the message.
-const CUT_OFF = /^paseo timed out/;
-
-// Null means this daemon: a notice to the agent that sent a message.
-type Daemon = Peer | null;
+export const CUT_OFF = /^paseo timed out/;
 
 // Keeps pairing links out of anything an agent or a log sees.
 export function describeError(error: unknown, daemon: Daemon): string {
@@ -45,16 +35,6 @@ interface MessengerDependencies {
   readPeers(): Peer[];
   cli: PaseoCli;
   now?: () => number;
-}
-
-function runOn(cli: PaseoCli, daemon: Daemon, args: readonly string[], options?: PaseoCliOptions) {
-  return daemon ? cli.run(daemon.link, args, options) : cli.runLocal(args, options);
-}
-
-export async function inspectAgent(cli: PaseoCli, daemon: Daemon, agentRef: string) {
-  const inspected = inspectedAgentSchema.parse(JSON.parse(await runOn(cli, daemon, ["inspect", agentRef, "--json"])));
-  if (inspected.Archived) throw new Error(`Agent ${inspected.Id} is archived`);
-  return { id: inspected.Id, busy: BUSY_STATUSES.has(inspected.Status), updatedAt: inspected.UpdatedAt };
 }
 
 function composeFinishNotice(peer: Peer, agentId: string, lastMessage: string): string {
@@ -85,8 +65,6 @@ export function createMessenger({ queue, watches, readPeers, cli, now = Date.now
     }
   }
 
-  const inspect = (daemon: Daemon, agentRef: string) => inspectAgent(cli, daemon, agentRef);
-
   async function deliver(daemon: Daemon, agentId: string, text: string): Promise<void> {
     try {
       await runOn(cli, daemon, ["send", agentId, "--no-wait"], { promptText: text });
@@ -112,7 +90,7 @@ export function createMessenger({ queue, watches, readPeers, cli, now = Date.now
     const { peer, text, callerAgentId, notifyOnFinish } = request;
     // Outside the lock this only resolves a prefix to the full ID: the reading may be stale by the
     // time the lock is held, so the agent is read again inside it.
-    const { id: agentId } = await inspect(peer, request.agentRef);
+    const { id: agentId } = await inspectAgent(cli, peer, request.agentRef);
     return withAgentLock(peer, agentId, async () => {
       const waiting = queue.countPendingFor(peer.serverId, agentId);
       if (waiting >= MAX_WAITING_PER_AGENT) {
@@ -123,7 +101,7 @@ export function createMessenger({ queue, watches, readPeers, cli, now = Date.now
         queueIt();
         return { kind: "queued-behind", agentId };
       }
-      const state = await inspect(peer, agentId);
+      const state = await inspectAgent(cli, peer, agentId);
       if (state.busy) {
         queueIt();
         return { kind: "queued", agentId };
@@ -155,7 +133,7 @@ export function createMessenger({ queue, watches, readPeers, cli, now = Date.now
     if (daemon === undefined) return;
     await withAgentLock(daemon, message.agentId, async () => {
       try {
-        const before = await inspect(daemon, message.agentId);
+        const before = await inspectAgent(cli, daemon, message.agentId);
         if (before.busy) return;
         queue.setInFlight(message.id, true);
         await deliver(daemon, message.agentId, message.text);
@@ -182,7 +160,7 @@ export function createMessenger({ queue, watches, readPeers, cli, now = Date.now
     const peer = readPeers().find((candidate) => candidate.serverId === watch.peerServerId);
     if (!peer) return;
     try {
-      const state = await inspect(peer, watch.agentId);
+      const state = await inspectAgent(cli, peer, watch.agentId);
       if (state.busy) {
         if (!watch.sawBusy) watches.markBusy(watch.id);
         return;

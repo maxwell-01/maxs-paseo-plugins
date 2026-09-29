@@ -5,7 +5,6 @@ import { readPrivateJson, writePrivateJson } from "./private-json.server";
 const startedAgentSchema = z.object({ peerServerId: z.string(), agentId: z.string() });
 type StartedAgent = z.infer<typeof startedAgentSchema>;
 
-// Agents on other daemons that create_agent started: the only ones archive_agent may close.
 export function createStartedAgents(stateDir: string) {
   const startedFile = join(stateDir, "started-agents.json");
   const list = (): StartedAgent[] => readPrivateJson(startedFile, z.array(startedAgentSchema), []);

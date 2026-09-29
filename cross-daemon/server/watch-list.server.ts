@@ -8,8 +8,9 @@ const watchSchema = z.object({
   peerServerId: z.string(),
   agentId: z.string(),
   callerAgentId: z.string(),
-  // The agent's UpdatedAt just before the message went in; a later value means its turn ran.
-  updatedAtBeforeSend: z.string(),
+  // The agent's UpdatedAt just before the message went in; a later value means its turn ran. Null for
+  // an agent that create_agent started, which is watched only once it has been seen busy.
+  updatedAtBeforeSend: z.string().nullable(),
   sawBusy: z.boolean(),
   watchedAt: z.string(),
 });
@@ -21,8 +22,8 @@ export function createWatchList(stateDir: string) {
   const list = (): Watch[] => readPrivateJson(watchFile, z.array(watchSchema), []);
   return {
     list,
-    add(watch: Omit<Watch, "id" | "sawBusy" | "watchedAt">, watchedAt: Date): void {
-      writePrivateJson(watchFile, [...list(), { ...watch, id: randomUUID(), sawBusy: false, watchedAt: watchedAt.toISOString() }]);
+    add(watch: Omit<Watch, "id" | "sawBusy" | "watchedAt"> & { sawBusy?: boolean }, watchedAt: Date): void {
+      writePrivateJson(watchFile, [...list(), { sawBusy: false, ...watch, id: randomUUID(), watchedAt: watchedAt.toISOString() }]);
     },
     markBusy(id: string): void {
       writePrivateJson(watchFile, list().map((watch) => (watch.id === id ? { ...watch, sawBusy: true } : watch)));

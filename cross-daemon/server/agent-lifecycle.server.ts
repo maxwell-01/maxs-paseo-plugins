@@ -1,44 +1,56 @@
 import { z } from "zod";
 import type { Peer } from "../shared/cross-daemon.shared";
-import { inspectAgent } from "./messenger.server";
+import { inspectAgent } from "./agent-state.server";
+import { CUT_OFF, describeError, MaybeDeliveredError } from "./messenger.server";
 import type { PaseoCli } from "./paseo-cli.server";
 import type { StartedAgents } from "./started-agents.server";
 import type { WatchList } from "./watch-list.server";
 
-const runResultSchema = z.object({ agentId: z.string(), cwd: z.string() });
+const runResultSchema = z.object({ agentId: z.string(), status: z.string(), cwd: z.string() });
 
-// A new agent has had no turn before its first prompt, so any UpdatedAt it reports means one ran.
-const NO_TURN_YET = "";
-
-export interface NewAgent {
+interface NewAgent {
   cwd: string;
   firstMessage: string;
   provider?: string;
   title?: string;
 }
 
-export type ArchiveOutcome = { kind: "archived" | "not-started-here" | "busy"; agentId: string };
+type StartOutcome = { kind: "started" | "first-prompt-not-started"; agentId: string; cwd: string };
+type ArchiveOutcome = { kind: "archived" | "not-started-here" | "busy"; agentId: string };
 
 interface AgentLifecycleDependencies {
   cli: PaseoCli;
   watches: WatchList;
   startedAgents: StartedAgents;
-  now?: () => number;
 }
 
-export function createAgentLifecycle({ cli, watches, startedAgents, now = Date.now }: AgentLifecycleDependencies) {
-  async function start(peer: Peer, agent: NewAgent, callerAgentId: string | null, notifyOnFinish: boolean) {
+export function createAgentLifecycle({ cli, watches, startedAgents }: AgentLifecycleDependencies) {
+  async function runStartCommand(peer: Peer, args: readonly string[]) {
+    try {
+      return await cli.run(peer.link, args);
+    } catch (error) {
+      if (CUT_OFF.test(describeError(error, peer))) {
+        throw new MaybeDeliveredError(`The start timed out, so an agent may have started on ${peer.name}. Check list_agents before you try again.`);
+      }
+      throw error;
+    }
+  }
+
+  async function start(peer: Peer, agent: NewAgent, callerAgentId: string | null, notifyOnFinish: boolean): Promise<StartOutcome> {
     // Options in --name=value form and the prompt after "--", so no value can be read as an option.
     // --new-workspace keeps the new agent out of any caller workspace the CLI would otherwise pick.
     const args = ["run", "--background", "--json", "--new-workspace=local", `--cwd=${agent.cwd}`];
     if (agent.provider) args.push(`--provider=${agent.provider}`);
     if (agent.title) args.push(`--title=${agent.title}`);
-    const started = runResultSchema.parse(JSON.parse(await cli.run(peer.link, [...args, "--", agent.firstMessage])));
-    startedAgents.add({ peerServerId: peer.serverId, agentId: started.agentId });
+    const started = runResultSchema.parse(JSON.parse(await runStartCommand(peer, [...args, "--", agent.firstMessage])));
+    const { agentId, cwd } = started;
+    startedAgents.add({ peerServerId: peer.serverId, agentId });
+    // paseo run returns once the first turn has started, and reports "running" only if it did.
+    if (started.status !== "running") return { kind: "first-prompt-not-started", agentId, cwd };
     if (notifyOnFinish && callerAgentId) {
-      watches.add({ peerServerId: peer.serverId, agentId: started.agentId, callerAgentId, updatedAtBeforeSend: NO_TURN_YET }, new Date(now()));
+      watches.add({ peerServerId: peer.serverId, agentId, callerAgentId, updatedAtBeforeSend: null, sawBusy: true }, new Date());
     }
-    return started;
+    return { kind: "started", agentId, cwd };
   }
 
   async function archive(peer: Peer, agentRef: string): Promise<ArchiveOutcome> {

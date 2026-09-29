@@ -67,7 +67,10 @@ unrelated idle agent and ask it to relay the job.
   `archive_agent`.
 - With `notifyOnFinish` (on by default), the caller is told when the agent finishes, as for
   `send_agent_prompt`.
-- `paseo run` takes the prompt on its command line, so a first prompt is at most 30,000 characters.
+- `paseo run` takes the prompt on its command line, so a first prompt is at most 30,000 characters,
+  and other users of the calling machine can see it in `ps`.
+- If the start times out, or the first prompt does not start, the tool says so. It does not report
+  a start it cannot confirm.
 
 `archive_agent` closes only agents that `create_agent` on this daemon started, so it cannot close
 someone's own session by mistake. The record of those agents survives a restart. It refuses an agent
