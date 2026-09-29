@@ -62,6 +62,8 @@ To hand new work to another daemon, start a fresh agent with `create_agent`. Do 
 unrelated idle agent and ask it to relay the job.
 
 - The agent starts in exactly `cwd`, an absolute path on that daemon, in a new workspace of its own.
+- Pass `provider` (such as `claude`) unless you know the daemon has a default: a daemon without one
+  refuses the call.
 - Its first message carries the same sender header as `send_agent_prompt`, so it can reply.
 - The tool returns the new agent's ID, for `get_agent_activity`, `send_agent_prompt` and
   `archive_agent`.
