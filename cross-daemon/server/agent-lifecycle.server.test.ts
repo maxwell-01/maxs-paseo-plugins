@@ -112,6 +112,15 @@ describe("create_agent", () => {
     expect(await t.archive("new-1")).toEqual({ text: "Archived agent new-1 on mac, and the workspace create_agent made for it." });
   });
 
+  it("leaves a workspace an earlier create_agent made, and its agents, when a start in it fails", async () => {
+    const t = setup();
+    await t.create({ notifyOnFinish: false });
+    t.failRuns(new Error("Provider is required"));
+    expect((await t.create()).isError).toBe(true);
+    expect(t.workspaces.get("wks-1")?.archived).toBe(false);
+    expect(t.archived).toEqual([]);
+  });
+
   it("reports both failures when the workspace it made cannot be archived after a failed start", async () => {
     const t = setup();
     t.failRuns(new Error("Provider is required"));

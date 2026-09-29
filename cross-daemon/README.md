@@ -87,6 +87,10 @@ other agent on that daemon is in the same folder. When a daemon has 200 agents o
 cannot see them all, so it keeps the workspace. A workspace that `create_agent` did not make is never
 archived.
 
+The CLI shows each agent's folder but not its workspace, so the check goes by folder. An agent put
+in that workspace with a different folder is archived with it. Paseo's own tools do not do this:
+they give an agent its workspace's folder.
+
 ## Sending without interrupting
 
 `send_agent_prompt` never interrupts a working agent:

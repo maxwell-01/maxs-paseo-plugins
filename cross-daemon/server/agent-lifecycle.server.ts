@@ -36,7 +36,8 @@ interface AgentLifecycleDependencies {
   startedAgents: StartedAgents;
 }
 
-// paseo ls writes a folder under the CLI's HOME as "~/...", and the CLI runs with this process's environment.
+// A copy of shortenPath in @getpaseo/cli's agent ls: it writes a folder under the CLI's HOME as "~...",
+// and the CLI runs with this process's environment.
 function asPaseoLsShows(path: string): string {
   const home = process.env.HOME;
   return home && path.startsWith(home) ? `~${path.slice(home.length)}` : path;
@@ -55,13 +56,16 @@ export function createAgentLifecycle({ cli, watches, startedAgents }: AgentLifec
   }
 
   // A workspace that an earlier create_agent made stays marked as made, so the last agent in it archives it.
-  async function workspaceFor(peer: Peer, cwd: string): Promise<{ workspaceId: string; created?: Workspace }> {
+  async function workspaceFor(peer: Peer, cwd: string): Promise<{ workspaceId: string; isMadeNow: boolean; created?: Workspace }> {
     const existing = (await runJson(cli, peer, ["workspace", "ls", "--json"], z.array(workspaceSchema))).find(
       (workspace) => workspace.cwd === cwd,
     );
-    if (existing) return { workspaceId: existing.workspaceId, created: startedAgents.findCreatedWorkspace(peer.serverId, existing.workspaceId) };
+    if (existing) {
+      const created = startedAgents.findCreatedWorkspace(peer.serverId, existing.workspaceId);
+      return { workspaceId: existing.workspaceId, isMadeNow: false, created };
+    }
     const created = await runJson(cli, peer, ["workspace", "create", "--json", "--isolation=local", `--path=${cwd}`], workspaceSchema);
-    return { workspaceId: created.workspaceId, created };
+    return { workspaceId: created.workspaceId, isMadeNow: true, created };
   }
 
   async function archiveUnusedWorkspace(peer: Peer, workspaceId: string, startError: unknown) {
@@ -73,7 +77,7 @@ export function createAgentLifecycle({ cli, watches, startedAgents }: AgentLifec
   }
 
   async function start(peer: Peer, agent: NewAgent, callerAgentId: string | null, notifyOnFinish: boolean): Promise<StartOutcome> {
-    const { workspaceId, created } = await workspaceFor(peer, posix.resolve(agent.cwd));
+    const { workspaceId, isMadeNow, created } = await workspaceFor(peer, posix.resolve(agent.cwd));
     // Options in --name=value form and the prompt after "--", so no value can be read as an option.
     // An explicit --workspace keeps the new agent out of any caller workspace the CLI would otherwise pick.
     const args = ["run", "--background", "--json", `--workspace=${workspaceId}`];
@@ -83,7 +87,7 @@ export function createAgentLifecycle({ cli, watches, startedAgents }: AgentLifec
     try {
       output = await runStartCommand(peer, [...args, "--", agent.firstMessage]);
     } catch (error) {
-      if (created && !(error instanceof MaybeDeliveredError)) await archiveUnusedWorkspace(peer, workspaceId, error);
+      if (isMadeNow && !(error instanceof MaybeDeliveredError)) await archiveUnusedWorkspace(peer, workspaceId, error);
       throw error;
     }
     const started = runResultSchema.parse(JSON.parse(output));
