@@ -52,16 +52,19 @@ which agent sent it, and the receiver cannot reply to it.
 | `get_agent_activity(daemon, agentId, tail)` | An agent's recent activity. |
 | `send_agent_prompt(daemon, agentId, prompt, notifyOnFinish)` | Sends a message; see below. |
 | `create_agent(daemon, cwd, prompt, provider?, title?, notifyOnFinish)` | Starts a new agent; see below. |
-| `archive_agent(daemon, agentId)` | Archives an agent that `create_agent` started. |
+| `archive_agent(daemon, agentId)` | Archives an agent that `create_agent` started, and the workspace it made for it. |
 
 `daemon` is a name or a server ID; use the server ID when two daemons share a name.
 
 ## Starting and archiving agents
 
 To hand new work to another daemon, start a fresh agent with `create_agent`. Do not message an
-unrelated idle agent and ask it to relay the job.
+unrelated idle agent and ask it to relay the job. To give work to a particular agent, message it
+with `send_agent_prompt`.
 
-- The agent starts in exactly `cwd`, an absolute path on that daemon, in a new workspace of its own.
+- The agent starts in exactly `cwd`, an absolute path on that daemon. It joins that daemon's
+  workspace for the folder, if there is one, or else a new local workspace. It never joins the
+  caller's workspace.
 - Pass `provider` (such as `claude`) unless you know the daemon has a default: a daemon without one
   refuses the call.
 - Its first message carries the same sender header as `send_agent_prompt`, so it can reply.
@@ -77,6 +80,16 @@ unrelated idle agent and ask it to relay the job.
 `archive_agent` closes only agents that `create_agent` on this daemon started, so it cannot close
 someone's own session by mistake. The record of those agents survives a restart. It refuses an agent
 that is still working, and does not force one to stop.
+
+After the agent, `archive_agent` archives the workspace that `create_agent` made for it. Archiving a
+workspace archives every agent in it and closes its terminals, so the workspace is kept while any
+other agent on that daemon is in the same folder. When a daemon has 200 agents or more, the plugin
+cannot see them all, so it keeps the workspace. A workspace that `create_agent` did not make is never
+archived.
+
+The CLI shows each agent's folder but not its workspace, so the check goes by folder. An agent put
+in that workspace with a different folder is archived with it. Paseo's own tools do not do this:
+they give an agent its workspace's folder.
 
 ## Sending without interrupting
 

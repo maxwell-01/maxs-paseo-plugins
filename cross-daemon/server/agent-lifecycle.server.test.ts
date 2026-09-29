@@ -1,3 +1,5 @@
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { fakeDaemons, fakeTools } from "./fake-daemons.test-support";
 import { makeTempDir } from "./temp-dir.test-support";
@@ -13,26 +15,53 @@ function setup() {
 }
 
 describe("create_agent", () => {
-  it("starts the agent in exactly the given folder, in a workspace of its own, never the caller's", async () => {
+  it("makes a workspace for the folder when the daemon has none, and starts the agent in it", async () => {
     const t = setup();
     await t.create({ provider: "claude/haiku", title: "Plugin update" });
+    expect(t.workspaceCommands).toEqual([
+      ["workspace", "ls", "--json"],
+      ["workspace", "create", "--json", "--isolation=local", "--path=/Users/max"],
+    ]);
     expect(t.runs).toHaveLength(1);
     expect(t.runs[0].slice(0, -1)).toEqual([
       "run",
       "--background",
       "--json",
-      "--new-workspace=local",
-      "--cwd=/Users/max",
+      "--workspace=wks-1",
       "--provider=claude/haiku",
       "--title=Plugin update",
       "--",
     ]);
   });
 
-  it("leaves the provider and title to the daemon when none is given", async () => {
+  it("starts the agent in the daemon's own workspace for that folder when there is one", async () => {
     const t = setup();
+    t.putWorkspace("wks-home", "/Users/max");
     await t.create();
-    expect(t.runs[0].slice(0, -1)).toEqual(["run", "--background", "--json", "--new-workspace=local", "--cwd=/Users/max", "--"]);
+    expect(t.workspaceCommands).toEqual([["workspace", "ls", "--json"]]);
+    expect(t.runs[0].slice(0, -1)).toEqual(["run", "--background", "--json", "--workspace=wks-home", "--"]);
+  });
+
+  it("does not use a workspace for a different folder, even one inside it", async () => {
+    const t = setup();
+    t.putWorkspace("wks-code", "/Users/max/code");
+    await t.create();
+    expect(t.workspaceCommands[1]).toContain("--path=/Users/max");
+    expect(t.runs[0]).not.toContain("--workspace=wks-code");
+  });
+
+  it("archives the workspace it made when the agent could not be started in it", async () => {
+    const t = setup();
+    t.failRuns(new Error("Provider is required"));
+    expect(await t.create()).toEqual({ text: "paseo on mac failed: Provider is required", isError: true });
+    expect(t.workspaces.get("wks-1")?.archived).toBe(true);
+  });
+
+  it("matches the folder however the caller writes it", async () => {
+    const t = setup();
+    t.putWorkspace("wks-home", "/Users/max");
+    await t.create({ cwd: "/Users/max/" });
+    expect(t.runs[0]).toContain("--workspace=wks-home");
   });
 
   it("returns the new agent's ID", async () => {
@@ -80,7 +109,26 @@ describe("create_agent", () => {
       isError: true,
     });
     expect(t.watches.list()).toEqual([]);
-    expect(await t.archive("new-1")).toEqual({ text: "Archived agent new-1 on mac." });
+    expect(await t.archive("new-1")).toEqual({ text: "Archived agent new-1 on mac, and the workspace create_agent made for it." });
+  });
+
+  it("leaves a workspace an earlier create_agent made, and its agents, when a start in it fails", async () => {
+    const t = setup();
+    await t.create({ notifyOnFinish: false });
+    t.failRuns(new Error("Provider is required"));
+    expect((await t.create()).isError).toBe(true);
+    expect(t.workspaces.get("wks-1")?.archived).toBe(false);
+    expect(t.archived).toEqual([]);
+  });
+
+  it("reports both failures when the workspace it made cannot be archived after a failed start", async () => {
+    const t = setup();
+    t.failRuns(new Error("Provider is required"));
+    t.failWorkspaceArchives(new Error("Workspace not found"));
+    expect(await t.create()).toEqual({
+      text: "paseo on mac failed: Provider is required. Workspace wks-1, made for the agent, is left: Workspace not found",
+      isError: true,
+    });
   });
 
   it("refuses a folder that is not an absolute path", async () => {
@@ -99,7 +147,7 @@ describe("archive_agent", () => {
     t.finish("mac", "new-1", "Done.");
     const restarted = fakeTools(t.dir, t);
     const result = await restarted.tools.call("archive_agent", { daemon: "mac", agentId: "new-1" }, { callerAgentId: "caller-1" });
-    expect(result).toEqual({ text: "Archived agent new-1 on mac." });
+    expect(result).toEqual({ text: "Archived agent new-1 on mac, and the workspace create_agent made for it." });
     expect(t.archived).toEqual(["new-1"]);
   });
 
@@ -121,5 +169,86 @@ describe("archive_agent", () => {
       isError: true,
     });
     expect(t.archived).toEqual([]);
+  });
+
+  it("archives the workspace create_agent made, after the agent", async () => {
+    const t = setup();
+    await t.create({ notifyOnFinish: false });
+    t.finish("mac", "new-1", "Done.");
+    expect(await t.archive("new-1")).toEqual({ text: "Archived agent new-1 on mac, and the workspace create_agent made for it." });
+    expect(t.archived).toEqual(["new-1"]);
+    expect(t.workspaces.get("wks-1")?.archived).toBe(true);
+  });
+
+  it("keeps a workspace it did not make", async () => {
+    const t = setup();
+    t.putWorkspace("wks-home", "/Users/max");
+    await t.create({ notifyOnFinish: false });
+    t.finish("mac", "new-1", "Done.");
+    expect(await t.archive("new-1")).toEqual({ text: "Archived agent new-1 on mac." });
+    expect(t.workspaceCommands.filter(([, subcommand]) => subcommand === "archive")).toEqual([]);
+  });
+
+  it("keeps the workspace it made while another live agent is in that folder", async () => {
+    const t = setup();
+    await t.create({ notifyOnFinish: false });
+    t.finish("mac", "new-1", "Done.");
+    t.put("mac", "maxs-session", "idle", "/Users/max");
+    expect(await t.archive("new-1")).toEqual({
+      text: 'Archived agent new-1 on mac. Kept workspace wks-1: another agent is still in "/Users/max".',
+    });
+    expect(t.workspaces.get("wks-1")?.archived).toBe(false);
+  });
+
+  it("sees another agent in the folder even when paseo ls writes the folder under HOME as ~", async () => {
+    const t = setup();
+    const folder = `${process.env.HOME}/code`;
+    await t.create({ cwd: folder, notifyOnFinish: false });
+    t.finish("mac", "new-1", "Done.");
+    t.put("mac", "maxs-session", "idle", folder);
+    expect((await t.archive("new-1")).text).toContain("Kept workspace wks-1");
+    expect(t.workspaces.get("wks-1")?.archived).toBe(false);
+  });
+
+  it("keeps the workspace it made when there are too many agents to check", async () => {
+    const t = setup();
+    await t.create({ notifyOnFinish: false });
+    t.finish("mac", "new-1", "Done.");
+    for (let index = 0; index < 200; index += 1) t.put("mac", `other-${index}`, "idle");
+    expect(await t.archive("new-1")).toEqual({
+      text: "Archived agent new-1 on mac. Kept workspace wks-1: mac has too many agents to check that none is in it.",
+    });
+  });
+
+  it("archives the workspace with the last of the agents create_agent started in it", async () => {
+    const t = setup();
+    await t.create({ notifyOnFinish: false });
+    await t.create({ notifyOnFinish: false });
+    expect(t.runs[1]).toContain("--workspace=wks-1");
+    t.finish("mac", "new-1", "Done.");
+    t.finish("mac", "new-2", "Done.");
+    expect((await t.archive("new-1")).text).toContain("Kept workspace wks-1");
+    expect(await t.archive("new-2")).toEqual({ text: "Archived agent new-2 on mac, and the workspace create_agent made for it." });
+    expect(t.workspaces.get("wks-1")?.archived).toBe(true);
+  });
+
+  it("reports a workspace it could not archive, after archiving the agent", async () => {
+    const t = setup();
+    await t.create({ notifyOnFinish: false });
+    t.finish("mac", "new-1", "Done.");
+    t.failWorkspaceArchives(new Error("relay connection timed out"));
+    expect(await t.archive("new-1")).toEqual({
+      text: "Archived agent new-1 on mac, but could not archive workspace wks-1: relay connection timed out",
+      isError: true,
+    });
+    expect(t.archived).toEqual(["new-1"]);
+  });
+
+  it("archives only the agent for a record kept before workspaces were recorded", async () => {
+    const t = setup();
+    writeFileSync(join(t.dir, "started-agents.json"), JSON.stringify([{ peerServerId: "srv_mac", agentId: "old-1" }]));
+    t.put("mac", "old-1", "idle", "/Users/max");
+    expect(await t.archive("old-1")).toEqual({ text: "Archived agent old-1 on mac." });
+    expect(t.archived).toEqual(["old-1"]);
   });
 });

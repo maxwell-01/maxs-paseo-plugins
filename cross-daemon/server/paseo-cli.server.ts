@@ -46,6 +46,10 @@ export function runOn(cli: PaseoCli, daemon: Daemon, args: readonly string[], op
   return daemon ? cli.run(daemon.link, args, options) : cli.runLocal(args, options);
 }
 
+export async function runJson<Schema extends z.ZodType>(cli: PaseoCli, daemon: Daemon, args: readonly string[], schema: Schema) {
+  return schema.parse(JSON.parse(await runOn(cli, daemon, args)));
+}
+
 async function withPromptFile<T>(promptText: string | undefined, use: (extraArgs: string[]) => Promise<T>): Promise<T> {
   if (promptText === undefined) return use([]);
   const dir = mkdtempSync(join(tmpdir(), "cross-daemon-"));
