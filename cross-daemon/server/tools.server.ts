@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { Peer } from "../shared/cross-daemon.shared";
 import { randomBytes } from "node:crypto";
-import type { AgentLifecycle } from "./agent-lifecycle.server";
+import type { AgentLifecycle, WorkspaceCleanup } from "./agent-lifecycle.server";
 import { describeError, MaybeDeliveredError, type Messenger } from "./messenger.server";
 import type { PaseoCli } from "./paseo-cli.server";
 
@@ -112,6 +112,16 @@ export function composeMessage(own: DaemonIdentity, callerAgentId: string | null
   return lines.join("\n");
 }
 
+function describeArchived(agentId: string, peer: Peer, workspace: WorkspaceCleanup): ToolResult {
+  const archived = `Archived agent ${agentId} on ${peer.name}`;
+  if (workspace.kind === "none") return { text: `${archived}.` };
+  if (workspace.kind === "archived") return { text: `${archived}, and the workspace create_agent made for it.` };
+  if (workspace.kind === "in-use") {
+    return { text: `${archived}. Kept workspace ${workspace.workspaceId}: another agent is still in ${JSON.stringify(workspace.cwd)}.` };
+  }
+  return { text: `${archived}, but could not archive workspace ${workspace.workspaceId}: ${workspace.reason}`, isError: true };
+}
+
 export function createTools(deps: ToolDependencies): Tools {
   const reachPeer = async (ref: string, action: (peer: Peer) => Promise<ToolResult>): Promise<ToolResult> => {
     const peer = findPeer(deps.readPeers(), ref);
@@ -197,8 +207,8 @@ export function createTools(deps: ToolDependencies): Tools {
       name: "create_agent",
       description:
         "Start a new agent on another Paseo daemon, in the given folder, with your prompt as its first message. " +
-        "Prefer this for new work over messaging an unrelated idle agent. Returns the new agent's ID; " +
-        "archive it with archive_agent when its work is done.",
+        "It uses that daemon's workspace for the folder, or makes one. Prefer this for new work over messaging " +
+        "an unrelated idle agent. Returns the new agent's ID; archive it with archive_agent when its work is done.",
       input: z.object({
         daemon: daemonInput,
         cwd: z.string().startsWith("/", "an absolute path").describe("The folder on that daemon to start the agent in."),
@@ -236,13 +246,13 @@ export function createTools(deps: ToolDependencies): Tools {
     defineTool({
       name: "archive_agent",
       description:
-        "Archive an idle agent on another Paseo daemon that you started with create_agent. " +
-        "It refuses any other agent, and one that is still working.",
+        "Archive an idle agent on another Paseo daemon that you started with create_agent, and the workspace " +
+        "create_agent made for it. It refuses any other agent, and one that is still working.",
       input: z.object({ daemon: daemonInput, agentId: agentIdInput }),
       run: ({ daemon, agentId }) =>
         reachPeer(daemon, async (peer) => {
           const outcome = await deps.lifecycle.archive(peer, agentId);
-          if (outcome.kind === "archived") return { text: `Archived agent ${outcome.agentId} on ${peer.name}.` };
+          if (outcome.kind === "archived") return describeArchived(outcome.agentId, peer, outcome.workspace);
           const target = `Agent ${outcome.agentId} on ${peer.name}`;
           if (outcome.kind === "busy") return { text: `${target} is still working. Archive it once it is idle.`, isError: true };
           return { text: `${target} was not started with create_agent from this daemon, so archive_agent will not close it.`, isError: true };

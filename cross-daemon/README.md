@@ -59,9 +59,12 @@ which agent sent it, and the receiver cannot reply to it.
 ## Starting and archiving agents
 
 To hand new work to another daemon, start a fresh agent with `create_agent`. Do not message an
-unrelated idle agent and ask it to relay the job.
+unrelated idle agent and ask it to relay the job. To give work to a particular agent, message it
+with `send_agent_prompt` as before.
 
-- The agent starts in exactly `cwd`, an absolute path on that daemon, in a new workspace of its own.
+- The agent starts in exactly `cwd`, an absolute path on that daemon. It joins that daemon's
+  workspace for the folder, if there is one, or else a new local workspace. It never joins the
+  caller's workspace.
 - Pass `provider` (such as `claude`) unless you know the daemon has a default: a daemon without one
   refuses the call.
 - Its first message carries the same sender header as `send_agent_prompt`, so it can reply.
@@ -77,6 +80,10 @@ unrelated idle agent and ask it to relay the job.
 `archive_agent` closes only agents that `create_agent` on this daemon started, so it cannot close
 someone's own session by mistake. The record of those agents survives a restart. It refuses an agent
 that is still working, and does not force one to stop.
+
+After the agent, `archive_agent` archives the workspace that `create_agent` made for it. Archiving a
+workspace archives every agent in it, so the workspace is kept while any other agent on that daemon
+is in the same folder. A workspace that was there before is never archived.
 
 ## Sending without interrupting
 
