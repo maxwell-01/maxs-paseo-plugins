@@ -119,6 +119,9 @@ function describeArchived(agentId: string, peer: Peer, workspace: WorkspaceClean
   if (workspace.kind === "in-use") {
     return { text: `${archived}. Kept workspace ${workspace.workspaceId}: another agent is still in ${JSON.stringify(workspace.cwd)}.` };
   }
+  if (workspace.kind === "unchecked") {
+    return { text: `${archived}. Kept workspace ${workspace.workspaceId}: ${peer.name} has too many agents to check that none is in it.` };
+  }
   return { text: `${archived}, but could not archive workspace ${workspace.workspaceId}: ${workspace.reason}`, isError: true };
 }
 
@@ -247,7 +250,8 @@ export function createTools(deps: ToolDependencies): Tools {
       name: "archive_agent",
       description:
         "Archive an idle agent on another Paseo daemon that you started with create_agent, and the workspace " +
-        "create_agent made for it. It refuses any other agent, and one that is still working.",
+        "create_agent made for it. The workspace is kept while another agent on that daemon is in the same folder. " +
+        "It refuses any other agent, and one that is still working.",
       input: z.object({ daemon: daemonInput, agentId: agentIdInput }),
       run: ({ daemon, agentId }) =>
         reachPeer(daemon, async (peer) => {

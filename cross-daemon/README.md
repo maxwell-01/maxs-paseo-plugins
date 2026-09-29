@@ -52,7 +52,7 @@ which agent sent it, and the receiver cannot reply to it.
 | `get_agent_activity(daemon, agentId, tail)` | An agent's recent activity. |
 | `send_agent_prompt(daemon, agentId, prompt, notifyOnFinish)` | Sends a message; see below. |
 | `create_agent(daemon, cwd, prompt, provider?, title?, notifyOnFinish)` | Starts a new agent; see below. |
-| `archive_agent(daemon, agentId)` | Archives an agent that `create_agent` started. |
+| `archive_agent(daemon, agentId)` | Archives an agent that `create_agent` started, and the workspace it made for it. |
 
 `daemon` is a name or a server ID; use the server ID when two daemons share a name.
 
@@ -60,7 +60,7 @@ which agent sent it, and the receiver cannot reply to it.
 
 To hand new work to another daemon, start a fresh agent with `create_agent`. Do not message an
 unrelated idle agent and ask it to relay the job. To give work to a particular agent, message it
-with `send_agent_prompt` as before.
+with `send_agent_prompt`.
 
 - The agent starts in exactly `cwd`, an absolute path on that daemon. It joins that daemon's
   workspace for the folder, if there is one, or else a new local workspace. It never joins the
@@ -82,8 +82,10 @@ someone's own session by mistake. The record of those agents survives a restart.
 that is still working, and does not force one to stop.
 
 After the agent, `archive_agent` archives the workspace that `create_agent` made for it. Archiving a
-workspace archives every agent in it, so the workspace is kept while any other agent on that daemon
-is in the same folder. A workspace that was there before is never archived.
+workspace archives every agent in it and closes its terminals, so the workspace is kept while any
+other agent on that daemon is in the same folder. When a daemon has 200 agents or more, the plugin
+cannot see them all, so it keeps the workspace. A workspace that `create_agent` did not make is never
+archived.
 
 ## Sending without interrupting
 

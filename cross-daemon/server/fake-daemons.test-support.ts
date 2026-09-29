@@ -32,7 +32,8 @@ export function fakeDaemons() {
   let firstTurnStarts = true;
   const handleWorkspace = (args: readonly string[]) => {
     workspaceCommands.push([...args]);
-    const [, subcommand, workspaceId] = args;
+    const [, subcommand] = args;
+    const workspaceId = args.at(-1)!;
     if (subcommand === "ls") {
       const active = [...workspaces].filter(([, workspace]) => !workspace.archived);
       return JSON.stringify(active.map(([id, { cwd }]) => ({ workspaceId: id, name: id, isolation: "local", cwd })));
@@ -55,7 +56,9 @@ export function fakeDaemons() {
     if (command === "workspace") return handleWorkspace(args);
     if (command === "ls") {
       const live = [...agents].filter(([key, agent]) => key.startsWith(`${where}/`) && !agent.archived);
-      return JSON.stringify(live.map(([key, { status, cwd }]) => ({ id: key.slice(where.length + 1), status, cwd })));
+      const home = process.env.HOME!;
+      const shorten = (cwd: string) => (cwd.startsWith(home) ? `~${cwd.slice(home.length)}` : cwd);
+      return JSON.stringify(live.map(([key, { status, cwd }]) => ({ id: key.slice(where.length + 1), status, cwd: shorten(cwd) })));
     }
     if (command === "run") {
       runs.push([...args]);

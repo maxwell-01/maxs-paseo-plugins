@@ -2,10 +2,12 @@ import { join } from "node:path";
 import { z } from "zod";
 import { readPrivateJson, writePrivateJson } from "./private-json.server";
 
+export const workspaceSchema = z.object({ workspaceId: z.string(), cwd: z.string() });
+export type Workspace = z.infer<typeof workspaceSchema>;
 const startedAgentSchema = z.object({
   peerServerId: z.string(),
   agentId: z.string(),
-  createdWorkspace: z.object({ workspaceId: z.string(), cwd: z.string() }).optional(),
+  createdWorkspace: workspaceSchema.optional(),
 });
 type StartedAgent = z.infer<typeof startedAgentSchema>;
 type AgentKey = Pick<StartedAgent, "peerServerId" | "agentId">;
@@ -20,6 +22,10 @@ export function createStartedAgents(stateDir: string) {
     },
     find(agent: AgentKey): StartedAgent | undefined {
       return list().find((started) => isSame(started, agent));
+    },
+    findCreatedWorkspace(peerServerId: string, workspaceId: string): Workspace | undefined {
+      return list().find((started) => started.peerServerId === peerServerId && started.createdWorkspace?.workspaceId === workspaceId)
+        ?.createdWorkspace;
     },
     remove(agent: AgentKey): void {
       writePrivateJson(startedFile, list().filter((started) => !isSame(started, agent)));
