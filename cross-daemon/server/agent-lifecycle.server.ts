@@ -30,7 +30,7 @@ export function createAgentLifecycle({ cli, watches, startedAgents }: AgentLifec
       return await cli.run(peer.link, args);
     } catch (error) {
       if (CUT_OFF.test(describeError(error, peer))) {
-        throw new MaybeDeliveredError(`The start timed out, so an agent may have started on ${peer.name}. Check list_agents before you try again.`);
+        throw new MaybeDeliveredError(`The start timed out, so an agent may have started on ${peer.name}. Check list_agents before you try again; archive_agent cannot close it.`);
       }
       throw error;
     }

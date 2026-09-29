@@ -1,26 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { createAgentLifecycle } from "./agent-lifecycle.server";
-import { fakeDaemons, mac } from "./fake-daemons.test-support";
-import { createMessageQueue } from "./message-queue.server";
-import { createMessenger } from "./messenger.server";
-import { createStartedAgents } from "./started-agents.server";
+import { fakeDaemons, fakeTools } from "./fake-daemons.test-support";
 import { makeTempDir } from "./temp-dir.test-support";
-import { createTools } from "./tools.server";
-import { createWatchList } from "./watch-list.server";
-
-function toolsIn(dir: string, daemons: ReturnType<typeof fakeDaemons>) {
-  const watches = createWatchList(dir);
-  const readPeers = () => [mac];
-  const messenger = createMessenger({ queue: createMessageQueue(dir), watches, readPeers, cli: daemons.cli });
-  const lifecycle = createAgentLifecycle({ cli: daemons.cli, watches, startedAgents: createStartedAgents(dir) });
-  const tools = createTools({ readPeers, cli: daemons.cli, messenger, lifecycle, ownDaemon: async () => ({ name: "tower", serverId: "srv_tower" }) });
-  return { tools, watches, tick: () => messenger.runRound() };
-}
 
 function setup() {
   const daemons = fakeDaemons();
   const dir = makeTempDir("cd-lifecycle-");
-  const { tools, watches, tick } = toolsIn(dir, daemons);
+  const { tools, watches, tick } = fakeTools(dir, daemons);
   const create = (input: object = {}, callerAgentId: string | null = "caller-1") =>
     tools.call("create_agent", { daemon: "mac", cwd: "/Users/max", prompt: "Update the plugins.", ...input }, { callerAgentId });
   const archive = (agentId: string) => tools.call("archive_agent", { daemon: "mac", agentId }, { callerAgentId: "caller-1" });
@@ -81,7 +66,7 @@ describe("create_agent", () => {
     const t = setup();
     t.failRuns(new Error("paseo timed out after 90 s"));
     expect(await t.create()).toEqual({
-      text: "The start timed out, so an agent may have started on mac. Check list_agents before you try again.",
+      text: "The start timed out, so an agent may have started on mac. Check list_agents before you try again; archive_agent cannot close it.",
       isError: true,
     });
   });
@@ -112,7 +97,7 @@ describe("archive_agent", () => {
     const t = setup();
     await t.create({ notifyOnFinish: false });
     t.finish("mac", "new-1", "Done.");
-    const restarted = toolsIn(t.dir, t);
+    const restarted = fakeTools(t.dir, t);
     const result = await restarted.tools.call("archive_agent", { daemon: "mac", agentId: "new-1" }, { callerAgentId: "caller-1" });
     expect(result).toEqual({ text: "Archived agent new-1 on mac." });
     expect(t.archived).toEqual(["new-1"]);

@@ -1,8 +1,8 @@
 import { randomBytes } from "node:crypto";
 import type { Peer } from "../shared/cross-daemon.shared";
 import type { MessageQueue, QueuedMessage } from "./message-queue.server";
-import { type Daemon, inspectAgent, runOn } from "./agent-state.server";
-import type { PaseoCli } from "./paseo-cli.server";
+import { inspectAgent } from "./agent-state.server";
+import { type Daemon, type PaseoCli, runOn } from "./paseo-cli.server";
 import type { Watch, WatchList } from "./watch-list.server";
 
 const MAX_MESSAGE_AGE_MS = 24 * 60 * 60 * 1000;

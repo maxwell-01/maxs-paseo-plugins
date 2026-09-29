@@ -1,5 +1,11 @@
 import type { Peer } from "../shared/cross-daemon.shared";
+import { createAgentLifecycle } from "./agent-lifecycle.server";
+import { createMessageQueue } from "./message-queue.server";
+import { createMessenger } from "./messenger.server";
 import type { PaseoCli } from "./paseo-cli.server";
+import { createStartedAgents } from "./started-agents.server";
+import { createTools } from "./tools.server";
+import { createWatchList } from "./watch-list.server";
 
 export const mac: Peer = { serverId: "srv_mac", name: "mac", link: "https://app.paseo.sh/#offer=bWFj" };
 
@@ -74,4 +80,15 @@ export function fakeDaemons() {
       firstTurnStarts = false;
     },
   };
+}
+
+// The tools on daemon "tower", with every piece of state kept in dir.
+export function fakeTools(dir: string, daemons: ReturnType<typeof fakeDaemons>) {
+  const queue = createMessageQueue(dir);
+  const watches = createWatchList(dir);
+  const readPeers = () => [mac];
+  const messenger = createMessenger({ queue, watches, readPeers, cli: daemons.cli });
+  const lifecycle = createAgentLifecycle({ cli: daemons.cli, watches, startedAgents: createStartedAgents(dir) });
+  const tools = createTools({ readPeers, cli: daemons.cli, messenger, lifecycle, ownDaemon: async () => ({ name: "tower", serverId: "srv_tower" }) });
+  return { tools, queue, watches, tick: () => messenger.runRound() };
 }

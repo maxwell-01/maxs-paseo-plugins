@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
+import type { Peer } from "../shared/cross-daemon.shared";
 
 // The CLI gives up connecting after its own 15 s; this bounds the whole command.
 const CLI_TIMEOUT_MS = 90_000;
@@ -36,6 +37,13 @@ export interface PaseoCliOptions {
 export interface PaseoCli {
   run(link: string, args: readonly string[], options?: PaseoCliOptions): Promise<string>;
   runLocal(args: readonly string[], options?: PaseoCliOptions): Promise<string>;
+}
+
+// Null means this daemon: a notice to the agent that sent a message.
+export type Daemon = Peer | null;
+
+export function runOn(cli: PaseoCli, daemon: Daemon, args: readonly string[], options?: PaseoCliOptions) {
+  return daemon ? cli.run(daemon.link, args, options) : cli.runLocal(args, options);
 }
 
 async function withPromptFile<T>(promptText: string | undefined, use: (extraArgs: string[]) => Promise<T>): Promise<T> {
