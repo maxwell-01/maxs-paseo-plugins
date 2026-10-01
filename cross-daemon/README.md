@@ -51,7 +51,7 @@ which agent sent it, and the receiver cannot reply to it.
 | `list_agents(daemon)` | That daemon's agents, with status and folder. |
 | `get_agent_activity(daemon, agentId, tail)` | An agent's recent activity. |
 | `send_agent_prompt(daemon, agentId, prompt, notifyOnFinish)` | Sends a message; see below. |
-| `create_agent(daemon, cwd, prompt, provider?, title?, notifyOnFinish)` | Starts a new agent; see below. |
+| `create_agent(daemon, cwd, prompt, mode, provider?, title?, notifyOnFinish)` | Starts a new agent; see below. |
 | `archive_agent(daemon, agentId)` | Archives an agent that `create_agent` started, and the workspace it made for it. |
 
 `daemon` is a name or a server ID; use the server ID when two daemons share a name.
@@ -65,6 +65,8 @@ with `send_agent_prompt`.
 - The agent starts in exactly `cwd`, an absolute path on that daemon. It joins that daemon's
   workspace for the folder, if there is one, or else a new local workspace. It never joins the
   caller's workspace.
+- The agent starts in `auto` permission mode unless `mode` names another, such as `acceptEdits` or
+  `default` (always ask). Claude and Codex both have `auto`.
 - Pass `provider` (such as `claude`) unless you know the daemon has a default: a daemon without one
   refuses the call.
 - Its first message carries the same sender header as `send_agent_prompt`, so it can reply.

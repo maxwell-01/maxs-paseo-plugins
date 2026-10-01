@@ -28,10 +28,23 @@ describe("create_agent", () => {
       "--background",
       "--json",
       "--workspace=wks-1",
+      "--mode=auto",
       "--provider=claude/haiku",
       "--title=Plugin update",
       "--",
     ]);
+  });
+
+  it("starts the agent in the mode the caller asks for", async () => {
+    const t = setup();
+    await t.create({ mode: "acceptEdits" });
+    expect(t.runs[0]).toContain("--mode=acceptEdits");
+  });
+
+  it("refuses a mode the CLI could read as an option", async () => {
+    const t = setup();
+    expect((await t.create({ mode: "--help" })).isError).toBe(true);
+    expect(t.runs).toEqual([]);
   });
 
   it("starts the agent in the daemon's own workspace for that folder when there is one", async () => {
@@ -39,7 +52,7 @@ describe("create_agent", () => {
     t.putWorkspace("wks-home", "/Users/max");
     await t.create();
     expect(t.workspaceCommands).toEqual([["workspace", "ls", "--json"]]);
-    expect(t.runs[0].slice(0, -1)).toEqual(["run", "--background", "--json", "--workspace=wks-home", "--"]);
+    expect(t.runs[0].slice(0, -1)).toEqual(["run", "--background", "--json", "--workspace=wks-home", "--mode=auto", "--"]);
   });
 
   it("does not use a workspace for a different folder, even one inside it", async () => {
