@@ -221,15 +221,20 @@ export function createTools(deps: ToolDependencies): Tools {
           .regex(/^[A-Za-z0-9][A-Za-z0-9._/-]*$/, "a provider, or provider/model")
           .optional()
           .describe("The provider, or provider/model, such as claude or codex/gpt-5.4. A daemon with no default provider refuses the call without one, so pass one when unsure."),
+        mode: z
+          .string()
+          .regex(/^[A-Za-z0-9][A-Za-z0-9_-]*$/, "a mode ID")
+          .default("auto")
+          .describe("The permission mode, such as auto, acceptEdits or default (always ask). Claude and Codex both have auto."),
         title: z.string().min(1).max(200).optional().describe("A title for the agent."),
         notifyOnFinish: notifyOnFinishInput,
       }),
-      run: async ({ daemon, cwd, prompt, provider, title, notifyOnFinish }, { callerAgentId }) => {
+      run: async ({ daemon, cwd, prompt, mode, provider, title, notifyOnFinish }, { callerAgentId }) => {
         const firstMessage = composeMessage(await deps.ownDaemon(), callerAgentId, prompt);
         const promise = notifyOnFinish && callerAgentId ? " You will be told when it finishes." : "";
         return reachPeer(daemon, async (peer) => {
           try {
-            const outcome = await deps.lifecycle.start(peer, { cwd, firstMessage, provider, title }, callerAgentId, notifyOnFinish);
+            const outcome = await deps.lifecycle.start(peer, { cwd, firstMessage, mode, provider, title }, callerAgentId, notifyOnFinish);
             if (outcome.kind === "started") {
               return { text: `Started agent ${outcome.agentId} on ${peer.name} in ${JSON.stringify(outcome.cwd)}.${promise}` };
             }

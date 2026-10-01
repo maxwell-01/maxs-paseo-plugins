@@ -15,6 +15,7 @@ const AGENT_LIST_PAGE = 200;
 interface NewAgent {
   cwd: string;
   firstMessage: string;
+  mode: string;
   provider?: string;
   title?: string;
 }
@@ -80,7 +81,7 @@ export function createAgentLifecycle({ cli, watches, startedAgents }: AgentLifec
     const { workspaceId, isMadeNow, created } = await workspaceFor(peer, posix.resolve(agent.cwd));
     // Options in --name=value form and the prompt after "--", so no value can be read as an option.
     // An explicit --workspace keeps the new agent out of any caller workspace the CLI would otherwise pick.
-    const args = ["run", "--background", "--json", `--workspace=${workspaceId}`];
+    const args = ["run", "--background", "--json", `--workspace=${workspaceId}`, `--mode=${agent.mode}`];
     if (agent.provider) args.push(`--provider=${agent.provider}`);
     if (agent.title) args.push(`--title=${agent.title}`);
     let output: string;
