@@ -17,19 +17,19 @@ function flow(name: string, stages: Stage[]): Flow {
 const traqx = flow("traqx", [stage("plan"), stage("plan-review", { reviews: "plan" }), stage("develop"),
   stage("code-review", { reviews: "develop" }), stage("qa", { reviews: "develop", persist: false }),
   stage("retro", { persist: false, always: true })]);
-const gsmail = flow("gsmail", [stage("develop"), stage("plan"), stage("triage")]);
+const gsmail = flow("gsmail", [stage("develop"), stage("plan"), stage("triage-review")]);
 
 describe("groupRoles", () => {
   it("puts each stage id's variants together, known roles in loop order", () => {
     const roles = groupRoles([traqx, gsmail], null);
-    expect(roles.map((r) => r.id)).toEqual(["plan", "plan-review", "develop", "code-review", "qa", "retro", "triage"]);
+    expect(roles.map((r) => r.id)).toEqual(["plan", "plan-review", "develop", "code-review", "qa", "retro", "triage-review"]);
     expect(roles[0]).toMatchObject({ name: "Planner" });
     expect(roles[0].variants.map((v) => v.flow.name)).toEqual(["traqx", "gsmail"]);
-    expect(roles[6]).toMatchObject({ name: "Triage", blurb: null });
+    expect(roles[6]).toMatchObject({ name: "Triage review", blurb: null });
   });
 
   it("keeps only the chosen repo's variants and drops roles it does not have", () => {
-    expect(groupRoles([traqx, gsmail], "gsmail").map((r) => r.id)).toEqual(["plan", "develop", "triage"]);
+    expect(groupRoles([traqx, gsmail], "gsmail").map((r) => r.id)).toEqual(["plan", "develop", "triage-review"]);
   });
 });
 
@@ -48,6 +48,11 @@ describe("stageEffects", () => {
       onFail: "findings go back to plan; every stage from plan re-runs, up to 3 rounds",
       onPass: "findings it still names carry to develop",
     });
+  });
+
+  it("says a producer hands over on PASS, or ends the run as the last stage", () => {
+    expect(stageEffects(traqx, traqx.stages[0]).onPass).toBe("hands over to plan-review");
+    expect(stageEffects(gsmail, gsmail.stages[2]).onPass).toBe("the run ends");
   });
 
   it("says a failing producer ends the run and an always stage runs whatever happened", () => {

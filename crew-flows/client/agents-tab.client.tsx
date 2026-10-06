@@ -9,6 +9,9 @@ import { Card, Chips, Field, MONO, Notice, Pill, SectionTitle } from "./ui.clien
 
 const ALL = "";
 
+// By name, not by object: a refetch that changes a manifest must not orphan the selection.
+type Selection = { flow: string; stage: string };
+
 function VariantPills({ theme, variant }: { theme: PluginTheme; variant: RoleVariant }) {
   const { stage } = variant;
   return (
@@ -23,7 +26,7 @@ function VariantPills({ theme, variant }: { theme: PluginTheme; variant: RoleVar
 }
 
 function RoleCard({ theme, role, repoCount, selected, onSelect }: {
-  theme: PluginTheme; role: Role; repoCount: number; selected: RoleVariant | null; onSelect: (variant: RoleVariant) => void;
+  theme: PluginTheme; role: Role; repoCount: number; selected: Selection | null; onSelect: (selection: Selection) => void;
 }) {
   const { colors } = theme;
   return (
@@ -36,9 +39,9 @@ function RoleCard({ theme, role, repoCount, selected, onSelect }: {
       {role.blurb ? <Text style={{ color: colors.foregroundMuted, fontSize: 13 }}>{role.blurb}</Text> : null}
       {role.variants.map((variant) => {
         const { flow, stage } = variant;
-        const active = selected?.flow === flow && selected.stage === stage;
+        const active = selected?.flow === flow.name && selected.stage === stage.id;
         return (
-          <Pressable key={flow.name} accessibilityRole="button" accessibilityState={{ selected: active }} onPress={() => onSelect(variant)}
+          <Pressable key={flow.name} accessibilityRole="button" accessibilityState={{ selected: active }} onPress={() => onSelect({ flow: flow.name, stage: stage.id })}
             style={{ borderTopWidth: 1, borderColor: colors.border, paddingTop: 8, gap: 4, paddingLeft: active ? 8 : 0,
               borderLeftWidth: active ? 2 : 0, borderLeftColor: colors.accent }}>
             <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
@@ -60,7 +63,7 @@ function RoleCard({ theme, role, repoCount, selected, onSelect }: {
 function VariantDetail({ theme, variant, craftWords }: { theme: PluginTheme; variant: RoleVariant; craftWords: number | null }) {
   const { flow, stage } = variant;
   const effects = stageEffects(flow, stage);
-  const briefPath = stage.brief?.ref.startsWith("skill:") ? stage.brief.ref : `.claude/${stage.brief?.ref ?? "?"}`;
+  const briefPath = !stage.brief ? "not found" : stage.brief.ref.startsWith("skill:") ? stage.brief.ref : `.claude/${stage.brief.ref}`;
   return (
     <View style={{ gap: 8 }}>
       <Field theme={theme} label="Model" value={`${stage.model} · ${stage.thinking}`} />
@@ -93,12 +96,15 @@ function VariantDetail({ theme, variant, craftWords }: { theme: PluginTheme; var
 export function AgentsTab({ theme, layout }: PluginSurfaceProps) {
   const flows = useFlows();
   const [repo, setRepo] = useState(ALL);
-  const [selected, setSelected] = useState<RoleVariant | null>(null);
+  const [selection, setSelection] = useState<Selection | null>(null);
   if (flows.isPending) return <View style={{ padding: 24 }}><Notice theme={theme} tone="neutral">Reading manifests…</Notice></View>;
   if (flows.isError) return <View style={{ padding: 24 }}><Notice theme={theme} tone="danger">{flows.error.message}</Notice></View>;
 
   const { flows: all, craftWords, problems } = flows.data;
   const roles = groupRoles(all, repo === ALL ? null : repo);
+  const selectedFlow = all.find((flow) => flow.name === selection?.flow);
+  const selectedStage = selectedFlow?.stages.find((stage) => stage.id === selection?.stage);
+  const selected = selectedFlow && selectedStage ? { flow: selectedFlow, stage: selectedStage } : null;
   const title = selected ? `${selected.flow.name} · ${selected.stage.id}` : "";
   const detail = selected ? <VariantDetail theme={theme} variant={selected} craftWords={craftWords} /> : null;
   const pad = layout.compact ? 16 : 24;
@@ -115,13 +121,13 @@ export function AgentsTab({ theme, layout }: PluginSurfaceProps) {
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
           {roles.map((role) => (
             <View key={role.id} style={{ width: layout.compact ? "100%" : "48.5%" }}>
-              <RoleCard theme={theme} role={role} repoCount={all.length} selected={selected} onSelect={setSelected} />
+              <RoleCard theme={theme} role={role} repoCount={all.length} selected={selection} onSelect={setSelection} />
             </View>
           ))}
         </View>
       </ScrollView>
       {layout.compact ? (
-        <Modal title={title} open={selected !== null} onOpenChange={(open) => { if (!open) setSelected(null); }}>
+        <Modal title={title} open={selected !== null} onOpenChange={(open) => { if (!open) setSelection(null); }}>
           <Modal.Content>{detail}</Modal.Content>
         </Modal>
       ) : (
