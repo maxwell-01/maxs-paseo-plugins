@@ -39,7 +39,8 @@ describe("runStages", () => {
     ], agents: { plan: "p1" } }), flows, [
       agent("d2", { "ticket-loop.run": "traqx-294-x", "ticket-loop.stage": "develop" }),
       agent("d9", { "ticket-loop.run": "other-run", "ticket-loop.stage": "develop" }),
-      agent("p1", {}),
+      // A run from before the ticket-loop labels: only the subscription guard's crew label, found by the beacon's map.
+      agent("p1", { "firstmate.role": "crew" }),
     ], NOW);
     expect(cells.map((c) => [c.id, c.verdict?.verdict ?? null, c.current, c.agent?.id ?? null])).toEqual([
       ["plan", "PASS", false, "p1"],

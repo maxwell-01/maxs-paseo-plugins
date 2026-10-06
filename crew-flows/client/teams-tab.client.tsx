@@ -76,7 +76,7 @@ function RunCard({ theme, run, cells, now, navigation }: {
           <Text style={{ fontFamily: MONO }}>{run.stateDir}</Text>.
         </Text>
       ) : null}
-      {speaker ? <AgentActions theme={theme} agentId={speaker.id} navigation={navigation}
+      {speaker ? <AgentActions key={speaker.id} theme={theme} agentId={speaker.id} navigation={navigation}
         openLabel={`Open ${speaker.labels["ticket-loop.stage"] ?? "agent"} in Paseo`} /> : null}
       {run.logTail ? (
         <View style={{ flexDirection: "row" }}>
