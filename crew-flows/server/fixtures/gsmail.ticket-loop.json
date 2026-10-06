@@ -1,0 +1,12 @@
+{
+  "name": "gsmail",
+  "model": "claude-sonnet-5",
+  "thinking": "low",
+  "run_dir": "/workspace/.ticket-loop/gsmail-{{ISSUE}}",
+  "stages": [
+    {"id": "plan", "brief": "briefs/plan.md", "owner_approves": true},
+    {"id": "plan-review", "brief": "briefs/plan-review.md", "reviews": "plan"},
+    {"id": "develop", "brief": "briefs/develop.md", "asks": "plan"},
+    {"id": "code-review", "brief": "briefs/code-review.md", "reviews": "develop"}
+  ]
+}

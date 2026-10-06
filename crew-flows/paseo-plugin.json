@@ -1,0 +1,4 @@
+{
+  "id": "crew-flows",
+  "requirements": { "paseo": ">=0.10.3" }
+}
