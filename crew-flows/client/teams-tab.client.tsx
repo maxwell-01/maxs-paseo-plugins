@@ -78,10 +78,12 @@ function RunCard({ theme, run, cells, now, navigation }: {
       ) : null}
       {speaker ? <AgentActions theme={theme} agentId={speaker.id} navigation={navigation}
         openLabel={`Open ${speaker.labels["ticket-loop.stage"] ?? "agent"} in Paseo`} /> : null}
-      <View style={{ flexDirection: "row" }}>
-        <ActionButton theme={theme} label={showLog ? "Hide run log" : "Run log"} onPress={() => setShowLog(!showLog)} />
-      </View>
-      {showLog ? <Text selectable style={{ color: colors.foregroundMuted, fontFamily: MONO, fontSize: 11 }}>{run.logTail.join("\n") || "loop.log is empty."}</Text> : null}
+      {run.logTail ? (
+        <View style={{ flexDirection: "row" }}>
+          <ActionButton theme={theme} label={showLog ? "Hide run log" : "Run log"} onPress={() => setShowLog(!showLog)} />
+        </View>
+      ) : null}
+      {showLog && run.logTail ? <Text selectable style={{ color: colors.foregroundMuted, fontFamily: MONO, fontSize: 11 }}>{run.logTail.join("\n")}</Text> : null}
     </Card>
   );
 }

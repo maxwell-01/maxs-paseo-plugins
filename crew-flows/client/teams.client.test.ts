@@ -7,7 +7,7 @@ const NOW = Date.parse("2026-10-06T17:30:00Z");
 
 function run(extra: Partial<Run> = {}): Run {
   return { stateDir: "/s/traqx-294-state", name: "traqx", runId: "traqx-294-x", issue: "294", stage: "develop", round: 2,
-    beaconAt: "2026-10-06T17:29:30Z", outcome: null, manifestPath: null, stages: null, agents: {}, verdicts: [], logTail: [], ...extra };
+    beaconAt: "2026-10-06T17:29:30Z", outcome: null, manifestPath: null, stages: null, agents: {}, verdicts: [], logTail: null, ...extra };
 }
 
 function agent(id: string, labels: Record<string, string>): LiveAgent {
