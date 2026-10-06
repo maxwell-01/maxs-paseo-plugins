@@ -14,6 +14,13 @@ export interface Crewmate {
 const isLoopAgent = (agent: LiveAgent) =>
   Boolean(agent.labels["ticket-loop.run"]) || (agent.labels["firstmate.task"] ?? "").startsWith("ticket-loop:");
 
+const WAITING_STATES = new Set(["needs-decision", "blocked"]);
+
+export function waitingOnYou(agents: LiveAgent[], crew: Crewmate[]): LiveAgent[] {
+  return agents.filter((agent) => agent.needsYou
+    || crew.some((mate) => mate.agent === agent && mate.state !== null && WAITING_STATES.has(mate.state)));
+}
+
 export function crewOf(agents: LiveAgent[]): { mate: LiveAgent | null; crew: Crewmate[] } {
   const mate = agents.find((agent) => agent.labels["firstmate.role"] === "first-mate") ?? null;
   const crew = agents

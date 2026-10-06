@@ -113,6 +113,10 @@ export async function readFlows({ roots, skillDir }: FlowSources): Promise<FlowL
   const problems: string[] = [];
   const flows: Flow[] = [];
   for (const root of roots) {
+    if (!existsSync(root)) {
+      problems.push(`repo folder ${root} does not exist`);
+      continue;
+    }
     for (const dir of await gitRepos(root)) {
       try {
         const flow = await readFlow(dir, skillDir, problems);

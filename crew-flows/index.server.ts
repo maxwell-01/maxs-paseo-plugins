@@ -1,7 +1,6 @@
 import type { PluginServerContext } from "@getpaseo/plugin/server";
-import { homedir } from "node:os";
-import { join } from "node:path";
 import { readFlows } from "./server/flows.server";
+import { expandHome } from "./server/home-path.server";
 import { liveAgentsLabelled } from "./server/live-agents.server";
 import { readRuns } from "./server/runs.server";
 import { listFlows } from "./shared/flows.shared";
@@ -9,8 +8,6 @@ import { sources } from "./shared/settings.shared";
 import { listTeams } from "./shared/teams.shared";
 
 const TEAM_LABELS = ["ticket-loop.", "firstmate."];
-
-const expandHome = (path: string) => (path === "~" || path.startsWith("~/") ? join(homedir(), path.slice(1)) : path);
 
 export default function contribute(server: PluginServerContext) {
   const settings = server.registerSettings(sources);

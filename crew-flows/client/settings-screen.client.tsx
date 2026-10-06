@@ -8,8 +8,15 @@ export function SourcesSettingsScreen({ theme, layout }: PluginSurfaceProps) {
   const settings = useSettings(sources);
   const [draft, setDraft] = useState<{ repoRoots: string; stateRoot: string; skillDir: string } | null>(null);
   if (settings.status === "loading") return null;
-  if (settings.status !== "ready") {
-    return <Text style={{ color: theme.colors.statusDanger, padding: 16 }}>{settings.error}</Text>;
+  if (settings.status === "error") return <Text style={{ color: theme.colors.statusDanger, padding: 16 }}>{settings.error}</Text>;
+  if (settings.status === "invalid") {
+    return (
+      <SettingsSection title="Where Crew & Flows reads on this host">
+        <SettingsCard>
+          <SettingsAction label={`The saved folders are invalid: ${settings.error}`} actionLabel="Reset to defaults" onPress={() => void settings.reset()} />
+        </SettingsCard>
+      </SettingsSection>
+    );
   }
   const { values, revision } = settings;
   const shown = draft ?? { repoRoots: values.repoRoots.join(", "), stateRoot: values.stateRoot, skillDir: values.skillDir };

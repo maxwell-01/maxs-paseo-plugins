@@ -6,9 +6,9 @@ export const sources = defineSettings({
   scope: "host",
   version: 1,
   schema: z.object({
-    repoRoots: z.array(z.string()).default(["/workspace"]),
-    stateRoot: z.string().default("/workspace/.ticket-loop"),
+    repoRoots: z.array(z.string().min(1)).min(1).default(["/workspace"]),
+    stateRoot: z.string().min(1).default("/workspace/.ticket-loop"),
     // The marketplace checkout is the copy update.sh keeps current, so it holds the briefs loop.py runs.
-    skillDir: z.string().default("~/.claude/plugins/marketplaces/max-personal/claudeConfig/skills/ticket-loop"),
+    skillDir: z.string().min(1).default("~/.claude/plugins/marketplaces/max-personal/claudeConfig/skills/ticket-loop"),
   }),
 });
