@@ -5,21 +5,27 @@ import { readFlows } from "./server/flows.server";
 import { liveAgentsLabelled } from "./server/live-agents.server";
 import { readRuns } from "./server/runs.server";
 import { listFlows } from "./shared/flows.shared";
+import { sources } from "./shared/settings.shared";
 import { listTeams } from "./shared/teams.shared";
 
-const SOURCES = {
-  roots: ["/workspace"],
-  // The marketplace checkout is the copy update.sh keeps current, so it holds the briefs loop.py runs.
-  skillDir: join(homedir(), ".claude/plugins/marketplaces/max-personal/claudeConfig/skills/ticket-loop"),
-};
-// Where loop.py's manifests put run_dir, and so its <run_dir>-state.
-const STATE_ROOT = "/workspace/.ticket-loop";
-const TEAM_LABELS = ["ticket-loop."];
+const TEAM_LABELS = ["ticket-loop.", "firstmate."];
+
+const expandHome = (path: string) => (path === "~" || path.startsWith("~/") ? join(homedir(), path.slice(1)) : path);
 
 export default function contribute(server: PluginServerContext) {
-  server.handle(listFlows, () => readFlows(SOURCES));
+  const settings = server.registerSettings(sources);
+  async function readSources() {
+    const current = await settings.read();
+    if (current.status !== "ready") throw new Error(`Crew & Flows settings are invalid: ${current.error}`);
+    const { repoRoots, stateRoot, skillDir } = current.values;
+    return { roots: repoRoots.map(expandHome), stateRoot: expandHome(stateRoot), skillDir: expandHome(skillDir) };
+  }
+  server.handle(listFlows, async () => readFlows(await readSources()));
   server.handle(listTeams, async (_input, { paseo }) => {
-    const [runs, live] = await Promise.all([readRuns(STATE_ROOT), liveAgentsLabelled(paseo, TEAM_LABELS)]);
+    const [runs, live] = await Promise.all([
+      readSources().then(({ stateRoot }) => readRuns(stateRoot)),
+      liveAgentsLabelled(paseo, TEAM_LABELS),
+    ]);
     return { runs: runs.runs, agents: live.agents, problems: [...runs.problems, ...live.problems] };
   });
   return () => {};
