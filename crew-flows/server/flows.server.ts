@@ -10,7 +10,7 @@ const MAIN = "origin/main";
 const SKILL_PREFIX = "skill:";
 
 // The defaults loop.py's load() applies, so a stage shows what the engine will actually run.
-const manifestSchema = z.object({
+export const manifestSchema = z.object({
   name: z.string().default("ticket-loop"),
   model: z.string().default("claude-sonnet-5"),
   thinking: z.string().default("medium"),
