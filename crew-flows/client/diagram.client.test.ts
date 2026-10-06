@@ -20,6 +20,11 @@ describe("loopBacks", () => {
     ]);
   });
 
+  it("gives the inner lane to the shorter span even when the longer gate comes first", () => {
+    const flow = [stage("plan"), stage("build"), stage("test"), stage("big", { reviews: "plan" }), stage("small", { reviews: "test" })];
+    expect(loopBacks(flow).map((back) => [back.gate, back.lane])).toEqual([["big", 1], ["small", 0]]);
+  });
+
   it("counts positions among the flow stages only, leaving always stages out", () => {
     const flow = [stage("retro", { always: true }), stage("develop"), stage("review", { reviews: "develop" })];
     expect(loopBacks(flow)).toEqual([{ gate: "review", target: "develop", from: 0, to: 1, lane: 0 }]);

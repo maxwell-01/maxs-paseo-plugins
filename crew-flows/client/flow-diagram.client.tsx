@@ -80,12 +80,13 @@ export function FlowDiagram({ theme, flow, vertical }: { theme: PluginTheme; flo
           );
         }
         const left = target.x + target.width / 2;
+        const width = gate.x + gate.width / 2 - left;
         return (
           <Fragment key={back.gate}>
-            <View style={{ position: "absolute", left, top: rowEnd, width: gate.x + gate.width / 2 - left, height: depth,
+            <View style={{ position: "absolute", left, top: rowEnd, width, height: depth,
               borderColor: colors.statusDanger, borderLeftWidth: BAR, borderRightWidth: BAR, borderBottomWidth: BAR }} />
             <Text style={{ position: "absolute", left: left - 4, top: rowEnd - 5, color: colors.statusDanger, fontSize: 10 }}>▲</Text>
-            <Text style={{ position: "absolute", left: left + 6, top: rowEnd + depth + 1, color: colors.statusDanger, fontSize: 11 }}>
+            <Text numberOfLines={1} style={{ position: "absolute", left: left + 6, top: rowEnd + depth + 1, maxWidth: width - 6, color: colors.statusDanger, fontSize: 11 }}>
               {label(back.gate, back.target)}
             </Text>
           </Fragment>
