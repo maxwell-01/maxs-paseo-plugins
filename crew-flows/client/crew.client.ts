@@ -24,7 +24,9 @@ export function waitingOnYou(agents: LiveAgent[], crew: Crewmate[]): LiveAgent[]
 export function crewOf(agents: LiveAgent[]): { mate: LiveAgent | null; crew: Crewmate[] } {
   const mate = agents.find((agent) => agent.labels["firstmate.role"] === "first-mate") ?? null;
   const crew = agents
-    .filter((agent) => agent.labels["firstmate.role"] === "crew" && !isLoopAgent(agent))
+    .filter((agent) => agent.labels["firstmate.role"] === "crew" && !isLoopAgent(agent)
+      // FirstMate's own test for its crew: an agent a crewmate starts inherits the crew labels.
+      && (mate === null || agent.labels["paseo.parent-agent-id"] === mate.id))
     .map((agent) => {
       const last = agent.lastSaid?.trim().split("\n").at(-1)?.trim() ?? null;
       const match = last ? STATE_LINE.exec(last) : null;
