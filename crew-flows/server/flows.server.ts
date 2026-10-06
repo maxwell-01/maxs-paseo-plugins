@@ -36,8 +36,6 @@ const manifestSchema = z.object({
   }).optional(),
 });
 
-type Manifest = z.infer<typeof manifestSchema>;
-
 export interface FlowSources {
   roots: string[];
   skillDir: string;
@@ -56,28 +54,18 @@ function githubRepo(url: string): string | null {
   return /github\.com[:/]([^/]+\/[^/]+?)(?:\.git)?$/.exec(url.trim())?.[1] ?? null;
 }
 
-async function loopRepos(root: string): Promise<string[]> {
+async function gitRepos(root: string): Promise<string[]> {
   const entries = await readdir(root, { withFileTypes: true });
-  const repos: string[] = [];
-  for (const entry of entries.filter((e) => e.isDirectory()).sort((a, b) => a.name.localeCompare(b.name))) {
-    const dir = join(root, entry.name);
-    if (!existsSync(join(dir, ".git"))) continue;
-    if (!(await git(dir, ["for-each-ref", `refs/remotes/${MAIN}`])).trim()) continue;
-    repos.push(dir);
-  }
-  return repos;
+  return entries.filter((e) => e.isDirectory()).sort((a, b) => a.name.localeCompare(b.name))
+    .map((entry) => join(root, entry.name))
+    .filter((dir) => existsSync(join(dir, ".git")));
 }
 
 async function readFlow(dir: string, skillDir: string, problems: string[]): Promise<Flow | null> {
+  if (!(await git(dir, ["for-each-ref", `refs/remotes/${MAIN}`])).trim()) return null;
   const onMain = new Set((await git(dir, ["ls-tree", "-r", "--name-only", MAIN, "--", ".claude"])).split("\n"));
   if (!onMain.has(MANIFEST)) return null;
-  let manifest: Manifest;
-  try {
-    manifest = manifestSchema.parse(JSON.parse(await git(dir, ["show", `${MAIN}:${MANIFEST}`])));
-  } catch (error) {
-    problems.push(`${dir}/${MANIFEST}: ${error instanceof Error ? error.message : String(error)}`);
-    return null;
-  }
+  const manifest = manifestSchema.parse(JSON.parse(await git(dir, ["show", `${MAIN}:${MANIFEST}`])));
 
   async function brief(ref: string, stageId: string): Promise<Brief | null> {
     if (ref.startsWith(SKILL_PREFIX)) {
@@ -125,9 +113,13 @@ export async function readFlows({ roots, skillDir }: FlowSources): Promise<FlowL
   const problems: string[] = [];
   const flows: Flow[] = [];
   for (const root of roots) {
-    for (const dir of await loopRepos(root)) {
-      const flow = await readFlow(dir, skillDir, problems);
-      if (flow) flows.push(flow);
+    for (const dir of await gitRepos(root)) {
+      try {
+        const flow = await readFlow(dir, skillDir, problems);
+        if (flow) flows.push(flow);
+      } catch (error) {
+        problems.push(`${dir}: ${error instanceof Error ? error.message : String(error)}`);
+      }
     }
   }
   const craft = join(skillDir, "briefs", "craft.md");

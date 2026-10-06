@@ -112,17 +112,19 @@ describe("readFlows", () => {
     expect(flow.stages[2].asks).toBe("plan");
   });
 
-  it("skips folders with no loop and reports a broken manifest or a missing brief", async () => {
+  it("skips folders with no loop and reports a broken manifest, an unreadable repo or a missing brief", async () => {
     const root = makeTempDir("crew-flows-root-");
     mkdirSync(join(root, "not-a-repo"));
+    write(join(root, "dangling/.git"), "gitdir: /nonexistent/worktree\n");
     repoOnMain(root, "no-loop", { "README.md": "hi" });
     repoOnMain(root, "broken", { ".claude/ticket-loop.json": "{ not json" });
     repoOnMain(root, "half", { ".claude/ticket-loop.json": JSON.stringify({ name: "half", stages: [{ id: "plan", brief: "briefs/plan.md" }] }) });
     const result = await readFlows({ roots: [root], skillDir: skillDir() });
     expect(result.flows.map((f) => f.name)).toEqual(["half"]);
     expect(result.flows[0].stages[0].brief).toBeNull();
-    expect(result.problems).toHaveLength(2);
+    expect(result.problems).toHaveLength(3);
     expect(result.problems[0]).toContain("broken");
-    expect(result.problems[1]).toContain("half plan: brief briefs/plan.md is not on origin/main");
+    expect(result.problems[1]).toContain("dangling");
+    expect(result.problems[2]).toContain("half plan: brief briefs/plan.md is not on origin/main");
   });
 });
