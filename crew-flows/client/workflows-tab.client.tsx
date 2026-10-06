@@ -17,9 +17,9 @@ function Legend({ theme }: { theme: PluginTheme }) {
       borderColor: accent ? colors.accent : colors.foregroundMuted }} />
   );
   const item = (key: string, mark: ReactNode, text: string) => (
-    <View key={key} style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+    <View key={key} style={{ flexDirection: "row", alignItems: "center", gap: 8, maxWidth: "100%" }}>
       {mark}
-      <Text style={{ color: colors.foreground, fontSize: 12 }}>{text}</Text>
+      <Text style={{ color: colors.foreground, fontSize: 12, flexShrink: 1 }}>{text}</Text>
     </View>
   );
   return (
