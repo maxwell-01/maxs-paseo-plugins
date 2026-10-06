@@ -37,7 +37,12 @@ async function manifestStages(path: string) {
   };
 }
 
-async function readRun(dir: string): Promise<Run | null> {
+function runName(runId: string, issue: string | null): string {
+  const name = runId.replace(/-\d{8}T\d{6}Z$/, "");
+  return issue && name.endsWith(`-${issue}`) ? name.slice(0, -issue.length - 1) : name;
+}
+
+async function readRun(dir: string, problems: string[]): Promise<Run | null> {
   const alive = await readText(join(dir, "alive"));
   if (alive === null) return null;
   const beacon = beaconSchema.parse(JSON.parse(alive));
@@ -47,14 +52,19 @@ async function readRun(dir: string): Promise<Run | null> {
   for (const file of files) {
     const match = VERDICT_FILE.exec(file);
     if (!match) continue;
-    const verdict = verdictSchema.parse(JSON.parse(await readFile(join(dir, file), "utf8")));
-    verdicts.push({ stage: match[1], round: Number(match[2]), verdict: verdict.verdict, findings: verdict.findings?.length ?? 0 });
+    // A stage writes its own verdict, not atomically; loop.py treats an unreadable one as no verdict yet.
+    try {
+      const verdict = verdictSchema.parse(JSON.parse(await readFile(join(dir, file), "utf8")));
+      verdicts.push({ stage: match[1], round: Number(match[2]), verdict: verdict.verdict, findings: verdict.findings?.length ?? 0 });
+    } catch (error) {
+      problems.push(`${join(dir, file)}: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
   const log = await readText(join(dir, "loop.log"));
   const outcome = beacon.outcome ?? (await readText(join(dir, "outcome")))?.trim() ?? null;
   return {
     stateDir: dir,
-    name: manifest?.name ?? beacon.run_id.replace(/-\d{8}T\d{6}Z$/, "").replace(beacon.issue ? `-${beacon.issue}` : "", ""),
+    name: manifest?.name ?? runName(beacon.run_id, beacon.issue),
     runId: beacon.run_id,
     issue: beacon.issue,
     stage: beacon.stage,
@@ -78,7 +88,7 @@ export async function readRuns(stateRoot: string): Promise<{ runs: Run[]; proble
   for (const entry of dirs) {
     const dir = join(stateRoot, entry.name);
     try {
-      const run = await readRun(dir);
+      const run = await readRun(dir, problems);
       if (run) runs.push(run);
     } catch (error) {
       problems.push(`${dir}: ${error instanceof Error ? error.message : String(error)}`);

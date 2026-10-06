@@ -50,6 +50,18 @@ describe("readRuns", () => {
     expect(run).toMatchObject({ name: "homeassistant", stages: null, agents: {}, outcome: "SUBSCRIPTION_PAUSED", manifestPath: null, logTail: null });
   });
 
+  it("keeps a run whose verdict file is half written, and reports the file", async () => {
+    const root = makeTempDir("crew-flows-runs-");
+    stateDir(root, "a-1b-7", {
+      alive: JSON.stringify({ run_id: "a-1b-7-20261006T171344Z", issue: "7", stage: "plan", round: 1 }),
+      "plan-1.json": "{\"verdict\": \"PA",
+    });
+    const { runs, problems } = await readRuns(root);
+    expect(runs.map((run) => [run.name, run.verdicts])).toEqual([["a-1b", []]]);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain("plan-1.json");
+  });
+
   it("skips a state dir with no beacon, reports a broken one, and finds none when the root is missing", async () => {
     const root = makeTempDir("crew-flows-runs-");
     stateDir(root, "empty", {});

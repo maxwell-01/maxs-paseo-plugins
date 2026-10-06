@@ -19,8 +19,8 @@ const TEAM_LABELS = ["ticket-loop."];
 export default function contribute(server: PluginServerContext) {
   server.handle(listFlows, () => readFlows(SOURCES));
   server.handle(listTeams, async (_input, { paseo }) => {
-    const [{ runs, problems }, agents] = await Promise.all([readRuns(STATE_ROOT), liveAgentsLabelled(paseo, TEAM_LABELS)]);
-    return { runs, agents, problems };
+    const [runs, live] = await Promise.all([readRuns(STATE_ROOT), liveAgentsLabelled(paseo, TEAM_LABELS)]);
+    return { runs: runs.runs, agents: live.agents, problems: [...runs.problems, ...live.problems] };
   });
   return () => {};
 }

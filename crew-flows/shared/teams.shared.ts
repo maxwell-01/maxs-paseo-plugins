@@ -32,7 +32,6 @@ export const liveAgentSchema = z.object({
   title: z.string().nullable(),
   status: z.string(),
   model: z.string().nullable(),
-  // A permission request or an error. Paseo also flags every finished turn, which is not a call for help.
   needsYou: z.boolean(),
   labels: z.record(z.string(), z.string()),
   updatedAt: z.string(),
