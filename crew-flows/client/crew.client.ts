@@ -9,10 +9,15 @@ export interface Crewmate {
   line: string | null;
 }
 
+// Under --subscription-guard loop.py labels its agents as crew too; runs from before the
+// ticket-loop.run label carry only this task.
+const isLoopAgent = (agent: LiveAgent) =>
+  Boolean(agent.labels["ticket-loop.run"]) || (agent.labels["firstmate.task"] ?? "").startsWith("ticket-loop:");
+
 export function crewOf(agents: LiveAgent[]): { mate: LiveAgent | null; crew: Crewmate[] } {
   const mate = agents.find((agent) => agent.labels["firstmate.role"] === "first-mate") ?? null;
   const crew = agents
-    .filter((agent) => agent.labels["firstmate.role"] === "crew" && !agent.labels["ticket-loop.run"])
+    .filter((agent) => agent.labels["firstmate.role"] === "crew" && !isLoopAgent(agent))
     .map((agent) => {
       const last = agent.lastSaid?.trim().split("\n").at(-1)?.trim() ?? null;
       const match = last ? STATE_LINE.exec(last) : null;

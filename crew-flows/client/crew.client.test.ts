@@ -23,7 +23,10 @@ describe("crewOf", () => {
   });
 
   it("leaves ticket-loop agents to their run, even when the subscription guard labels them crew", () => {
-    const { crew } = crewOf([agent("loop", { "firstmate.role": "crew", "ticket-loop.run": "traqx-294-x" })]);
+    const { crew } = crewOf([
+      agent("loop", { "firstmate.role": "crew", "ticket-loop.run": "traqx-294-x" }),
+      agent("older-loop", { "firstmate.role": "crew", "firstmate.task": "ticket-loop:traqx" }),
+    ]);
     expect(crew).toEqual([]);
   });
 });
