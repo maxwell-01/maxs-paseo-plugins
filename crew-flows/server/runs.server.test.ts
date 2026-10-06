@@ -47,7 +47,7 @@ describe("readRuns", () => {
       outcome: "SUBSCRIPTION_PAUSED\n",
     });
     const [run] = (await readRuns(root)).runs;
-    expect(run).toMatchObject({ name: "homeassistant", stages: null, agents: {}, outcome: "SUBSCRIPTION_PAUSED", manifestPath: null });
+    expect(run).toMatchObject({ name: "homeassistant", stages: null, agents: {}, outcome: "SUBSCRIPTION_PAUSED", manifestPath: null, logTail: null });
   });
 
   it("skips a state dir with no beacon, reports a broken one, and finds none when the root is missing", async () => {

@@ -65,7 +65,7 @@ async function readRun(dir: string): Promise<Run | null> {
     stages: manifest?.stages ?? null,
     agents: beacon.agents,
     verdicts,
-    logTail: log === null ? [] : log.trimEnd().split("\n").slice(-LOG_TAIL_LINES),
+    logTail: log === null ? null : log.trimEnd().split("\n").slice(-LOG_TAIL_LINES),
   };
 }
 

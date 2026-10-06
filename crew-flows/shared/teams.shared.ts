@@ -23,7 +23,8 @@ export const runSchema = z.object({
   stages: z.array(runStageSchema).nullable(),
   agents: z.record(z.string(), z.string()),
   verdicts: z.array(z.object({ stage: z.string(), round: z.number(), verdict: z.string(), findings: z.number() })),
-  logTail: z.array(z.string()),
+  // Null when nothing wrote a loop.log: loop.py prints to stdout, and only a queue or a shell redirect keeps it.
+  logTail: z.array(z.string()).nullable(),
 });
 
 export const liveAgentSchema = z.object({
