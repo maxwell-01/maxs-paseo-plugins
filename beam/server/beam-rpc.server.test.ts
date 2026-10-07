@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { beamIn, beamOut } from "./beam-rpc.server";
-import { getBeamLog } from "./beam.server";
+import { getBeamLog, readHolder } from "./beam.server";
 import { createFakeWorkspacePort } from "./workspace-port.fake";
 
 function git(cwd: string, ...args: string[]): string {
@@ -54,6 +54,15 @@ describe("beam RPC handlers", () => {
 
     await beamOut(workspace.port);
     expect(workspace.currentTitle()).toBeNull();
+  });
+
+  it("does not beam in when the signal was aborted before it started", async () => {
+    const workspace = createFakeWorkspacePort({ slug: "beam-live", title: null });
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(beamIn(workspace.port, beamInput, controller.signal)).rejects.toThrow();
+    expect(readHolder()).toBeNull();
   });
 
   it("still beams in, and logs why, when the workspace title cannot be read", async () => {

@@ -189,6 +189,32 @@ describe("agent beam", () => {
       expect(mainOwner()).toBe("main\n");
     });
 
+    it("never beams in when the wait is aborted while the workspace title is being read", async () => {
+      const world = fakeWorld();
+      const controller = new AbortController();
+      const abortingPort = {
+        ...world.port,
+        workspaces: {
+          ref: (workspaceId: string) => {
+            const handle = world.port.workspaces.ref(workspaceId);
+            return {
+              ...handle,
+              current: () => {
+                controller.abort();
+                return handle.current();
+              },
+            };
+          },
+        },
+      };
+
+      const outcome = await createAgentBeam({ pollMs: 10 }).beamIn(abortingPort, "agent-a", { signal: controller.signal });
+
+      expect(outcome).toEqual({ result: "aborted" });
+      expect(readHolder()).toBeNull();
+      expect(mainOwner()).toBe("main\n");
+    });
+
     it("releases a holder whose workspace was archived, then beams the caller in", async () => {
       const world = fakeWorld();
       const beam = createAgentBeam({ pollMs: 10 });

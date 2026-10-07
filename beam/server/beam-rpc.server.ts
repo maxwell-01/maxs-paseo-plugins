@@ -9,11 +9,13 @@ import { activate, deactivate, logBeamWarning } from "./beam.server";
 export async function beamIn(
   port: WorkspaceTitlePort,
   input: { workspaceId: string; workspaceName: string; workspaceDir: string },
+  signal?: AbortSignal,
 ): Promise<{ active: true; mainPath: string }> {
   const titleMark = await readWorkspaceTitle(port, input.workspaceId).catch((error: unknown) => {
     logBeamWarning("could not read the workspace title", error);
     return undefined;
   });
+  signal?.throwIfAborted();
   const result = await activate({ ...input, titleMark });
   if (titleMark) {
     await applyBeamingTitle(port, input.workspaceId, titleMark).catch((error: unknown) =>

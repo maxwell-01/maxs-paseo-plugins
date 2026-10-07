@@ -1,7 +1,6 @@
-import { spawn } from "node:child_process";
 import { join } from "node:path";
-import { createInterface } from "node:readline";
 import { afterEach, describe, expect, it } from "vitest";
+import { runCli, startProxy } from "./proxy-process.test-support";
 import { makeTempDir } from "./temp-dir.test-support";
 import { installToolProxy } from "./tool-proxy.server";
 import { serveTools } from "./tool-socket.server";
@@ -14,44 +13,6 @@ const echoTools: Tools = {
     return { text: JSON.stringify({ name, args, callerAgentId: caller.callerAgentId }) };
   },
 };
-
-function startProxy(proxyPath: string, agentId: string) {
-  const child = spawn(process.execPath, [proxyPath], { env: { ...process.env, PASEO_AGENT_ID: agentId } });
-  const replies = createInterface({ input: child.stdout });
-  const pending = new Map<number, (reply: any) => void>();
-  replies.on("line", (line) => {
-    const reply = JSON.parse(line);
-    pending.get(reply.id)?.(reply);
-  });
-  let nextId = 1;
-  const notify = (method: string, params: unknown = {}) => child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method, params })}\n`);
-  const start = (method: string, params: unknown = {}) => {
-    const id = nextId++;
-    const reply = new Promise<{ result?: any; error?: { code: number; message: string } }>((resolve) => {
-      pending.set(id, resolve);
-      child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
-    });
-    return { id, reply };
-  };
-  const request = (method: string, params: unknown = {}) => start(method, params).reply;
-  const sendRaw = (line: string) =>
-    new Promise<any>((resolve) => {
-      replies.once("line", (reply) => resolve(JSON.parse(reply)));
-      child.stdin.write(`${line}\n`);
-    });
-  return { child, request, start, notify, sendRaw };
-}
-
-function runCli(proxyPath: string, args: string[]) {
-  const child = spawn(process.execPath, [proxyPath, ...args], { env: { ...process.env, PASEO_AGENT_ID: "agent-cli" } });
-  let stdout = "";
-  let stderr = "";
-  child.stdout.on("data", (chunk) => (stdout += chunk));
-  child.stderr.on("data", (chunk) => (stderr += chunk));
-  return new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve) =>
-    child.on("close", (code) => resolve({ code, stdout, stderr })),
-  );
-}
 
 describe("tool proxy started by an agent", () => {
   const stops: (() => void)[] = [];
