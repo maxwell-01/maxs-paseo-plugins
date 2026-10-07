@@ -140,12 +140,12 @@ export function BeamPanel({ theme, layout, workspaceId }: PluginWorkspacePanelPr
             ? "Beam out: stop mirroring this workspace to your main checkout"
             : "Beam in: continuously mirror this workspace's working tree onto your main checkout"
         }
-        disabled={pending || otherActive}
+        disabled={pending}
         onPress={() => (active ? deactivateMutation.mutate() : activateMutation.mutate())}
         style={[
           styles.button,
           active ? styles.buttonOut : styles.buttonIn,
-          pending || otherActive ? styles.buttonDisabled : null,
+          pending ? styles.buttonDisabled : null,
         ]}
       >
         <Text style={active ? styles.buttonTextOut : styles.buttonTextIn}>

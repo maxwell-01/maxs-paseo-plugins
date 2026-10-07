@@ -8,6 +8,8 @@ export const beamStatus = defineRpc({
     active: z.boolean(),
     workspaceId: z.string().optional(),
     workspaceName: z.string().optional(),
+    workspaceDir: z.string().optional(),
+    startedAt: z.string().optional(),
     mainPath: z.string(),
     originalBranch: z.string().optional(),
     originalHead: z.string().optional(),

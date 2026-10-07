@@ -1,7 +1,8 @@
 import type { WorkspaceTitlePort } from "./beam-title.server";
+import type { StaleHolderPort } from "./stale-holder.server";
 
 export function createFakeWorkspacePort(
-  workspace: { slug: string; title: string | null } | null,
+  workspace: { slug: string; title: string | null; archivingAt?: string | null } | null,
   failures: { refresh?: boolean; setTitle?: boolean } = {},
 ) {
   const setTitleCalls: Array<string | null> = [];
@@ -14,7 +15,7 @@ export function createFakeWorkspacePort(
           if (failures.refresh) {
             throw new Error("daemon unreachable");
           }
-          return state;
+          return state && { ...state, archivingAt: state.archivingAt ?? null };
         },
         setTitle: async (title: string | null) => {
           if (failures.setTitle) {
@@ -26,6 +27,14 @@ export function createFakeWorkspacePort(
         },
       }),
     },
-  } satisfies WorkspaceTitlePort;
-  return { port, setTitleCalls, currentTitle: () => state?.title ?? null, failures };
+  } satisfies WorkspaceTitlePort & StaleHolderPort;
+  return {
+    port,
+    setTitleCalls,
+    currentTitle: () => state?.title ?? null,
+    startArchiving: (at: string) => {
+      state = state && { ...state, archivingAt: at };
+    },
+    failures,
+  };
 }

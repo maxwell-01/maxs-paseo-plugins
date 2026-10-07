@@ -23,11 +23,6 @@ async function toggleBeam(client: PluginClientContext, workspaceId: string): Pro
     await client.rpc(beamDeactivate, {});
     return;
   }
-  if (current.active && current.workspaceId !== workspaceId) {
-    throw new Error(
-      `Already beaming "${current.workspaceName ?? "another workspace"}"; beam out there first`,
-    );
-  }
   const handle = client.paseo.workspaces.ref(workspaceId);
   let workspaceDir = handle.directory;
   let workspaceName = handle.name;

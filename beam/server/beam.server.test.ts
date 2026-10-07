@@ -3,7 +3,17 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { activate, deactivate, midOperationReason, restoreMain, snapshotMain, syncOnce } from "./beam.server";
+import {
+  activate,
+  BeamHeldError,
+  deactivate,
+  midOperationReason,
+  readHolder,
+  restoreMain,
+  snapshotMain,
+  status,
+  syncOnce,
+} from "./beam.server";
 
 function git(cwd: string, ...args: string[]): string {
   return execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
@@ -269,5 +279,99 @@ describe("activate + deactivate", () => {
       workspaceId: "ws-1",
       titleMark: undefined,
     });
+  });
+  function newWorktree(name: string, base = mainRepo): string {
+    const dir = join(root, name);
+    git(base, "worktree", "add", "-b", name, dir);
+    return dir;
+  }
+
+  it("reports no holder while nothing is beaming", () => {
+    expect(readHolder()).toBeNull();
+  });
+
+  it("names the holder and when it started, in readHolder and in status", async () => {
+    await activate({
+      workspaceId: "ws-1",
+      workspaceName: "cruel-dolphin",
+      workspaceDir: wsDir,
+      titleMark: undefined,
+    });
+
+    const holder = readHolder();
+    expect(holder).toEqual({
+      workspaceId: "ws-1",
+      workspaceName: "cruel-dolphin",
+      workspaceDir: wsDir,
+      mainPath: mainRepo,
+      startedAt: expect.any(String),
+    });
+    await expect(status()).resolves.toMatchObject({
+      active: true,
+      workspaceId: "ws-1",
+      workspaceDir: wsDir,
+      startedAt: holder?.startedAt,
+    });
+
+    await deactivate();
+  });
+
+  it("throws BeamHeldError naming the holder when the same checkout is already beaming", async () => {
+    const other = newWorktree("other");
+    await activate({
+      workspaceId: "ws-1",
+      workspaceName: "cruel-dolphin",
+      workspaceDir: wsDir,
+      titleMark: undefined,
+    });
+
+    const attempt = activate({
+      workspaceId: "ws-2",
+      workspaceName: "other",
+      workspaceDir: other,
+      titleMark: undefined,
+    });
+
+    await expect(attempt).rejects.toBeInstanceOf(BeamHeldError);
+    await expect(attempt).rejects.toThrow(
+      'Already beaming "cruel-dolphin" onto this checkout; beam out there first',
+    );
+    await expect(attempt).rejects.toMatchObject({ holder: { workspaceId: "ws-1", mainPath: mainRepo } });
+
+    await deactivate();
+  });
+
+  it("throws BeamHeldError naming the holder when another checkout is already beaming", async () => {
+    const otherMain = join(root, "other-main");
+    mkdirSync(otherMain);
+    git(otherMain, "init", "-b", "main");
+    git(otherMain, "config", "user.email", "beam-test@example.com");
+    git(otherMain, "config", "user.name", "Beam Test");
+    git(otherMain, "config", "commit.gpgsign", "false");
+    writeFileSync(join(otherMain, "a.txt"), "a\n");
+    git(otherMain, "add", "-A");
+    git(otherMain, "commit", "-m", "initial");
+    const otherWs = newWorktree("other-ws", otherMain);
+    await activate({
+      workspaceId: "ws-1",
+      workspaceName: "cruel-dolphin",
+      workspaceDir: wsDir,
+      titleMark: undefined,
+    });
+
+    const attempt = activate({
+      workspaceId: "ws-2",
+      workspaceName: "other",
+      workspaceDir: otherWs,
+      titleMark: undefined,
+    });
+
+    await expect(attempt).rejects.toBeInstanceOf(BeamHeldError);
+    await expect(attempt).rejects.toThrow(
+      `Already beaming "cruel-dolphin" onto ${mainRepo}; beam out there first`,
+    );
+    await expect(attempt).rejects.toMatchObject({ holder: { workspaceId: "ws-1" } });
+
+    await deactivate();
   });
 });

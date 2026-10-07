@@ -2,7 +2,7 @@ import { z } from "zod";
 
 const BEAMING_TITLE_PREFIX = "⚡ ";
 
-interface WorkspaceTitleHandle {
+export interface WorkspaceTitleHandle {
   current(): { title?: string | null; name: string } | null;
   refresh(): Promise<unknown>;
   setTitle(title: string | null): Promise<unknown>;

@@ -1,13 +1,18 @@
 import type { PluginServerContext } from "@getpaseo/plugin/server";
 import { beamIn, beamOut } from "./server/beam-rpc.server";
+import { registerStaleHolderRelease, releaseStaleHolder } from "./server/stale-holder.server";
 import { getBeamLog, status, stopAllBeams } from "./server/beam.server";
 import { beamActivate, beamDeactivate, beamLog, beamStatus } from "./shared/beam.shared";
 
 export default function contribute(server: PluginServerContext) {
-  server.handle(beamActivate, (input, { paseo }) => beamIn(paseo, input));
+  server.handle(beamActivate, async (input, { paseo }) => {
+    await releaseStaleHolder(paseo);
+    return beamIn(paseo, input);
+  });
   server.handle(beamDeactivate, (_input, { paseo }) => beamOut(paseo));
   server.handle(beamStatus, status);
   server.handle(beamLog, () => ({ entries: getBeamLog() }));
+  registerStaleHolderRelease(server);
 
   return () => {
     stopAllBeams();
