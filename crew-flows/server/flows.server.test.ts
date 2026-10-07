@@ -112,6 +112,14 @@ describe("readFlows", () => {
     expect(flow.stages[2].asks).toBe("plan");
   });
 
+  it("reports a repo folder that does not exist on this host and still reads the others", async () => {
+    const root = makeTempDir("crew-flows-root-");
+    traqx(root);
+    const result = await readFlows({ roots: [join(root, "typo"), root], skillDir: skillDir() });
+    expect(result.flows.map((f) => f.name)).toEqual(["traqx"]);
+    expect(result.problems).toEqual([`repo folder ${join(root, "typo")} does not exist`]);
+  });
+
   it("skips folders with no loop and reports a broken manifest, an unreadable repo or a missing brief", async () => {
     const root = makeTempDir("crew-flows-root-");
     mkdirSync(join(root, "not-a-repo"));

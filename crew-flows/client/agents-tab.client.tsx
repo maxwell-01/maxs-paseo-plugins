@@ -117,7 +117,7 @@ export function AgentsTab({ theme, layout }: PluginSurfaceProps) {
             options={[{ id: ALL, label: "All repos" }, ...all.map((flow) => ({ id: flow.name, label: flow.name }))]} />
         </View>
         {problems.map((problem) => <Notice key={problem} theme={theme} tone="warning">{problem}</Notice>)}
-        {all.length === 0 ? <Notice theme={theme} tone="neutral">No repo under /workspace has a ticket-loop manifest on origin/main.</Notice> : null}
+        {all.length === 0 ? <Notice theme={theme} tone="neutral">No repo in the repo folders has a ticket-loop manifest on origin/main (Settings → Plugins → crew-flows).</Notice> : null}
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
           {roles.map((role) => (
             <View key={role.id} style={{ width: layout.compact ? "100%" : "48.5%" }}>

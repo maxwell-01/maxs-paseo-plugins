@@ -5,6 +5,8 @@ import { useState } from "react";
 import { ScrollView, Text, View } from "react-native";
 import { listTeams, type Run } from "../shared/teams.shared";
 import { ActionButton, AgentActions } from "./agent-actions.client";
+import { crewOf, waitingOnYou } from "./crew.client";
+import { CrewSection } from "./crew-section.client";
 import { useFlows } from "./flows-query.client";
 import { modelLabel } from "./roles.client";
 import { runStages, runState, type StageCell } from "./teams.client";
@@ -107,22 +109,26 @@ export function TeamsTab({ theme, layout, navigation }: PluginSurfaceProps) {
   const now = Date.now();
   const { runs, agents, problems } = teams.data;
   const live = runs.filter((run) => runState(run, now) === "live");
-  const needsYou = agents.filter((agent) => agent.needsYou);
+  const loopAgents = agents.filter((agent) => agent.labels["ticket-loop.run"]);
+  const { mate, crew } = crewOf(agents);
+  const needsYou = waitingOnYou(agents, crew);
   return (
     <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: layout.compact ? 16 : 24, gap: 14 }}>
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
         <Tile theme={theme} value={runs.length} label={`loop runs on record · ${live.length} live`} />
-        <Tile theme={theme} value={agents.length} label="agents in loop runs now" />
+        <Tile theme={theme} value={loopAgents.length} label="agents in loop runs now" />
+        <Tile theme={theme} value={crew.length} label="crewmates under the first mate" />
         <Tile theme={theme} value={needsYou.length} label="need you" tone={needsYou.length ? "warning" : "neutral"} />
       </View>
       {problems.map((problem) => <Notice key={problem} theme={theme} tone="warning">{problem}</Notice>)}
       {flows.isError ? <Notice theme={theme} tone="warning">{flows.error.message}</Notice> : null}
       <SectionTitle theme={theme}>Ticket-loop runs</SectionTitle>
-      {runs.length === 0 ? <Notice theme={theme} tone="neutral">No run has left state under /workspace/.ticket-loop.</Notice> : null}
+      {runs.length === 0 ? <Notice theme={theme} tone="neutral">No run has left state in the run state folder (Settings → Plugins → crew-flows).</Notice> : null}
       {runs.map((run) => (
         <RunCard key={run.stateDir} theme={theme} run={run} now={now} navigation={navigation}
           cells={runStages(run, flows.data?.flows ?? [], agents, now)} />
       ))}
+      <CrewSection theme={theme} mate={mate} crew={crew} navigation={navigation} />
     </ScrollView>
   );
 }
