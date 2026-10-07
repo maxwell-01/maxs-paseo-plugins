@@ -110,9 +110,12 @@ export function createAgentBeam({ pollMs }: { pollMs: number }) {
         return { result: "already-yours" };
       }
       try {
-        await beamWorkspaceIn(port, caller);
+        await beamWorkspaceIn(port, caller, options.signal);
         return { result: "beamed-in" };
       } catch (error) {
+        if (options.signal.aborted) {
+          return { result: "aborted" };
+        }
         if (!(error instanceof BeamHeldError)) {
           throw error;
         }
