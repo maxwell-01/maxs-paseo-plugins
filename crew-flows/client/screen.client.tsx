@@ -2,9 +2,11 @@ import type { PluginSurfaceProps } from "@getpaseo/plugin/client";
 import { type ComponentType, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { AgentsTab } from "./agents-tab.client";
+import { TeamsTab } from "./teams-tab.client";
 import { WorkflowsTab } from "./workflows-tab.client";
 
 const TABS: { id: string; label: string; Component: ComponentType<PluginSurfaceProps> }[] = [
+  { id: "teams", label: "Teams", Component: TeamsTab },
   { id: "workflows", label: "Workflows", Component: WorkflowsTab },
   { id: "agents", label: "Agents", Component: AgentsTab },
 ];
