@@ -1,0 +1,18 @@
+{
+  "name": "traqx",
+  "model": "claude-sonnet-5",
+  "thinking": "medium",
+  "max_rounds": 3,
+  "stall_seconds": 1800,
+  "run_dir": "/workspace/.ticket-loop/traqx-{{ISSUE}}",
+  "stages": [
+    {"id": "plan", "brief": "briefs/plan.md", "model": "claude-opus-5", "thinking": "high"},
+    {"id": "plan-review", "brief": "briefs/plan-review.md", "reviews": "plan", "model": "codex/gpt-5.6-sol", "thinking": "high"},
+    {"id": "develop", "brief": "briefs/develop.md"},
+    {"id": "code-review", "brief": "briefs/code-review.md", "reviews": "develop", "model": "codex/gpt-5.6-sol", "thinking": "high"},
+    {"id": "qa", "brief": "briefs/qa.md", "reviews": "develop", "persist": false, "thinking": "high"},
+    {"id": "deploy", "brief": "briefs/deploy.md", "persist": false, "thinking": "high"},
+    {"id": "retro", "brief": "skill:briefs/retro.md", "model": "claude-haiku-4-5", "persist": false}
+  ],
+  "queue": {"repo": "maxwell-01/traqx-bookings", "labels": [], "exclude_labels": ["blocked", "loop:active"], "skip_if_open_pr": true, "order": "oldest", "max_tickets": 3}
+}
