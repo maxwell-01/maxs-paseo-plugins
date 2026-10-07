@@ -1,7 +1,7 @@
 import { type PluginSurfaceProps, useHosts } from "@getpaseo/plugin/client";
 import { SettingsCard, SettingsSection, SettingsSwitch } from "@getpaseo/plugin/client/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ScrollView, Text } from "react-native";
+import { Text } from "react-native";
 import { buildDaemonRows, type DescribedDaemon } from "./daemon-rows.client";
 import type { DaemonPort } from "./peer-sync.client";
 import { listRegisteredDaemons, requestPeerSync } from "./sync-scheduler.client";
@@ -25,7 +25,7 @@ async function describeAll(): Promise<{ daemons: ReachableDaemon[]; failedCount:
   return { daemons, failedCount: results.length - daemons.length };
 }
 
-export function DaemonsPage({ theme, layout }: PluginSurfaceProps) {
+export function DaemonsSection({ theme }: Pick<PluginSurfaceProps, "theme">) {
   const hosts = useHosts();
   const queryClient = useQueryClient();
   const daemons = useQuery({ queryKey: DAEMONS_KEY, queryFn: describeAll, refetchInterval: REFRESH_MS });
@@ -45,32 +45,30 @@ export function DaemonsPage({ theme, layout }: PluginSurfaceProps) {
   const rows = buildDaemonRows(hosts, daemons.data ?? null);
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: theme.colors.surface0 }} contentContainerStyle={{ padding: layout.compact ? 16 : 24 }}>
-      <SettingsSection title="Cross-daemon">
-        <Text style={{ color: theme.colors.foreground, marginBottom: 12 }}>
-          Agents on switched-on daemons can list and message agents on the other switched-on daemons.
+    <SettingsSection title="All daemons">
+      <Text style={{ color: theme.colors.foreground, marginBottom: 12 }}>
+        Agents on switched-on daemons can list and message agents on the other switched-on daemons.
+      </Text>
+      {toggle.error ? (
+        <Text accessibilityRole="alert" style={{ color: theme.colors.statusDanger, marginBottom: 12 }}>
+          {toggle.error.message}
         </Text>
-        {toggle.error ? (
-          <Text accessibilityRole="alert" style={{ color: theme.colors.statusDanger, marginBottom: 12 }}>
-            {toggle.error.message}
-          </Text>
-        ) : null}
-        <SettingsCard>
-          {rows.map((row) => {
-            const daemon = daemons.data?.daemons.find((candidate) => candidate.serverId === row.serverId);
-            return (
-              <SettingsSwitch
-                key={row.serverId}
-                label={row.label}
-                hint={row.detail}
-                value={row.state === "on"}
-                disabled={row.state === "unavailable" || !daemon || toggle.isPending}
-                onValueChange={(switchedOn) => daemon && toggle.mutate({ port: daemon.port, switchedOn, label: row.label })}
-              />
-            );
-          })}
-        </SettingsCard>
-      </SettingsSection>
-    </ScrollView>
+      ) : null}
+      <SettingsCard>
+        {rows.map((row) => {
+          const daemon = daemons.data?.daemons.find((candidate) => candidate.serverId === row.serverId);
+          return (
+            <SettingsSwitch
+              key={row.serverId}
+              label={row.label}
+              hint={row.detail}
+              value={row.state === "on"}
+              disabled={row.state === "unavailable" || !daemon || toggle.isPending}
+              onValueChange={(switchedOn) => daemon && toggle.mutate({ port: daemon.port, switchedOn, label: row.label })}
+            />
+          );
+        })}
+      </SettingsCard>
+    </SettingsSection>
   );
 }
