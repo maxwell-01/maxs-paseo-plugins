@@ -5,12 +5,11 @@ and archive each other. Requires **Paseo 0.9.2 or newer**, installed on every da
 
 ## Switching a daemon on
 
-Open **Cross-daemon** in the app's sidebar. It lists every daemon the app is connected to, each
+Open **Settings → Plugins → cross-daemon ⋯ → Settings**. **This daemon** has the switch for that
+host and the daemons it can reach. **All daemons** lists every daemon the app is connected to, each
 with a switch and the daemons it can reach. Switches are off by default. Daemons that are switched
 on can reach each other; a switched-off daemon shares no link and keeps no peers. A daemon without
 the plugin, or offline, is shown but cannot be switched.
-
-The same switch is in each host's settings: **Settings → Plugins → cross-daemon ⋯ → Cross-daemon**.
 
 While the app is open it syncs every host that has the plugin, one sync at a time: at connect, after
 a switch change, and every minute. Each daemon gets the names and links of the other switched-on
