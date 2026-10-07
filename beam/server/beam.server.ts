@@ -23,6 +23,24 @@ const BeamStateSchema = z.object({
 });
 type BeamState = z.infer<typeof BeamStateSchema>;
 
+export interface BeamHolder {
+  workspaceId: string;
+  workspaceName?: string;
+  workspaceDir: string;
+  mainPath: string;
+  startedAt: string;
+}
+
+export class BeamHeldError extends Error {
+  constructor(
+    message: string,
+    readonly holder: BeamHolder | null,
+  ) {
+    super(message);
+    this.name = "BeamHeldError";
+  }
+}
+
 const PointerSchema = z.object({ mainPath: z.string() });
 
 interface ActiveBeam {
@@ -51,7 +69,7 @@ function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function logBeam(level: BeamLogLevel, message: string): void {
+export function logBeam(level: BeamLogLevel, message: string): void {
   beamLog.push({ ts: new Date().toISOString(), level, message });
   if (beamLog.length > BEAM_LOG_CAP) {
     beamLog.splice(0, beamLog.length - BEAM_LOG_CAP);
@@ -113,6 +131,30 @@ function readState(file: string): BeamState {
 
 function readPointer(file: string): { mainPath: string } {
   return PointerSchema.parse(JSON.parse(readFileSync(file, "utf8")));
+}
+
+function readActiveState(): BeamState | null {
+  const pointer = pointerPath();
+  if (!existsSync(pointer)) {
+    return null;
+  }
+  const stateFile = stateFilePath(readPointer(pointer).mainPath);
+  return existsSync(stateFile) ? readState(stateFile) : null;
+}
+
+function toHolder(state: BeamState): BeamHolder {
+  return {
+    workspaceId: state.workspaceId,
+    workspaceName: state.workspaceName,
+    workspaceDir: state.workspaceDir,
+    mainPath: state.mainPath,
+    startedAt: state.startedAt,
+  };
+}
+
+export function readHolder(): BeamHolder | null {
+  const state = readActiveState();
+  return state ? toHolder(state) : null;
 }
 
 function resolveMainPath(workspaceDir: string): string {
@@ -326,9 +368,11 @@ export async function activate(input: {
 
   const stateFile = stateFilePath(mainPath);
   if (activeBeams.has(mainPath) || existsSync(stateFile)) {
-    const activeName =
-      (existsSync(stateFile) ? readState(stateFile).workspaceName : undefined) ?? "another workspace";
-    throw new Error(`Already beaming "${activeName}" onto this checkout; beam out there first`);
+    const activeState = existsSync(stateFile) ? readState(stateFile) : null;
+    throw new BeamHeldError(
+      `Already beaming "${activeState?.workspaceName ?? "another workspace"}" onto this checkout; beam out there first`,
+      activeState && toHolder(activeState),
+    );
   }
 
   const pointer = pointerPath();
@@ -336,8 +380,11 @@ export async function activate(input: {
     const { mainPath: activeMainPath } = readPointer(pointer);
     const activeStateFile = stateFilePath(activeMainPath);
     if (activeMainPath !== mainPath && existsSync(activeStateFile)) {
-      const activeName = readState(activeStateFile).workspaceName ?? "another workspace";
-      throw new Error(`Already beaming "${activeName}" onto ${activeMainPath}; beam out there first`);
+      const activeState = readState(activeStateFile);
+      throw new BeamHeldError(
+        `Already beaming "${activeState.workspaceName ?? "another workspace"}" onto ${activeMainPath}; beam out there first`,
+        toHolder(activeState),
+      );
     }
   }
 
@@ -441,27 +488,25 @@ export async function status(): Promise<{
   active: boolean;
   workspaceId?: string;
   workspaceName?: string;
+  workspaceDir?: string;
+  startedAt?: string;
   mainPath: string;
   originalBranch?: string;
   originalHead?: string;
   lastSyncAt?: string;
 }> {
-  const pointer = pointerPath();
-  if (!existsSync(pointer)) {
+  const state = readActiveState();
+  if (!state) {
     return { active: false, mainPath: "" };
   }
-  const { mainPath } = readPointer(pointer);
-  const stateFile = stateFilePath(mainPath);
-  if (!existsSync(stateFile)) {
-    return { active: false, mainPath: "" };
-  }
-  const state = readState(stateFile);
-  const lastSyncAt = activeBeams.get(mainPath)?.lastSyncAt ?? undefined;
+  const lastSyncAt = activeBeams.get(state.mainPath)?.lastSyncAt ?? undefined;
   return {
     active: true,
     workspaceId: state.workspaceId,
     workspaceName: state.workspaceName,
-    mainPath,
+    workspaceDir: state.workspaceDir,
+    startedAt: state.startedAt,
+    mainPath: state.mainPath,
     originalBranch: state.originalBranch,
     originalHead: state.originalHead,
     lastSyncAt,
