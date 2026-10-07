@@ -3,6 +3,28 @@
   "version": "0.1.0",
   "description": "See every ticket-loop workflow, its agents, and the teams running now.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/maxwell-01/maxs-paseo-plugins.git",
+    "directory": "crew-flows"
+  },
+  "keywords": [
+    "paseo",
+    "paseo-plugin"
+  ],
+  "files": [
+    "paseo-plugin.json",
+    "index.client.tsx",
+    "index.server.ts",
+    "client/",
+    "server/",
+    "shared/",
+    "!**/*.test.ts",
+    "!**/*.test-support.ts",
+    "!server/fixtures/",
+    "README.md",
+    "LICENSE"
+  ],
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
