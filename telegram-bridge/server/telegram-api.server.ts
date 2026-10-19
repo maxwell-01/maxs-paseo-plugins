@@ -1,8 +1,9 @@
 import { z } from "zod";
 
-const TELEGRAM_API_URL = "https://api.telegram.org";
+export const TELEGRAM_API_URL = "https://api.telegram.org";
 // A long poll whose answer is this late is on a dead connection.
 const LONG_POLL_GRACE_SECONDS = 10;
+const REQUEST_TIMEOUT_MS = 30_000;
 
 const userSchema = z.object({ id: z.number(), first_name: z.string(), username: z.string().optional() });
 const chatSchema = z.object({ id: z.number(), type: z.string(), title: z.string().optional() });
@@ -12,7 +13,7 @@ export const messageSchema = z.object({
   chat: chatSchema,
   text: z.string().optional(),
   caption: z.string().optional(),
-});
+}).loose();
 export type TelegramMessage = z.output<typeof messageSchema>;
 
 const updateSchema = z.object({ update_id: z.number(), message: z.unknown().optional() });
@@ -39,7 +40,7 @@ export class TelegramApiError extends Error {
   }
 }
 
-function redactToken(text: string, token: string): string {
+export function redactToken(text: string, token: string): string {
   return token ? text.replaceAll(token, "<bot token>") : text;
 }
 
@@ -49,7 +50,7 @@ export function createTelegramApi({ token, baseUrl = TELEGRAM_API_URL }: { token
     try {
       response = await fetch(`${baseUrl}/bot${token}/${method}`, {
         method: "POST",
-        signal,
+        signal: signal ?? AbortSignal.timeout(REQUEST_TIMEOUT_MS),
         body: JSON.stringify(body),
         headers: { "content-type": "application/json" },
       });
@@ -71,6 +72,10 @@ export function createTelegramApi({ token, baseUrl = TELEGRAM_API_URL }: { token
         const update = updateSchema.safeParse(entry).data;
         return update ? [{ updateId: update.update_id, message: messageSchema.safeParse(update.message).data }] : [];
       });
+    },
+    async sendMessage(chatId: number, text: string, replyTo?: number): Promise<void> {
+      const reply = replyTo === undefined ? {} : { reply_parameters: { message_id: replyTo, allow_sending_without_reply: true } };
+      await call("sendMessage", { chat_id: chatId, text, ...reply });
     },
   };
 }

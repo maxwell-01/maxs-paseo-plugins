@@ -12,3 +12,5 @@ export const bridgeSettings = defineSettings({
     allowedChatIds: z.array(z.number().int()).default([]),
   }),
 });
+
+export type BridgeSettings = z.output<typeof bridgeSettings.schema>;
