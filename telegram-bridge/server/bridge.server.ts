@@ -1,17 +1,20 @@
 import { once } from "node:events";
 import { join } from "node:path";
-import type { PluginHookContext, PluginSettings, PluginSettingsState } from "@getpaseo/plugin/server";
+import type { PluginHookContext, PluginLifecycleEvents, PluginSettings, PluginSettingsState } from "@getpaseo/plugin/server";
 import type { bridgeSettings } from "../shared/settings.shared";
 import { createIgnoredSenderLog, isAllowed } from "./allow-list.server";
 import { describeError } from "./describe-error.server";
 import { isUnsupportedContent, paseoMessageId, promptFor, UNSUPPORTED_REPLY } from "./inbound.server";
 import { createOffsetStore } from "./offset-store.server";
+import { replyFor, splitForTelegram } from "./outbound.server";
+import { createPendingReplies, type ReplyTarget } from "./pending-replies.server";
 import { runPoller } from "./poller.server";
-import { createTelegramApi, redactToken, type TelegramMessage } from "./telegram-api.server";
+import { createTelegramApi, redactToken, type TelegramApi, type TelegramMessage } from "./telegram-api.server";
 
 type Settings = PluginSettings<typeof bridgeSettings.schema>;
 type SettingsState = PluginSettingsState<typeof bridgeSettings.schema>;
 type AgentHandle = ReturnType<PluginHookContext["paseo"]["agents"]["ref"]>;
+type TurnEnded = Pick<PluginLifecycleEvents["agent.turn_ended"], "agent" | "outcome" | "timeline">;
 
 export interface AgentMessenger {
   agents: { ref(agentId: string): Pick<AgentHandle, "send"> };
@@ -27,8 +30,14 @@ interface BridgeOptions {
 
 const stopped = async () => {};
 
+async function sendReply(api: TelegramApi, { chatId, replyTo }: ReplyTarget, text: string) {
+  for (const [index, chunk] of splitForTelegram(text).entries()) await api.sendMessage(chatId, chunk, index === 0 ? replyTo : undefined);
+}
+
 export function startBridge({ settings, paseo, dataDir, apiUrl, log }: BridgeOptions) {
   const offsets = createOffsetStore(join(dataDir, "state.json"));
+  const pending = createPendingReplies();
+  let live: { api: TelegramApi; agentId: string; log(line: string): void } | null = null;
 
   function run(state: SettingsState): () => Promise<void> {
     if (state.status !== "ready") {
@@ -50,9 +59,12 @@ export function startBridge({ settings, paseo, dataDir, apiUrl, log }: BridgeOpt
       if (!isAllowed(message, values)) return logIgnored(message);
       const prompt = promptFor(message);
       if (prompt === null) return isUnsupportedContent(message) ? api.sendMessage(message.chat.id, UNSUPPORTED_REPLY, message.message_id) : undefined;
+      const messageId = paseoMessageId(message);
+      pending.add(messageId, { chatId: message.chat.id, replyTo: message.message_id });
       try {
-        await messenger.agents.ref(agentId).send(prompt, { messageId: paseoMessageId(message), activeTurnBehavior: "steer" });
+        await messenger.agents.ref(agentId).send(prompt, { messageId, activeTurnBehavior: "steer" });
       } catch (error) {
+        pending.forget(messageId);
         redactedLog(`telegram-bridge: could not reach agent ${agentId}: ${describeError(error)}`);
         await api.sendMessage(message.chat.id, `Could not reach the agent: ${describeError(error)}`, message.message_id);
       }
@@ -64,11 +76,30 @@ export function startBridge({ settings, paseo, dataDir, apiUrl, log }: BridgeOpt
       await runPoller({ api, offsets, onMessage: (message) => deliver(messenger, message), log: redactedLog, signal: controller.signal });
     }
 
+    live = { api, agentId, log: redactedLog };
     const polling = poll().catch((error: unknown) => redactedLog(`telegram-bridge: polling stopped: ${describeError(error)}`));
     return async () => {
+      live = null;
       controller.abort();
       await polling;
     };
+  }
+
+  const posting = new Set<Promise<void>>();
+
+  async function postReplies({ agent, outcome, timeline }: TurnEnded) {
+    const current = live;
+    if (!current || agent.id !== current.agentId) return;
+    const targets = pending.takeAnsweredBy(timeline);
+    if (targets.length === 0) return;
+    const text = replyFor(outcome, timeline);
+    await Promise.all(
+      targets.map((target) =>
+        sendReply(current.api, target, text).catch((error: unknown) =>
+          current.log(`telegram-bridge: could not post the reply to chat ${target.chatId}: ${describeError(error)}`),
+        ),
+      ),
+    );
   }
 
   let stopCurrent = stopped;
@@ -83,9 +114,18 @@ export function startBridge({ settings, paseo, dataDir, apiUrl, log }: BridgeOpt
 
   const unsubscribe = settings.subscribe(restartWithLatestSettings);
   void restartWithLatestSettings();
-  return async () => {
+  function onTurnEnded(event: TurnEnded): Promise<void> {
+    const post = postReplies(event).catch((error: unknown) => log(`telegram-bridge: could not post a reply: ${describeError(error)}`));
+    posting.add(post);
+    void post.finally(() => posting.delete(post));
+    return post;
+  }
+
+  async function stop() {
     unsubscribe();
     await switching;
     await stopCurrent();
-  };
+    await Promise.all(posting);
+  }
+  return { stop, onTurnEnded };
 }
