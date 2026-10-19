@@ -3,6 +3,7 @@ import { join } from "node:path";
 import type { PluginHookContext, PluginSettings, PluginSettingsState } from "@getpaseo/plugin/server";
 import type { bridgeSettings } from "../shared/settings.shared";
 import { createIgnoredSenderLog, isAllowed } from "./allow-list.server";
+import { describeError } from "./describe-error.server";
 import { isUnsupportedContent, paseoMessageId, promptFor, UNSUPPORTED_REPLY } from "./inbound.server";
 import { createOffsetStore } from "./offset-store.server";
 import { runPoller } from "./poller.server";
@@ -24,7 +25,6 @@ interface BridgeOptions {
   log(line: string): void;
 }
 
-const describeError = (error: unknown) => (error instanceof Error ? error.message : String(error));
 const stopped = async () => {};
 
 export function startBridge({ settings, paseo, dataDir, apiUrl, log }: BridgeOptions) {
