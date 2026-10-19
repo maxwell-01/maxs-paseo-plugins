@@ -14,8 +14,8 @@ beforeEach(async () => {
 afterEach(() => bot.close());
 
 const message = (fields: Partial<TelegramMessage>): TelegramMessage => ({ message_id: 9, chat: { id: -100200, type: "supergroup" }, ...fields });
-const fetchFor = (fields: Partial<TelegramMessage>, dir = makeTempDir("tg-files-")) =>
-  fetchAttachments(createTelegramApi({ token: TOKEN, baseUrl: bot.url }), message(fields), dir, new AbortController().signal);
+const fetchFor = (fields: Partial<TelegramMessage>, dir = makeTempDir("tg-files-"), signal = new AbortController().signal) =>
+  fetchAttachments(createTelegramApi({ token: TOKEN, baseUrl: bot.url }), message(fields), dir, signal);
 
 describe("fetching what a Telegram message carries", () => {
   it("passes the largest size of a photo to the agent as an image", async () => {
@@ -45,6 +45,12 @@ describe("fetching what a Telegram message carries", () => {
     bot.reply("getFile", { status: 400, json: { ok: false, error_code: 400, description: "Bad Request: file is too big" } });
     const attachments = await fetchFor({ photo: [{ file_id: "p" }] });
     expect(attachments.notes).toEqual(["The photo could not be fetched: getFile failed: 400 Bad Request: file is too big"]);
+  });
+
+  it("stops, rather than telling the agent the photo failed, when the bridge is stopping", async () => {
+    const stopping = new AbortController();
+    stopping.abort();
+    await expect(fetchFor({ photo: [{ file_id: "p" }] }, undefined, stopping.signal)).rejects.toThrow();
   });
 
   it.each([

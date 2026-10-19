@@ -21,6 +21,7 @@ async function downloadWithinLimit(api: Pick<TelegramApi, "download">, label: st
   try {
     return { ok: true, bytes: await api.download(fileId, signal) };
   } catch (error) {
+    if (signal.aborted) throw error;
     return { ok: false, note: `${label} could not be fetched: ${describeError(error)}` };
   }
 }

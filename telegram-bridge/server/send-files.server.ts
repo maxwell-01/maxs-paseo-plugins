@@ -42,7 +42,7 @@ function refusal(path: string, { home, paseoHome, bridgeFilesDir }: SendPolicy):
   if (basename(path).startsWith(".")) return "it is a hidden file";
   if (isInside(path, bridgeFilesDir)) return null;
   if (isInside(path, paseoHome)) return "it is inside Paseo's own folder";
-  if (isInside(path, home) && relative(home, path).split(sep)[0].startsWith(".")) return "it is inside a hidden folder of the home folder";
+  if (isInside(path, home) && relative(home, path).split(sep).some((segment) => segment.startsWith("."))) return "it is inside a hidden folder";
   return null;
 }
 
@@ -64,8 +64,22 @@ async function checkFile(path: string, policy: SendPolicy): Promise<FileToSend |
   return { path: real, kind: isPhoto ? "photo" : "document" };
 }
 
-export async function planReply(reply: string, policy: SendPolicy): Promise<{ body: string; files: FileToSend[] }> {
+async function realOrAsGiven(path: string): Promise<string> {
+  try {
+    return await realpath(path);
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return path;
+    throw error;
+  }
+}
+
+export async function planReply(reply: string, givenPolicy: SendPolicy): Promise<{ body: string; files: FileToSend[] }> {
   const { text, paths } = takeSendLines(reply);
+  const policy: SendPolicy = {
+    home: await realOrAsGiven(givenPolicy.home),
+    paseoHome: await realOrAsGiven(givenPolicy.paseoHome),
+    bridgeFilesDir: await realOrAsGiven(givenPolicy.bridgeFilesDir),
+  };
   const files: FileToSend[] = [];
   const problems: string[] = [];
   for (const checked of await Promise.all(paths.map((path) => checkFile(path, policy)))) {

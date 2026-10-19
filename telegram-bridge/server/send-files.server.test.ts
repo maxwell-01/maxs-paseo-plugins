@@ -72,11 +72,31 @@ describe("the [[send: /path]] convention", () => {
     symlinkSync(key, link);
     const reply = [key, settings, env, link].map((path) => `[[send: ${path}]]`).join("\n");
     expect((await planReply(reply, { home, paseoHome, bridgeFilesDir })).body.split("\n\n")).toEqual([
-      `Could not send ${key}: it is inside a hidden folder of the home folder.`,
+      `Could not send ${key}: it is inside a hidden folder.`,
       `Could not send ${settings}: it is inside Paseo's own folder.`,
       `Could not send ${env}: it is a hidden file.`,
-      `Could not send ${link}: it is inside a hidden folder of the home folder.`,
+      `Could not send ${link}: it is inside a hidden folder.`,
     ]);
+  });
+
+  it("refuses a hidden folder deeper under the home folder, such as a repo's .git", async () => {
+    const { home, paseoHome, bridgeFilesDir } = homes();
+    const gitConfig = join(home, "project", ".git", "config");
+    mkdirSync(join(gitConfig, ".."), { recursive: true });
+    writeFileSync(gitConfig, "url = https://token@example.com");
+    expect((await planReply(`[[send: ${gitConfig}]]`, { home, paseoHome, bridgeFilesDir })).body).toBe(`Could not send ${gitConfig}: it is inside a hidden folder.`);
+  });
+
+  it("refuses Paseo's folder when it is reached through a symlink", async () => {
+    const { home, bridgeFilesDir } = homes();
+    const realPaseoHome = makeTempDir("tg-real-paseo-");
+    const settings = join(realPaseoHome, "plugin-settings", "telegram-bridge", "bridge.json");
+    mkdirSync(join(settings, ".."), { recursive: true });
+    writeFileSync(settings, "token");
+    const linkedPaseoHome = join(makeTempDir("tg-link-"), "paseo");
+    symlinkSync(realPaseoHome, linkedPaseoHome);
+    const reply = `[[send: ${join(linkedPaseoHome, "plugin-settings", "telegram-bridge", "bridge.json")}]]`;
+    expect((await planReply(reply, { home, paseoHome: linkedPaseoHome, bridgeFilesDir })).files).toEqual([]);
   });
 
   it("still sends back a file the chat sent in", async () => {
