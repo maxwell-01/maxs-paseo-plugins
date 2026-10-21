@@ -1,5 +1,4 @@
 {
   "id": "beam",
-  "requirements": { "paseo": ">=0.9.2" },
-  "build": [["npm", "ci", "--omit=dev", "--ignore-scripts", "--legacy-peer-deps"]]
+  "requirements": { "paseo": ">=0.9.2" }
 }
