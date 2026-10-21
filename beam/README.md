@@ -7,6 +7,14 @@ A [Paseo](https://paseo.sh) plugin that continuously mirrors a workspace's entir
 onto your local main checkout on disk, so an already-running dev environment with live-reload
 shows the workspace's changes without you switching branches there.
 
+There are two ways to use it:
+
+- **You click Beam** on a workspace, and its changes show up in your running app.
+- **You ask an agent**, and it beams its own workspace in and out for you.
+
+For example, tell your first mate you want to test a feature. It has that work beamed onto main,
+so you can try it in your running app, and it lines up the next piece of work. See [Agents](#agents).
+
 Requires **Paseo 0.9.2 or newer**.
 
 Similar to Conductor's Spotlight feature.
