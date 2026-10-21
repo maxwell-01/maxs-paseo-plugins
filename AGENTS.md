@@ -28,5 +28,5 @@ first.
 
 `.github/workflows/publish.yml` runs on every push to main. For each plugin folder whose
 `package.json` version is not yet on npm, it runs typecheck and tests, then publishes that version.
-To release a plugin, bump its `version` (and its `package-lock.json`) in the PR. A plugin's `files`
+To release a plugin, bump its `version` (and its lockfile) in the PR. A plugin with runtime dependencies ships `npm-shrinkwrap.json` in its `files`, and its build step runs `npm ci`, so an install uses the locked tree. A plugin's `files`
 list decides what goes in the tarball; check it with `npm pack --dry-run` after you add a folder.
