@@ -1,6 +1,6 @@
 {
   "name": "paseo-beam",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Beam a Paseo workspace's working tree into your one running dev environment. Click Beam, or ask an agent to beam its own workspace in and out; beam out restores your checkout.",
   "license": "MIT",
   "repository": {
@@ -12,7 +12,19 @@
     "paseo",
     "paseo-plugin"
   ],
-  "private": false,
+  "files": [
+    "paseo-plugin.json",
+    "index.client.tsx",
+    "index.server.ts",
+    "client/",
+    "server/",
+    "shared/",
+    "!**/*.test.ts",
+    "!**/*.test-support.ts",
+    "!**/*.fake.ts",
+    "README.md",
+    "LICENSE"
+  ],
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",

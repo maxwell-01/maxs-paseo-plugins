@@ -1,8 +1,29 @@
 {
   "name": "paseo-repo-notes",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Give every Paseo agent your own notes for its repo, kept out of the repo and synced across daemons.",
-  "private": true,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/maxwell-01/maxs-paseo-plugins.git",
+    "directory": "repo-notes"
+  },
+  "keywords": [
+    "paseo",
+    "paseo-plugin"
+  ],
+  "files": [
+    "paseo-plugin.json",
+    "index.client.tsx",
+    "index.server.ts",
+    "client/",
+    "server/",
+    "shared/",
+    "!**/*.test.ts",
+    "!**/*.test-support.ts",
+    "README.md",
+    "LICENSE"
+  ],
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
