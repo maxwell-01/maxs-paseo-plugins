@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { type FSWatcher, watch } from "chokidar";
+import { type FSWatcher, watch } from "./vendor/chokidar";
 import { z } from "zod";
 import { type TitleMark, TitleMarkSchema } from "./beam-title.server";
 
