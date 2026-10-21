@@ -1,6 +1,6 @@
 # Beam
 
-<img width="1283" height="288" alt="image" src="https://github.com/user-attachments/assets/bc223cb5-37dc-47c3-b929-d502be01520b" />
+![Beam in a workspace header](assets/screenshot.png)
 
 
 A [Paseo](https://paseo.sh) plugin that continuously mirrors a workspace's entire working tree
