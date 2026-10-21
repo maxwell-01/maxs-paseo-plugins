@@ -1,0 +1,64 @@
+name: Publish plugins to npm
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: publish-plugins
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        plugin: [beam, crew-flows, cross-daemon, repo-notes]
+    defaults:
+      run:
+        working-directory: ${{ matrix.plugin }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: Find whether this version is on npm
+        id: check
+        run: |
+          spec="$(node -p "require('./package.json').name")@$(node -p "require('./package.json').version")"
+          if out=$(npm view "$spec" version 2>&1); then
+            echo "$spec is already on npm"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          elif grep -q E404 <<<"$out"; then
+            echo "$spec is not on npm yet"
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "$out"
+            exit 1
+          fi
+
+      - if: steps.check.outputs.publish == 'true'
+        run: npm install -g npm@latest
+
+      - if: steps.check.outputs.publish == 'true'
+        run: npm ci --ignore-scripts --legacy-peer-deps
+
+      - if: steps.check.outputs.publish == 'true'
+        run: npm run typecheck
+
+      - if: steps.check.outputs.publish == 'true'
+        run: npm test
+
+      - if: steps.check.outputs.publish == 'true'
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
