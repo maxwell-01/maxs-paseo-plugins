@@ -1,3 +1,4 @@
+import { homedir } from "node:os";
 import type { PluginHookContext, PluginServerContext } from "@getpaseo/plugin/server";
 import { startBridge } from "./server/bridge.server";
 import { bridgeDataDir, paseoHome } from "./server/data-dir.server";
@@ -38,9 +39,19 @@ export default function contribute(server: PluginServerContext) {
     signal: stopping.signal,
     log,
   });
-  const stopBridge = startBridge({ settings, paseo, dataDir: bridgeDataDir(), apiUrl: process.env.TELEGRAM_BRIDGE_API_URL ?? TELEGRAM_API_URL, log });
+  const bridge = startBridge({
+    settings,
+    paseo,
+    dataDir: bridgeDataDir(),
+    home: homedir(),
+    paseoHome: paseoHome(),
+    apiUrl: process.env.TELEGRAM_BRIDGE_API_URL ?? TELEGRAM_API_URL,
+    log,
+  });
+  // Posting runs past the hook's 30-second limit when a reply has many parts, so the hook does not wait for it.
+  server.on("agent.turn_ended", (event) => void bridge.onTurnEnded(event));
   return async () => {
     stopping.abort();
-    await stopBridge();
+    await bridge.stop();
   };
 }

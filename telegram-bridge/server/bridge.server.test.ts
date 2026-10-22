@@ -1,7 +1,10 @@
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { BridgeSettings } from "../shared/settings.shared";
 import { type AgentMessenger, startBridge } from "./bridge.server";
 import { type FakeBotApi, startFakeBotApi } from "./fake-bot-api.test-support";
+import { REPLY_HINT } from "./inbound.server";
 import { makeTempDir } from "./temp-dir.test-support";
 
 const TOKEN = "123:bridge-token";
@@ -59,8 +62,9 @@ async function until(condition: () => boolean) {
 
 function start(settings = fakeSettings(configured), paseo: Promise<AgentMessenger> = Promise.resolve(fakeAgents().messenger)) {
   const logs: string[] = [];
-  const stop = startBridge({ settings, paseo, dataDir: makeTempDir("tg-bridge-"), apiUrl: bot.url, log: (line) => logs.push(line) });
-  return { stop, logs };
+  const paseoHome = makeTempDir("tg-paseo-home-");
+  const bridge = startBridge({ settings, paseo, dataDir: join(paseoHome, "plugin-data", "telegram-bridge"), home: makeTempDir("tg-home-"), paseoHome, apiUrl: bot.url, log: (line) => logs.push(line) });
+  return { ...bridge, logs };
 }
 
 const sentMessages = () => bot.calls.filter((call) => call.method === "sendMessage").map((call) => call.body);
@@ -75,8 +79,8 @@ describe("bridge, inbound", () => {
     expect(agents.sent).toEqual([
       {
         agentId: "agent-1",
-        text: "[Telegram, Max]: status?\n(Your reply goes back to this Telegram chat.)",
-        options: { messageId: `telegram-${GROUP}-5`, activeTurnBehavior: "steer" },
+        text: `[Telegram, Max]: status?\n${REPLY_HINT}`,
+        options: { messageId: `telegram-${GROUP}-5`, activeTurnBehavior: "steer", images: [] },
       },
     ]);
   });
@@ -97,7 +101,7 @@ describe("bridge, inbound", () => {
     await until(() => sentMessages().length === 1);
     await stop();
     expect(sentMessages()).toEqual([
-      { chat_id: GROUP, text: "Only text messages reach the agent.", reply_parameters: { message_id: 6, allow_sending_without_reply: true } },
+      { chat_id: GROUP, text: "Only text, photos and files reach the agent.", reply_parameters: { message_id: 6, allow_sending_without_reply: true } },
     ]);
   });
 
@@ -135,5 +139,119 @@ describe("bridge, inbound", () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
     await stop();
     expect(bot.calls).toEqual([]);
+  });
+});
+
+const agent = (id: string) => ({ id, workspaceId: null, parentAgentId: null, provider: "claude", cwd: "/tmp", title: null });
+const completed = { kind: "completed" as const };
+const userMessage = (messageId: string) => ({ type: "user_message" as const, text: "", messageId });
+const said = (text: string) => ({ type: "assistant_message" as const, text });
+
+async function afterDelivering(text: string) {
+  const agents = fakeAgents();
+  bot.reply("getUpdates", { json: { ok: true, result: [update(5, { text })] } });
+  const bridge = start(undefined, Promise.resolve(agents.messenger));
+  await until(() => agents.sent.length === 1);
+  return bridge;
+}
+
+describe("bridge, replies", () => {
+  it("posts the final reply of a turn that took in a Telegram message to that chat", async () => {
+    const { stop, onTurnEnded } = await afterDelivering("status?");
+    await onTurnEnded({ agent: agent("agent-1"), outcome: completed, timeline: [userMessage(`telegram-${GROUP}-5`), said("All green.")] });
+    await stop();
+    expect(sentMessages()).toEqual([{ chat_id: GROUP, text: "All green.", reply_parameters: { message_id: 5, allow_sending_without_reply: true } }]);
+  });
+
+  it("answers a turn that ends before the send call returns", async () => {
+    let bridge: ReturnType<typeof start> | undefined;
+    const quickAgent: AgentMessenger = {
+      agents: {
+        ref: () => ({
+          async send(_text, options) {
+            await bridge?.onTurnEnded({ agent: agent("agent-1"), outcome: completed, timeline: [userMessage(options?.messageId ?? ""), said("quick")] });
+          },
+        }),
+      },
+    };
+    bot.reply("getUpdates", { json: { ok: true, result: [update(5, { text: "ping" })] } });
+    bridge = start(undefined, Promise.resolve(quickAgent));
+    await until(() => sentMessages().length === 1);
+    await bridge.stop();
+    expect(sentMessages().map((body) => body.text)).toEqual(["quick"]);
+  });
+
+  it("does not mirror a turn started from the app, or another agent's turn", async () => {
+    const { stop, onTurnEnded } = await afterDelivering("status?");
+    await onTurnEnded({ agent: agent("agent-1"), outcome: completed, timeline: [userMessage("app-1"), said("app answer")] });
+    await onTurnEnded({ agent: agent("agent-2"), outcome: completed, timeline: [userMessage(`telegram-${GROUP}-5`), said("not ours")] });
+    await stop();
+    expect(sentMessages()).toEqual([]);
+  });
+
+  it("splits a long reply, replying to the message only with the first part", async () => {
+    const { stop, onTurnEnded } = await afterDelivering("write a lot");
+    await onTurnEnded({ agent: agent("agent-1"), outcome: completed, timeline: [userMessage(`telegram-${GROUP}-5`), said("x".repeat(5000))] });
+    await stop();
+    expect(sentMessages().map((body) => [String(body.text).length, body.reply_parameters !== undefined])).toEqual([
+      [4096, true],
+      [904, false],
+    ]);
+  });
+
+  it("tells the chat when the turn failed", async () => {
+    const { stop, onTurnEnded } = await afterDelivering("status?");
+    await onTurnEnded({ agent: agent("agent-1"), outcome: { kind: "failed", error: { message: "rate limited" } }, timeline: [userMessage(`telegram-${GROUP}-5`)] });
+    await stop();
+    expect(sentMessages().map((body) => body.text)).toEqual(["The agent's turn failed: rate limited"]);
+  });
+
+  it("logs a reply Telegram refuses, without throwing out of the hook", async () => {
+    const { stop, onTurnEnded, logs } = await afterDelivering("status?");
+    bot.reply("sendMessage", { status: 400, json: { ok: false, error_code: 400, description: "Bad Request: chat not found" } });
+    await expect(onTurnEnded({ agent: agent("agent-1"), outcome: completed, timeline: [userMessage(`telegram-${GROUP}-5`), said("hi")] })).resolves.toBeUndefined();
+    await stop();
+    expect(logs).toEqual([`telegram-bridge: could not post the reply to chat ${GROUP}: sendMessage failed: 400 Bad Request: chat not found`]);
+  });
+});
+
+describe("bridge, files", () => {
+  it("passes a photo to the agent as an image, with its caption as the message", async () => {
+    const agents = fakeAgents();
+    bot.serveFile("large", Buffer.from("jpeg"));
+    bot.reply("getUpdates", { json: { ok: true, result: [update(5, { photo: [{ file_id: "small" }, { file_id: "large" }], caption: "What is this?" })] } });
+    const { stop } = start(undefined, Promise.resolve(agents.messenger));
+    await until(() => agents.sent.length === 1);
+    await stop();
+    expect(agents.sent[0].text.split("\n")[0]).toBe("[Telegram, Max]: What is this?");
+    expect(agents.sent[0].options).toMatchObject({ images: [{ data: Buffer.from("jpeg").toString("base64"), mimeType: "image/jpeg" }] });
+  });
+
+  it("uploads each file the reply names, as a photo or a file, and says which it could not send", async () => {
+    const dir = makeTempDir("tg-out-");
+    writeFileSync(join(dir, "chart.png"), "png bytes");
+    writeFileSync(join(dir, "data.csv"), "a,b");
+    const { stop, onTurnEnded } = await afterDelivering("send me the chart");
+    const reply = ["Here you go.", `[[send: ${join(dir, "chart.png")}]]`, `[[send: ${join(dir, "data.csv")}]]`, "[[send: notes.txt]]"].join("\n");
+    await onTurnEnded({ agent: agent("agent-1"), outcome: completed, timeline: [userMessage(`telegram-${GROUP}-5`), said(reply)] });
+    await stop();
+    const outbound = bot.calls.filter((call) => call.method !== "getUpdates");
+    expect(outbound).toEqual([
+      {
+        method: "sendMessage",
+        body: { chat_id: GROUP, text: "Here you go.\n\nCould not send notes.txt: it is not an absolute path.", reply_parameters: { message_id: 5, allow_sending_without_reply: true } },
+      },
+      { method: "sendPhoto", body: { chat_id: String(GROUP), photo: { name: "chart.png", text: "png bytes" } } },
+      { method: "sendDocument", body: { chat_id: String(GROUP), document: { name: "data.csv", text: "a,b" } } },
+    ]);
+  });
+
+  it("sends only the file when the reply is nothing but a send line", async () => {
+    const file = join(makeTempDir("tg-out-"), "report.pdf");
+    writeFileSync(file, "pdf");
+    const { stop, onTurnEnded } = await afterDelivering("report please");
+    await onTurnEnded({ agent: agent("agent-1"), outcome: completed, timeline: [userMessage(`telegram-${GROUP}-5`), said(`[[send: ${file}]]`)] });
+    await stop();
+    expect(bot.calls.filter((call) => call.method !== "getUpdates").map((call) => call.method)).toEqual(["sendDocument"]);
   });
 });
