@@ -132,6 +132,15 @@ describe("bridge, inbound", () => {
     expect(sentMessages().map((body) => body.chat_id)).toEqual([GROUP, MAX]);
   });
 
+  it("still delivers a second chat's message when telling the first chat about the failure fails too", async () => {
+    bot.reply("sendMessage", { status: 403, json: { ok: false, error_code: 403, description: "Forbidden: bot was blocked by the user" } });
+    bot.reply("getUpdates", { json: { ok: true, result: [update(7, { text: "hi" }), update(8, { text: "hello" }, MAX, directChat)] } });
+    const { stop } = start(undefined, Promise.resolve(fakeAgents({ fail: true }).messenger));
+    await until(() => sentMessages().length === 2);
+    await stop();
+    expect(sentMessages().map((body) => body.chat_id)).toEqual([GROUP, MAX]);
+  });
+
   it("stays off until a token and an agent id are set, then starts on the change", async () => {
     const settings = fakeSettings({ ...configured, botToken: "" });
     const { stop, logs } = start(settings);

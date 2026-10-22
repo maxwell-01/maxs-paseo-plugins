@@ -41,7 +41,8 @@ export function startBridge({ settings, paseo, dataDir, home, paseoHome, apiUrl,
   const filesDir = join(dataDir, "files");
   const sendPolicy = { home, paseoHome, bridgeFilesDir: filesDir };
   const pending = createPendingReplies();
-  let live: { api: TelegramApi; agentId: string; log(line: string): void; turnEnded(): Promise<void> } | null = null;
+  const turns = createChatTurns();
+  let live: { api: TelegramApi; agentId: string; log(line: string): void } | null = null;
 
   function run(state: SettingsState): () => Promise<void> {
     if (state.status !== "ready") {
@@ -58,7 +59,6 @@ export function startBridge({ settings, paseo, dataDir, home, paseoHome, apiUrl,
     const redactedLog = (line: string) => log(redactToken(line, botToken));
     const logIgnored = createIgnoredSenderLog(redactedLog);
     const controller = new AbortController();
-    const turns = createChatTurns();
 
     async function deliver(messenger: AgentMessenger, message: TelegramMessage) {
       if (!isAllowed(message, values)) return logIgnored(message);
@@ -75,7 +75,9 @@ export function startBridge({ settings, paseo, dataDir, home, paseoHome, apiUrl,
         } catch (error) {
           pending.forget(messageId);
           redactedLog(`telegram-bridge: could not reach agent ${agentId}: ${describeError(error)}`);
-          await api.sendMessage(message.chat.id, `Could not reach the agent: ${describeError(error)}`, message.message_id);
+          await api
+            .sendMessage(message.chat.id, `Could not reach the agent: ${describeError(error)}`, message.message_id)
+            .catch((sendError: unknown) => redactedLog(`telegram-bridge: could not tell chat ${message.chat.id}: ${describeError(sendError)}`));
           if (startsTurn) await turns.turnEnded();
         }
       });
@@ -87,7 +89,7 @@ export function startBridge({ settings, paseo, dataDir, home, paseoHome, apiUrl,
       await runPoller({ api, offsets, onMessage: (message) => deliver(messenger, message), log: redactedLog, signal: controller.signal });
     }
 
-    live = { api, agentId, log: redactedLog, turnEnded: turns.turnEnded };
+    live = { api, agentId, log: redactedLog };
     const polling = poll().catch((error: unknown) => redactedLog(`telegram-bridge: polling stopped: ${describeError(error)}`));
     return async () => {
       live = null;
@@ -101,8 +103,7 @@ export function startBridge({ settings, paseo, dataDir, home, paseoHome, apiUrl,
   async function postReplies({ agent, outcome, timeline }: TurnEnded) {
     const current = live;
     if (!current || agent.id !== current.agentId) return;
-    const releasing = current.turnEnded().catch((error: unknown) => current.log(`telegram-bridge: a held message was not handled: ${describeError(error)}`));
-    await Promise.all([releasing, postReply(current, outcome, timeline)]);
+    await Promise.all([turns.turnEnded(), postReply(current, outcome, timeline)]);
   }
 
   async function postReply(current: NonNullable<typeof live>, outcome: TurnEnded["outcome"], timeline: TurnEnded["timeline"]) {
