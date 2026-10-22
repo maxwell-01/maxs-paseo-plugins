@@ -5,7 +5,7 @@ import type { TelegramMessage } from "./telegram-api.server";
 
 const message = (fields: Partial<TelegramMessage>): TelegramMessage => ({
   message_id: 17,
-  chat: { id: -100200, type: "supergroup" },
+  chat: { id: -100200, type: "supergroup", title: "Home Server AI" },
   from: { id: 1, first_name: "Max" },
   ...fields,
 });
@@ -13,18 +13,22 @@ const photo = [{ file_id: "small" }, { file_id: "large" }];
 const none: Attachments = { images: [], savedFiles: [], notes: [] };
 
 describe("inbound formatting", () => {
-  it("names Telegram and the sender, and says where the reply goes and how to send a file", () => {
-    expect(promptFor(message({ text: "Is the deploy done?" }), none)).toBe(`[Telegram, Max]: Is the deploy done?\n${REPLY_HINT}`);
+  it("names Telegram, the sender and the group, and says where the reply goes and how to send a file", () => {
+    expect(promptFor(message({ text: "Is the deploy done?" }), none)).toBe(`[Telegram, Max, in Home Server AI]: Is the deploy done?\n${REPLY_HINT}`);
     expect(REPLY_HINT).toContain("[[send: /absolute/path]]");
   });
 
+  it("names a private chat as the direct chat", () => {
+    expect(promptFor(message({ chat: { id: 1, type: "private" }, text: "hi" }), none).split("\n")[0]).toBe("[Telegram, Max, in direct chat]: hi");
+  });
+
   it("uses a photo's caption as the message", () => {
-    expect(promptFor(message({ photo, caption: "Which plant is this?" }), none)).toBe(`[Telegram, Max]: Which plant is this?\n${REPLY_HINT}`);
+    expect(promptFor(message({ photo, caption: "Which plant is this?" }), none)).toBe(`[Telegram, Max, in Home Server AI]: Which plant is this?\n${REPLY_HINT}`);
   });
 
   it("says a photo or file came without a caption", () => {
-    expect(promptFor(message({ photo }), none).split("\n")[0]).toBe("[Telegram, Max]: (sent a photo)");
-    expect(promptFor(message({ document: { file_id: "d" } }), none).split("\n")[0]).toBe("[Telegram, Max]: (sent a file)");
+    expect(promptFor(message({ photo }), none).split("\n")[0]).toBe("[Telegram, Max, in Home Server AI]: (sent a photo)");
+    expect(promptFor(message({ document: { file_id: "d" } }), none).split("\n")[0]).toBe("[Telegram, Max, in Home Server AI]: (sent a file)");
   });
 
   it("lists each saved file's path and type, and any note", () => {
@@ -35,7 +39,7 @@ describe("inbound formatting", () => {
     });
     expect(prompt).toBe(
       [
-        "[Telegram, Max]: logs",
+        "[Telegram, Max, in Home Server AI]: logs",
         "Attached file: /data/files/-100200/17-app.log (text/plain)",
         "(big.zip is over Telegram's 20 MB bot download limit, so it was not fetched.)",
         REPLY_HINT,

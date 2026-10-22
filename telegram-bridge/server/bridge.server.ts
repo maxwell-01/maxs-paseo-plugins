@@ -3,6 +3,7 @@ import { join } from "node:path";
 import type { PluginHookContext, PluginLifecycleEvents, PluginSettings, PluginSettingsState } from "@getpaseo/plugin/server";
 import type { bridgeSettings } from "../shared/settings.shared";
 import { createIgnoredSenderLog, isAllowed } from "./allow-list.server";
+import { createChatTurns } from "./chat-turns.server";
 import { describeError } from "./describe-error.server";
 import { fetchAttachments } from "./attachments.server";
 import { hasContentForAgent, isUnsupportedContent, paseoMessageId, promptFor, UNSUPPORTED_REPLY } from "./inbound.server";
@@ -40,6 +41,7 @@ export function startBridge({ settings, paseo, dataDir, home, paseoHome, apiUrl,
   const filesDir = join(dataDir, "files");
   const sendPolicy = { home, paseoHome, bridgeFilesDir: filesDir };
   const pending = createPendingReplies();
+  const turns = createChatTurns();
   let live: { api: TelegramApi; agentId: string; log(line: string): void } | null = null;
 
   function run(state: SettingsState): () => Promise<void> {
@@ -66,14 +68,19 @@ export function startBridge({ settings, paseo, dataDir, home, paseoHome, apiUrl,
       const attachments = await fetchAttachments(api, message, filesDir, controller.signal);
       const prompt = promptFor(message, attachments);
       const messageId = paseoMessageId(message);
-      pending.add(messageId, { chatId: message.chat.id, replyTo: message.message_id });
-      try {
-        await messenger.agents.ref(agentId).send(prompt, { messageId, activeTurnBehavior: "steer", images: attachments.images });
-      } catch (error) {
-        pending.forget(messageId);
-        redactedLog(`telegram-bridge: could not reach agent ${agentId}: ${describeError(error)}`);
-        await api.sendMessage(message.chat.id, `Could not reach the agent: ${describeError(error)}`, message.message_id);
-      }
+      await turns.admit(message.chat.id, async (startsTurn) => {
+        pending.add(messageId, { chatId: message.chat.id, replyTo: message.message_id });
+        try {
+          await messenger.agents.ref(agentId).send(prompt, { messageId, activeTurnBehavior: "steer", images: attachments.images });
+        } catch (error) {
+          pending.forget(messageId);
+          redactedLog(`telegram-bridge: could not reach agent ${agentId}: ${describeError(error)}`);
+          await api
+            .sendMessage(message.chat.id, `Could not reach the agent: ${describeError(error)}`, message.message_id)
+            .catch((sendError: unknown) => redactedLog(`telegram-bridge: could not tell chat ${message.chat.id}: ${describeError(sendError)}`));
+          if (startsTurn) await turns.turnEnded();
+        }
+      });
     }
 
     async function poll() {
@@ -96,6 +103,10 @@ export function startBridge({ settings, paseo, dataDir, home, paseoHome, apiUrl,
   async function postReplies({ agent, outcome, timeline }: TurnEnded) {
     const current = live;
     if (!current || agent.id !== current.agentId) return;
+    await Promise.all([turns.turnEnded(), postReply(current, outcome, timeline)]);
+  }
+
+  async function postReply(current: NonNullable<typeof live>, outcome: TurnEnded["outcome"], timeline: TurnEnded["timeline"]) {
     const targets = pending.takeAnsweredBy(timeline);
     if (targets.length === 0) return;
     const plan = await planReply(replyFor(outcome, timeline), sendPolicy);
