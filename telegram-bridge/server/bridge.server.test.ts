@@ -10,10 +10,12 @@ import { makeTempDir } from "./temp-dir.test-support";
 const TOKEN = "123:bridge-token";
 const MAX = 111;
 const GROUP = -100200;
-const configured: BridgeSettings = { botToken: TOKEN, agentId: "agent-1", allowedUserIds: [MAX], allowedChatIds: [GROUP] };
-const update = (updateId: number, fields: Record<string, unknown>, from = MAX) => ({
+const configured: BridgeSettings = { botToken: TOKEN, agentId: "agent-1", allowedUserIds: [MAX], allowedChatIds: [GROUP, MAX] };
+const groupChat = { id: GROUP, type: "supergroup", title: "Crew" };
+const directChat = { id: MAX, type: "private" };
+const update = (updateId: number, fields: Record<string, unknown>, from = MAX, chat: object = groupChat) => ({
   update_id: updateId,
-  message: { message_id: updateId, chat: { id: GROUP, type: "supergroup" }, from: { id: from, first_name: "Max" }, ...fields },
+  message: { message_id: updateId, chat, from: { id: from, first_name: "Max" }, ...fields },
 });
 
 let bot: FakeBotApi;
@@ -79,7 +81,7 @@ describe("bridge, inbound", () => {
     expect(agents.sent).toEqual([
       {
         agentId: "agent-1",
-        text: `[Telegram, Max]: status?\n${REPLY_HINT}`,
+        text: `[Telegram, Max, in Crew]: status?\n${REPLY_HINT}`,
         options: { messageId: `telegram-${GROUP}-5`, activeTurnBehavior: "steer", images: [] },
       },
     ]);
@@ -92,7 +94,7 @@ describe("bridge, inbound", () => {
     await until(() => logs.length === 1);
     await stop();
     expect(agents.sent).toEqual([]);
-    expect(logs).toEqual([`telegram-bridge: ignored a message from user 999 in chat ${GROUP}; add both ids to the settings to allow it`]);
+    expect(logs).toEqual([`telegram-bridge: ignored a message from user 999 in chat ${GROUP} (Crew); add both ids to the settings to allow it`]);
   });
 
   it("tells the chat when a message kind cannot reach the agent", async () => {
@@ -120,6 +122,14 @@ describe("bridge, inbound", () => {
     await stop();
     expect(sentMessages()[0].text).toBe("Could not reach the agent: Agent agent-1 not found");
     expect(logs).toEqual(["telegram-bridge: could not reach agent agent-1: Agent agent-1 not found"]);
+  });
+
+  it("still delivers a second chat's message when the agent could not take the first", async () => {
+    bot.reply("getUpdates", { json: { ok: true, result: [update(7, { text: "hi" }), update(8, { text: "hello" }, MAX, directChat)] } });
+    const { stop } = start(undefined, Promise.resolve(fakeAgents({ fail: true }).messenger));
+    await until(() => sentMessages().length === 2);
+    await stop();
+    expect(sentMessages().map((body) => body.chat_id)).toEqual([GROUP, MAX]);
   });
 
   it("stays off until a token and an agent id are set, then starts on the change", async () => {
@@ -206,6 +216,24 @@ describe("bridge, replies", () => {
     expect(sentMessages().map((body) => body.text)).toEqual(["The agent's turn failed: rate limited"]);
   });
 
+  it("answers each chat in its own turn when a second chat writes while the agent answers the first", async () => {
+    const agents = fakeAgents();
+    bot.reply("getUpdates", { json: { ok: true, result: [update(5, { text: "group question" }), update(6, { text: "direct question" }, MAX, directChat)] } });
+    const { stop, onTurnEnded } = start(undefined, Promise.resolve(agents.messenger));
+    await until(() => bot.calls.filter((call) => call.method === "getUpdates").length >= 2);
+    expect(agents.sent.map((sent) => sent.text.split("\n")[0])).toEqual(["[Telegram, Max, in Crew]: group question"]);
+
+    await onTurnEnded({ agent: agent("agent-1"), outcome: completed, timeline: [userMessage(`telegram-${GROUP}-5`), said("group answer")] });
+    await until(() => agents.sent.length === 2);
+    expect(agents.sent[1].text.split("\n")[0]).toBe("[Telegram, Max, in direct chat]: direct question");
+    await onTurnEnded({ agent: agent("agent-1"), outcome: completed, timeline: [userMessage(`telegram-${GROUP}-5`), said("group answer"), userMessage(`telegram-${MAX}-6`), said("direct answer")] });
+    await stop();
+    expect(sentMessages().map((body) => [body.chat_id, body.text])).toEqual([
+      [GROUP, "group answer"],
+      [MAX, "direct answer"],
+    ]);
+  });
+
   it("logs a reply Telegram refuses, without throwing out of the hook", async () => {
     const { stop, onTurnEnded, logs } = await afterDelivering("status?");
     bot.reply("sendMessage", { status: 400, json: { ok: false, error_code: 400, description: "Bad Request: chat not found" } });
@@ -223,7 +251,7 @@ describe("bridge, files", () => {
     const { stop } = start(undefined, Promise.resolve(agents.messenger));
     await until(() => agents.sent.length === 1);
     await stop();
-    expect(agents.sent[0].text.split("\n")[0]).toBe("[Telegram, Max]: What is this?");
+    expect(agents.sent[0].text.split("\n")[0]).toBe("[Telegram, Max, in Crew]: What is this?");
     expect(agents.sent[0].options).toMatchObject({ images: [{ data: Buffer.from("jpeg").toString("base64"), mimeType: "image/jpeg" }] });
   });
 

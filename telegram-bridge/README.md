@@ -44,9 +44,11 @@ The bridge restarts with the new values on every save.
 
 - A message reaches the agent only if **both** its sender and its chat are allowed. Anything else
   is ignored and never reaches the agent; the log names the user and chat ids once, never the text.
-- The agent gets `[Telegram, <first name>]: <text>`, then a line saying the reply goes back to
-  Telegram and how to send a file. If the agent is busy, the message joins its current turn rather
-  than interrupting it.
+- The agent gets `[Telegram, <first name>, in <chat>]: <text>`, where `<chat>` is the group's
+  title or `direct chat`, then a line saying the reply goes back to Telegram and how to send a file.
+- If the agent is busy with a message from the same chat, or with a turn you started in the app,
+  the message joins its current turn rather than interrupting it. A message from another chat
+  waits, and starts its own turn when the current one ends.
 - A **photo** goes to the agent as an image, with its caption as the text.
 - A **file** is saved under `$PASEO_HOME/plugin-data/telegram-bridge/files/<chat id>/`, readable by
   the daemon's user only, and its path and type are listed in the prompt. The agent must be allowed
@@ -59,7 +61,8 @@ The bridge restarts with the new values on every save.
 ## What comes back
 
 When the agent finishes a turn that took in a Telegram message, the bridge posts the agent's final
-reply to that chat, as a reply to your newest message. The final reply is the text after the
+reply to that chat, as a reply to your newest message. A turn takes in messages from one chat only,
+so each chat gets the answers to its own messages. The final reply is the text after the
 agent's last tool call. A failed or canceled turn is reported as such.
 
 - **Turns you start in the Paseo app are not posted to Telegram.**

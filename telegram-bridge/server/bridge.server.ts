@@ -3,6 +3,7 @@ import { join } from "node:path";
 import type { PluginHookContext, PluginLifecycleEvents, PluginSettings, PluginSettingsState } from "@getpaseo/plugin/server";
 import type { bridgeSettings } from "../shared/settings.shared";
 import { createIgnoredSenderLog, isAllowed } from "./allow-list.server";
+import { createChatTurns } from "./chat-turns.server";
 import { describeError } from "./describe-error.server";
 import { fetchAttachments } from "./attachments.server";
 import { hasContentForAgent, isUnsupportedContent, paseoMessageId, promptFor, UNSUPPORTED_REPLY } from "./inbound.server";
@@ -40,7 +41,7 @@ export function startBridge({ settings, paseo, dataDir, home, paseoHome, apiUrl,
   const filesDir = join(dataDir, "files");
   const sendPolicy = { home, paseoHome, bridgeFilesDir: filesDir };
   const pending = createPendingReplies();
-  let live: { api: TelegramApi; agentId: string; log(line: string): void } | null = null;
+  let live: { api: TelegramApi; agentId: string; log(line: string): void; turnEnded(): Promise<void> } | null = null;
 
   function run(state: SettingsState): () => Promise<void> {
     if (state.status !== "ready") {
@@ -57,6 +58,7 @@ export function startBridge({ settings, paseo, dataDir, home, paseoHome, apiUrl,
     const redactedLog = (line: string) => log(redactToken(line, botToken));
     const logIgnored = createIgnoredSenderLog(redactedLog);
     const controller = new AbortController();
+    const turns = createChatTurns();
 
     async function deliver(messenger: AgentMessenger, message: TelegramMessage) {
       if (!isAllowed(message, values)) return logIgnored(message);
@@ -66,14 +68,17 @@ export function startBridge({ settings, paseo, dataDir, home, paseoHome, apiUrl,
       const attachments = await fetchAttachments(api, message, filesDir, controller.signal);
       const prompt = promptFor(message, attachments);
       const messageId = paseoMessageId(message);
-      pending.add(messageId, { chatId: message.chat.id, replyTo: message.message_id });
-      try {
-        await messenger.agents.ref(agentId).send(prompt, { messageId, activeTurnBehavior: "steer", images: attachments.images });
-      } catch (error) {
-        pending.forget(messageId);
-        redactedLog(`telegram-bridge: could not reach agent ${agentId}: ${describeError(error)}`);
-        await api.sendMessage(message.chat.id, `Could not reach the agent: ${describeError(error)}`, message.message_id);
-      }
+      await turns.admit(message.chat.id, async (startsTurn) => {
+        pending.add(messageId, { chatId: message.chat.id, replyTo: message.message_id });
+        try {
+          await messenger.agents.ref(agentId).send(prompt, { messageId, activeTurnBehavior: "steer", images: attachments.images });
+        } catch (error) {
+          pending.forget(messageId);
+          redactedLog(`telegram-bridge: could not reach agent ${agentId}: ${describeError(error)}`);
+          await api.sendMessage(message.chat.id, `Could not reach the agent: ${describeError(error)}`, message.message_id);
+          if (startsTurn) await turns.turnEnded();
+        }
+      });
     }
 
     async function poll() {
@@ -82,7 +87,7 @@ export function startBridge({ settings, paseo, dataDir, home, paseoHome, apiUrl,
       await runPoller({ api, offsets, onMessage: (message) => deliver(messenger, message), log: redactedLog, signal: controller.signal });
     }
 
-    live = { api, agentId, log: redactedLog };
+    live = { api, agentId, log: redactedLog, turnEnded: turns.turnEnded };
     const polling = poll().catch((error: unknown) => redactedLog(`telegram-bridge: polling stopped: ${describeError(error)}`));
     return async () => {
       live = null;
@@ -96,6 +101,11 @@ export function startBridge({ settings, paseo, dataDir, home, paseoHome, apiUrl,
   async function postReplies({ agent, outcome, timeline }: TurnEnded) {
     const current = live;
     if (!current || agent.id !== current.agentId) return;
+    const releasing = current.turnEnded().catch((error: unknown) => current.log(`telegram-bridge: a held message was not handled: ${describeError(error)}`));
+    await Promise.all([releasing, postReply(current, outcome, timeline)]);
+  }
+
+  async function postReply(current: NonNullable<typeof live>, outcome: TurnEnded["outcome"], timeline: TurnEnded["timeline"]) {
     const targets = pending.takeAnsweredBy(timeline);
     if (targets.length === 0) return;
     const plan = await planReply(replyFor(outcome, timeline), sendPolicy);

@@ -18,10 +18,12 @@ function describeContent(message: TelegramMessage): string {
   return message.photo ? "(sent a photo)" : "(sent a file)";
 }
 
+const chatName = ({ chat }: TelegramMessage) => (chat.type === "private" ? "direct chat" : (chat.title ?? `chat ${chat.id}`));
+
 export function promptFor(message: TelegramMessage, { savedFiles, notes }: Attachments): string {
   const sender = message.from?.first_name ?? "unknown";
   return [
-    `[Telegram, ${sender}]: ${describeContent(message)}`,
+    `[Telegram, ${sender}, in ${chatName(message)}]: ${describeContent(message)}`,
     ...savedFiles.map(({ path, mimeType }) => `Attached file: ${path} (${mimeType})`),
     ...notes.map((note) => `(${note})`),
     REPLY_HINT,
