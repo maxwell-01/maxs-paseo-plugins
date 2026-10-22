@@ -1,8 +1,9 @@
 import { type PluginSurfaceProps, useRpc, useSettings } from "@getpaseo/plugin/client";
 import { SettingsAction, SettingsCard, SettingsRow, SettingsSection, SettingsSwitch } from "@getpaseo/plugin/client/ui";
 import { useQuery } from "@tanstack/react-query";
-import { Text } from "react-native";
+import { ScrollView, Text } from "react-native";
 import { crossDaemonSettings, listPeers } from "../shared/cross-daemon.shared";
+import { DaemonsSection } from "./daemons-section.client";
 import { requestPeerSync } from "./sync-scheduler.client";
 
 const PEERS_KEY = ["cross-daemon", "peers"];
@@ -15,7 +16,16 @@ function describeReach(names: readonly string[] | undefined, failed: boolean): s
   return names.join(", ");
 }
 
-export function CrossDaemonSettingsScreen({ theme }: PluginSurfaceProps) {
+export function CrossDaemonSettingsScreen({ theme, layout }: PluginSurfaceProps) {
+  return (
+    <ScrollView contentContainerStyle={{ padding: layout.compact ? 0 : 8 }}>
+      <ThisDaemonSection theme={theme} />
+      <DaemonsSection theme={theme} />
+    </ScrollView>
+  );
+}
+
+function ThisDaemonSection({ theme }: Pick<PluginSurfaceProps, "theme">) {
   const settings = useSettings(crossDaemonSettings);
   const callListPeers = useRpc(listPeers);
   const peers = useQuery({
@@ -27,7 +37,7 @@ export function CrossDaemonSettingsScreen({ theme }: PluginSurfaceProps) {
   if (settings.status === "loading") return <Text style={{ color: theme.colors.foreground }}>Loading settings…</Text>;
   if (settings.status !== "ready") {
     return (
-      <SettingsSection title="Cross-daemon">
+      <SettingsSection title="This daemon">
         <Text accessibilityRole="alert" style={{ color: theme.colors.statusDanger }}>
           {settings.error}
         </Text>
@@ -53,7 +63,7 @@ export function CrossDaemonSettingsScreen({ theme }: PluginSurfaceProps) {
   };
 
   return (
-    <SettingsSection title="Cross-daemon">
+    <SettingsSection title="This daemon">
       <SettingsCard>
         <SettingsSwitch
           label="Allow cross-daemon comms"
