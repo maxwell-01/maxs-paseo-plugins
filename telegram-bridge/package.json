@@ -1,0 +1,45 @@
+{
+  "name": "paseo-telegram-bridge",
+  "version": "0.1.0",
+  "description": "Talk to a Paseo agent from a Telegram chat: messages, photos and files both ways.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/maxwell-01/maxs-paseo-plugins.git",
+    "directory": "telegram-bridge"
+  },
+  "keywords": [
+    "paseo",
+    "paseo-plugin",
+    "telegram"
+  ],
+  "files": [
+    "paseo-plugin.json",
+    "index.client.tsx",
+    "index.server.ts",
+    "client/",
+    "server/",
+    "shared/",
+    "!**/*.test.ts",
+    "!**/*.test-support.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.client.json",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@getpaseo/client": "0.11.1",
+    "@getpaseo/plugin": "0.11.1",
+    "@getpaseo/protocol": "0.11.1",
+    "@types/node": "^20.9.0",
+    "@types/react": "~19.1.0",
+    "react": "~19.1.0",
+    "react-native": "~0.81.5",
+    "typescript": "^7.0.2",
+    "vitest": "^3.2.7",
+    "zod": "^4.6.2"
+  }
+}
