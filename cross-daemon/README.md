@@ -102,7 +102,8 @@ they give an agent its workspace's folder.
   restart.
 - Each message says which agent and daemon sent it and how to reply. The app shows a received
   message, finish notice or not-delivered notice as a compact row; a message or finish notice
-  expands to its text.
+  expands to its text. Calls to `send_agent_prompt`, `create_agent` and `archive_agent` show as
+  compact rows too; a send or create expands to its prompt.
 - With `notifyOnFinish` (on by default), the sender is told when the agent finishes, with its last
   message. Paseo's own tool steers that notice into the sender's running turn; this one waits until
   the sender is idle, so it never interrupts the sender either.
