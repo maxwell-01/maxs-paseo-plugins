@@ -1,3 +1,4 @@
+import type { PluginTimelineTransformerContribution } from "@getpaseo/plugin/client";
 import { describe, expect, it } from "vitest";
 import { composeFinishNotice, composeNotDelivered } from "../server/messenger.server";
 import { composeMessage } from "../server/tools.server";
@@ -52,23 +53,28 @@ describe("transformUserMessage", () => {
   });
 });
 
-type Status = "running" | "completed" | "failed" | "canceled";
+type ToolCallItem = Parameters<PluginTimelineTransformerContribution<"tool_call">["transform"]>[0]["item"];
+type CallState = { status: "running" | "completed" | "canceled" } | { status: "failed"; error: unknown };
 
-function callRow(name: string, status: Status, input: unknown, output: unknown = null, error: unknown = null) {
-  const item = { type: "tool_call", callId: "c1", name, status, error, detail: { type: "unknown", input, output } };
-  const result = transformToolCall({ item: item as never, phase: "complete" });
+function toolCall(name: string, state: CallState, input: unknown, output: unknown): ToolCallItem {
+  const base = { type: "tool_call" as const, callId: "c1", name, detail: { type: "unknown" as const, input, output } };
+  return state.status === "failed" ? { ...base, status: "failed", error: state.error } : { ...base, status: state.status, error: null };
+}
+
+function callRow(name: string, state: CallState, input: unknown, output: unknown = null) {
+  const result = transformToolCall({ item: toolCall(name, state, input, output), phase: "complete" });
   if (!result) return undefined;
   expect(result.items).toHaveLength(1);
   const [row] = result.items;
   expect(row).toMatchObject({ type: "plugin", kind: "cross-daemon-row", version: 1 });
-  return crossDaemonRowSchema.parse((row as { data: unknown }).data);
+  return crossDaemonRowSchema.parse(row.data);
 }
 
 describe("transformToolCall", () => {
   const send = { daemon: "tower", agentId: "1a2b3c4d5e6f", prompt: "Run the tests" };
 
   it("shows a completed Claude send as a sent row with the prompt as its body", () => {
-    expect(callRow("mcp__cross-daemon__send_agent_prompt", "completed", send, { output: "Sent to agent 1a2b3c4d5e6f." })).toEqual({
+    expect(callRow("mcp__cross-daemon__send_agent_prompt", { status: "completed" }, send, { output: "Sent to agent 1a2b3c4d5e6f." })).toStrictEqual({
       direction: "sent",
       tone: "neutral",
       title: "Message to agent 1a2b3c4d on tower",
@@ -79,7 +85,7 @@ describe("transformToolCall", () => {
 
   it("shows a completed Codex create with its working directory and result text", () => {
     const output = { content: [{ type: "text", text: "Started agent abc." }] };
-    expect(callRow("cross-daemon.create_agent", "completed", { daemon: "tower", cwd: "/work/app", prompt: "Go" }, output)).toEqual({
+    expect(callRow("cross-daemon.create_agent", { status: "completed" }, { daemon: "tower", cwd: "/work/app", prompt: "Go" }, output)).toStrictEqual({
       direction: "sent",
       tone: "neutral",
       title: "Start an agent on tower in /work/app",
@@ -89,7 +95,7 @@ describe("transformToolCall", () => {
   });
 
   it("uses a generic title and a running detail while the input has not streamed in", () => {
-    expect(callRow("mcp__cross-daemon__send_agent_prompt", "running", null)).toEqual({
+    expect(callRow("mcp__cross-daemon__send_agent_prompt", { status: "running" }, null)).toStrictEqual({
       direction: "sent",
       tone: "running",
       title: "Message to an agent on another daemon",
@@ -98,12 +104,12 @@ describe("transformToolCall", () => {
   });
 
   it("uses the generic title when streamed input lacks a field the title needs", () => {
-    expect(callRow("mcp__cross-daemon__archive_agent", "running", { daemon: "tower" })?.title).toBe("Archive an agent on another daemon");
-    expect(callRow("cross-daemon.create_agent", "running", { daemon: "tower" })?.title).toBe("Start an agent on another daemon");
+    expect(callRow("mcp__cross-daemon__archive_agent", { status: "running" }, { daemon: "tower" })?.title).toBe("Archive an agent on another daemon");
+    expect(callRow("cross-daemon.create_agent", { status: "running" }, { daemon: "tower" })?.title).toBe("Start an agent on another daemon");
   });
 
   it("gives archive no body", () => {
-    expect(callRow("mcp__cross-daemon__archive_agent", "completed", { daemon: "tower", agentId: "1a2b3c4d5e6f" }, { output: "Archived." })).toEqual({
+    expect(callRow("mcp__cross-daemon__archive_agent", { status: "completed" }, { daemon: "tower", agentId: "1a2b3c4d5e6f" }, { output: "Archived." })).toStrictEqual({
       direction: "sent",
       tone: "neutral",
       title: "Archive agent 1a2b3c4d on tower",
@@ -112,31 +118,31 @@ describe("transformToolCall", () => {
   });
 
   it("shows a failed call in danger tone with a string error", () => {
-    const row = callRow("mcp__cross-daemon__send_agent_prompt", "failed", send, null, { content: "Could not reach tower" });
+    const row = callRow("mcp__cross-daemon__send_agent_prompt", { status: "failed", error: { content: "Could not reach tower" } }, send, null);
     expect(row).toMatchObject({ tone: "danger", detail: "Could not reach tower" });
   });
 
   it("joins the texts of an array error", () => {
     const error = { content: [{ type: "text", text: "Could not" }, { type: "text", text: "reach tower" }] };
-    expect(callRow("mcp__cross-daemon__send_agent_prompt", "failed", send, null, error)?.detail).toBe("Could not\nreach tower");
+    expect(callRow("mcp__cross-daemon__send_agent_prompt", { status: "failed", error }, send, null)?.detail).toBe("Could not\nreach tower");
   });
 
   it("reads a Codex failure from the output when error is null", () => {
     const output = { content: [{ type: "text", text: "Unknown daemon" }] };
-    expect(callRow("cross-daemon.send_agent_prompt", "failed", send, output)).toMatchObject({ tone: "danger", detail: "Unknown daemon" });
+    expect(callRow("cross-daemon.send_agent_prompt", { status: "failed", error: null }, send, output)).toMatchObject({ tone: "danger", detail: "Unknown daemon" });
   });
 
   it("says Failed when a failed call carries no text", () => {
-    expect(callRow("cross-daemon.send_agent_prompt", "failed", send)).toMatchObject({ tone: "danger", detail: "Failed" });
+    expect(callRow("cross-daemon.send_agent_prompt", { status: "failed", error: null }, send)).toMatchObject({ tone: "danger", detail: "Failed" });
   });
 
   it("shows a canceled call in warning tone", () => {
-    expect(callRow("cross-daemon.archive_agent", "canceled", null)).toMatchObject({ tone: "warning", detail: "Canceled" });
+    expect(callRow("cross-daemon.archive_agent", { status: "canceled" }, null)).toMatchObject({ tone: "warning", detail: "Canceled" });
   });
 
   it("leaves other tools alone", () => {
-    expect(callRow("mcp__cross-daemon__list_agents", "completed", {})).toBeUndefined();
-    expect(callRow("mcp__paseo__send_agent_prompt", "completed", send)).toBeUndefined();
-    expect(callRow("Bash", "completed", { command: "ls" })).toBeUndefined();
+    expect(callRow("mcp__cross-daemon__list_agents", { status: "completed" }, {})).toBeUndefined();
+    expect(callRow("mcp__paseo__send_agent_prompt", { status: "completed" }, send)).toBeUndefined();
+    expect(callRow("Bash", { status: "completed" }, { command: "ls" })).toBeUndefined();
   });
 });

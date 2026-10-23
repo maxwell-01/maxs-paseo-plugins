@@ -82,7 +82,9 @@ function describeSentCall(tool: SentTool, input: SentInput): { title: string; bo
   }
 }
 
-function sentCallState(tool: SentTool, status: string, error: unknown, output: unknown): Pick<CrossDaemonRow, "tone" | "detail"> {
+type CallStatus = Parameters<typeof transformToolCall>[0]["item"]["status"];
+
+function sentCallState(tool: SentTool, status: CallStatus, error: unknown, output: unknown): Pick<CrossDaemonRow, "tone" | "detail"> {
   const result = resultTextSchema.safeParse(output);
   switch (status) {
     case "running":
@@ -93,7 +95,7 @@ function sentCallState(tool: SentTool, status: string, error: unknown, output: u
       const failure = errorTextSchema.safeParse(error);
       return { tone: "danger", detail: failure.success ? failure.data : result.success ? result.data : "Failed" };
     }
-    default:
+    case "completed":
       return result.success ? { tone: "neutral", detail: result.data } : { tone: "neutral" };
   }
 }
