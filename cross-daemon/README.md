@@ -100,7 +100,9 @@ they give an agent its workspace's folder.
 - If it is working, the message is queued and the sender is told so. Every 15 seconds the plugin
   delivers the oldest queued message for each agent that has become idle. The queue survives a
   restart.
-- Each message says which agent and daemon sent it and how to reply.
+- Each message says which agent and daemon sent it and how to reply. The app shows a received
+  message, finish notice or not-delivered notice as a compact row; a message or finish notice
+  expands to its text.
 - With `notifyOnFinish` (on by default), the sender is told when the agent finishes, with its last
   message. Paseo's own tool steers that notice into the sender's running turn; this one waits until
   the sender is idle, so it never interrupts the sender either.

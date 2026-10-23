@@ -37,7 +37,7 @@ interface MessengerDependencies {
   now?: () => number;
 }
 
-function composeFinishNotice(peer: Peer, agentId: string, lastMessage: string): string {
+export function composeFinishNotice(peer: Peer, agentId: string, lastMessage: string): string {
   const marker = randomBytes(4).toString("hex");
   return [
     `[cross-daemon notice ${marker}] Agent ${agentId} on daemon "${peer.name}" (${peer.serverId}) finished the task you sent it. ` +
@@ -46,6 +46,10 @@ function composeFinishNotice(peer: Peer, agentId: string, lastMessage: string): 
     lastMessage || "(none)",
     `----- ${marker} end -----`,
   ].join("\n");
+}
+
+export function composeNotDelivered(agentId: string, where: string, reason: string): string {
+  return `[cross-daemon notice] Your message to agent ${agentId} on ${where} was not delivered: ${reason}`;
 }
 
 export function createMessenger({ queue, watches, readPeers, cli, now = Date.now }: MessengerDependencies) {
@@ -115,7 +119,7 @@ export function createMessenger({ queue, watches, readPeers, cli, now = Date.now
   function dropMessage(message: QueuedMessage, where: string, reason: string): void {
     console.warn(`cross-daemon: dropped a message to agent ${message.agentId} on ${where}: ${reason}`);
     queue.remove(message.id);
-    tellSender(message.callerAgentId, `[cross-daemon notice] Your message to agent ${message.agentId} on ${where} was not delivered: ${reason}`);
+    tellSender(message.callerAgentId, composeNotDelivered(message.agentId, where, reason));
   }
 
   async function deliverQueued(message: QueuedMessage): Promise<void> {
