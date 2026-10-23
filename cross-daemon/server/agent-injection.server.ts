@@ -1,9 +1,9 @@
 import type { PluginBeforeRequests } from "@getpaseo/plugin/server";
+import { TOOL_SERVER_NAME } from "../shared/message-format.shared";
 
 // Paseo compiles plugins against the SDK only, so the config type comes from there, not @getpaseo/protocol.
 type AgentSessionConfig = PluginBeforeRequests["agent.create"]["config"];
 
-const TOOL_SERVER_NAME = "cross-daemon";
 // Paseo refuses to create an agent with MCP servers or tool approvals on providers without them.
 const PROVIDERS_WITH_MCP_TOOLS = new Set(["claude", "codex", "opencode"]);
 // OpenCode turns off its auto-accept whenever a tool policy is present.
