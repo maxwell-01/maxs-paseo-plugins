@@ -3,7 +3,7 @@ import { CrossDaemonRow } from "./client/cross-daemon-row.client";
 import { createDaemonPort } from "./client/peer-sync.client";
 import { CrossDaemonSettingsScreen } from "./client/settings-screen.client";
 import { registerDaemon } from "./client/sync-scheduler.client";
-import { CROSS_DAEMON_ROW_KIND, crossDaemonRowSchema, transformUserMessage } from "./client/timeline-rows.client";
+import { CROSS_DAEMON_ROW_KIND, crossDaemonRowSchema, transformToolCall, transformUserMessage } from "./client/timeline-rows.client";
 
 export default function contribute(client: PluginClientContext) {
   const unregisterDaemon = registerDaemon(createDaemonPort(client.rpc));
@@ -18,6 +18,11 @@ export default function contribute(client: PluginClientContext) {
     query: { itemType: "user_message" },
     transform: transformUserMessage,
   });
+  const removeSentRows = client.addTimelineTransformer({
+    id: "cross-daemon-sent",
+    query: { itemType: "tool_call" },
+    transform: transformToolCall,
+  });
   const removeRowRenderer = client.addTimelineRenderer({
     kind: CROSS_DAEMON_ROW_KIND,
     version: 1,
@@ -28,6 +33,7 @@ export default function contribute(client: PluginClientContext) {
     unregisterDaemon();
     removeSettingsScreen();
     removeReceivedRows();
+    removeSentRows();
     removeRowRenderer();
   };
 }
