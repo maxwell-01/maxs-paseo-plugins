@@ -20,6 +20,8 @@ interface FakeAgent {
 
 // Agents on the remote daemon and on this one, driven through the same commands the CLI offers.
 export function fakeDaemons() {
+  let clock = Date.parse("2021-06-01T00:00:00.000Z");
+  const nextUpdatedAt = () => new Date((clock += 1)).toISOString();
   const agents = new Map<string, FakeAgent>();
   const delivered: { where: Where; agentId: string; text: string }[] = [];
   const runs: string[][] = [];
@@ -67,7 +69,7 @@ export function fakeDaemons() {
       const { cwd } = workspaces.get(workspaceId)!;
       const id = `new-${runs.length}`;
       const status = firstTurnStarts ? "running" : "idle";
-      agents.set(`${where}/${id}`, { status, updatedAt: new Date().toISOString(), lastText: "", cwd, archived: false });
+      agents.set(`${where}/${id}`, { status, updatedAt: nextUpdatedAt(), lastText: "", cwd, archived: false });
       return JSON.stringify({ agentId: id, status: firstTurnStarts ? "running" : "created", provider: "claude", cwd, title: null });
     }
     const agent = agents.get(`${where}/${agentId}`);
@@ -83,7 +85,7 @@ export function fakeDaemons() {
     }
     if (command === "send") {
       delivered.push({ where, agentId, text: promptText ?? "" });
-      if (startTurnOnSend) Object.assign(agent, { status: "running", updatedAt: new Date().toISOString() });
+      if (startTurnOnSend) Object.assign(agent, { status: "running", updatedAt: nextUpdatedAt() });
       return "{}";
     }
     throw new Error(`unexpected command ${command}`);
@@ -99,7 +101,7 @@ export function fakeDaemons() {
     agents.set(`${where}/${agentId}`, { status, updatedAt: "2020-01-01T00:00:00.000Z", lastText: "", cwd, archived: false });
   const putWorkspace = (workspaceId: string, cwd: string) => workspaces.set(workspaceId, { cwd, archived: false });
   const finish = (where: Where, agentId: string, lastText: string) =>
-    Object.assign(agents.get(`${where}/${agentId}`)!, { status: "idle", updatedAt: new Date().toISOString(), lastText });
+    Object.assign(agents.get(`${where}/${agentId}`)!, { status: "idle", updatedAt: nextUpdatedAt(), lastText });
   const setStatus = (where: Where, agentId: string, status: string) => Object.assign(agents.get(`${where}/${agentId}`)!, { status });
   return {
     cli,
