@@ -11,7 +11,7 @@ export const crossDaemonRowSchema = z.object({
   detail: z.string().optional(),
   body: z.string().optional(),
 });
-type CrossDaemonRow = z.infer<typeof crossDaemonRowSchema>;
+export type CrossDaemonRow = z.infer<typeof crossDaemonRowSchema>;
 
 const shortId = (agentId: string) => agentId.slice(0, 8);
 

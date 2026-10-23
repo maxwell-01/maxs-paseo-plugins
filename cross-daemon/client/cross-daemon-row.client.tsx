@@ -2,10 +2,9 @@ import type { PluginTimelineItemProps } from "@getpaseo/plugin/client";
 import { Icon } from "@getpaseo/plugin/client/react-native";
 import { useMemo, useState } from "react";
 import { Pressable, Text, View } from "react-native";
-import type { z } from "zod";
-import type { crossDaemonRowSchema } from "./timeline-rows.client";
+import type { CrossDaemonRow as Row } from "./timeline-rows.client";
 
-type RowProps = PluginTimelineItemProps<z.output<typeof crossDaemonRowSchema>>;
+type RowProps = PluginTimelineItemProps<Row>;
 
 export function CrossDaemonRow({ item: { data }, theme, layout }: RowProps) {
   const [expanded, setExpanded] = useState(false);
@@ -16,7 +15,7 @@ export function CrossDaemonRow({ item: { data }, theme, layout }: RowProps) {
       row: { flexDirection: "row" as const, alignItems: "flex-start" as const, gap: 8, paddingVertical: 4, paddingLeft: layout.compact ? 8 : 10, borderLeftWidth: 1, borderLeftColor: colors.border },
       text: { flex: 1, gap: 2 },
       title: { color: colors.foreground, fontSize: 13 },
-      detail: { color: toneColor, fontSize: 12 },
+      detail: { fontSize: 12 },
       body: { marginTop: 4, padding: 8, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface1, borderRadius: 6 },
       bodyText: { color: colors.foreground, fontSize: 13 },
     }),
@@ -27,7 +26,7 @@ export function CrossDaemonRow({ item: { data }, theme, layout }: RowProps) {
       <Icon name={data.direction === "received" ? "ArrowDownLeft" : "ArrowUpRight"} size={14} color={toneColor} />
       <View style={styles.text}>
         <Text style={styles.title}>{data.title}</Text>
-        {data.detail ? <Text style={styles.detail}>{data.detail}</Text> : null}
+        {data.detail ? <Text style={[styles.detail, { color: toneColor }]}>{data.detail}</Text> : null}
         {expanded && data.body ? (
           <View style={styles.body}>
             <Text selectable style={styles.bodyText}>

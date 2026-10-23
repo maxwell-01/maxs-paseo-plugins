@@ -12,12 +12,12 @@ function rowFor(text: string) {
   expect(result.items).toHaveLength(1);
   const [item] = result.items;
   expect(item).toMatchObject({ type: "plugin", kind: "cross-daemon-row", version: 1 });
-  return crossDaemonRowSchema.parse((item as { data: unknown }).data);
+  return crossDaemonRowSchema.parse(item.data);
 }
 
 describe("transformUserMessage", () => {
   it("shows a message from an agent as a received row that expands to the sender's text", () => {
-    expect(rowFor(composeMessage(own, "1a2b3c4d5e6f", "Run the tests"))).toEqual({
+    expect(rowFor(composeMessage(own, "1a2b3c4d5e6f", "Run the tests"))).toStrictEqual({
       direction: "received",
       tone: "neutral",
       title: "Message from agent 1a2b3c4d on tower",
@@ -30,7 +30,7 @@ describe("transformUserMessage", () => {
   });
 
   it("shows a finish notice with the last message as its body", () => {
-    expect(rowFor(composeFinishNotice(peer, "9f8e7d6c5b4a", "Done."))).toEqual({
+    expect(rowFor(composeFinishNotice(peer, "9f8e7d6c5b4a", "Done."))).toStrictEqual({
       direction: "received",
       tone: "neutral",
       title: "Agent 9f8e7d6c on mac finished",
@@ -39,7 +39,7 @@ describe("transformUserMessage", () => {
   });
 
   it("shows a not-delivered notice as a danger row with the reason always visible", () => {
-    expect(rowFor(composeNotDelivered("1a2b3c4d5e6f", "mac", "the agent is archived"))).toEqual({
+    expect(rowFor(composeNotDelivered("1a2b3c4d5e6f", "mac", "the agent is archived"))).toStrictEqual({
       direction: "received",
       tone: "danger",
       title: "Message to agent 1a2b3c4d on mac not delivered",
