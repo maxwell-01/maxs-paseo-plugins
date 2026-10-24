@@ -1,13 +1,14 @@
 import { once } from "node:events";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import type { PluginHookContext, PluginLifecycleEvents, PluginSettings, PluginSettingsState } from "@getpaseo/plugin/server";
 import type { bridgeSettings } from "../shared/settings.shared";
 import { createIgnoredSenderLog, isAllowed } from "./allow-list.server";
+import { createChatHistory, withAttached } from "./chat-history.server";
 import { createChatTurns } from "./chat-turns.server";
 import { describeError } from "./describe-error.server";
 import { fetchAttachments } from "./attachments.server";
 import { takeFollowUpChats } from "./follow-ups.server";
-import { hasContentForAgent, isUnsupportedContent, paseoMessageId, promptFor, UNSUPPORTED_REPLY } from "./inbound.server";
+import { hasContentForAgent, historyEntryFor, isUnsupportedContent, paseoMessageId, promptFor, UNSUPPORTED_REPLY } from "./inbound.server";
 import { createOffsetStore } from "./offset-store.server";
 import { replyFor } from "./outbound.server";
 import { createPendingReplies } from "./pending-replies.server";
@@ -43,7 +44,15 @@ export function startBridge({ settings, paseo, dataDir, home, paseoHome, apiUrl,
   const sendPolicy = { home, paseoHome, bridgeFilesDir: filesDir };
   const pending = createPendingReplies();
   const turns = createChatTurns();
-  let live: { api: TelegramApi; agentId: string; allowedChatIds: number[]; log(line: string): void } | null = null;
+  const history = createChatHistory(join(dataDir, "history"));
+  function remember(chatId: number, who: string, text: string, { token, log }: { token: string; log(line: string): void }) {
+    try {
+      history.record(chatId, who, redactToken(text, token));
+    } catch (error) {
+      log(`telegram-bridge: could not write the history of chat ${chatId}: ${describeError(error)}`);
+    }
+  }
+  let live: { api: TelegramApi; token: string; agentId: string; allowedChatIds: number[]; log(line: string): void } | null = null;
 
   function run(state: SettingsState): () => Promise<void> {
     if (state.status !== "ready") {
@@ -66,8 +75,10 @@ export function startBridge({ settings, paseo, dataDir, home, paseoHome, apiUrl,
       if (!hasContentForAgent(message)) {
         return isUnsupportedContent(message) ? api.sendMessage(message.chat.id, UNSUPPORTED_REPLY, message.message_id) : undefined;
       }
+      const { who, text } = historyEntryFor(message);
+      remember(message.chat.id, who, text, { token: botToken, log: redactedLog });
       const attachments = await fetchAttachments(api, message, filesDir, controller.signal);
-      const prompt = promptFor(message, attachments);
+      const prompt = promptFor(message, attachments, history.fileFor(message.chat.id));
       const messageId = paseoMessageId(message);
       await turns.admit(message.chat.id, async (startsTurn) => {
         pending.add(messageId, { chatId: message.chat.id, replyTo: message.message_id });
@@ -90,7 +101,7 @@ export function startBridge({ settings, paseo, dataDir, home, paseoHome, apiUrl,
       await runPoller({ api, offsets, onMessage: (message) => deliver(messenger, message), log: redactedLog, signal: controller.signal });
     }
 
-    live = { api, agentId, allowedChatIds: values.allowedChatIds, log: redactedLog };
+    live = { api, token: botToken, agentId, allowedChatIds: values.allowedChatIds, log: redactedLog };
     const polling = poll().catch((error: unknown) => redactedLog(`telegram-bridge: polling stopped: ${describeError(error)}`));
     return async () => {
       live = null;
@@ -117,10 +128,12 @@ export function startBridge({ settings, paseo, dataDir, home, paseoHome, apiUrl,
     }
     if (targets.length === 0) return;
     const plan = await planReply(text, sendPolicy);
+    const posted = withAttached(plan.body, plan.files.map((file) => basename(file.path)));
     await Promise.all(
       targets.map((target) =>
-        sendReply(current.api, target, plan).catch((error: unknown) =>
-          current.log(`telegram-bridge: could not post the reply to chat ${target.chatId}: ${describeError(error)}`),
+        sendReply(current.api, target, plan).then(
+          () => remember(target.chatId, "agent", posted, current),
+          (error: unknown) => current.log(`telegram-bridge: could not post the reply to chat ${target.chatId}: ${describeError(error)}`),
         ),
       ),
     );

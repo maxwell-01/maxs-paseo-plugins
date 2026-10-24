@@ -1,9 +1,10 @@
 import type { Attachments } from "./attachments.server";
+import { withAttached } from "./chat-history.server";
 import type { TelegramMessage } from "./telegram-api.server";
 
 export const UNSUPPORTED_REPLY = "Only text, photos and files reach the agent.";
-export const replyHint = (chatId: number) =>
-  `(Your reply goes back to this Telegram chat. To send a file back, put a line [[send: /absolute/path]] in your reply. To message this chat later, from a turn that did not start here, put a line [[telegram: ${chatId}]] in that turn's final reply.)`;
+export const replyHint = (chatId: number, historyFile: string) =>
+  `(Your reply goes back to this Telegram chat. To send a file back, put a line [[send: /absolute/path]] in your reply. To message this chat later, from a turn that did not start here, put a line [[telegram: ${chatId}]] in that turn's final reply. This chat's recent messages, yours included, are in ${historyFile}; read it when you need context, and before a follow-up.)`;
 
 const UNSUPPORTED_CONTENT_KINDS = ["animation", "audio", "contact", "dice", "location", "poll", "sticker", "venue", "video", "video_note", "voice"];
 
@@ -21,12 +22,18 @@ function describeContent(message: TelegramMessage): string {
 
 const chatName = ({ chat }: TelegramMessage) => (chat.type === "private" ? "direct chat" : (chat.title ?? `chat ${chat.id}`));
 
-export function promptFor(message: TelegramMessage, { savedFiles, notes }: Attachments): string {
-  const sender = message.from?.first_name ?? "unknown";
+const senderName = (message: TelegramMessage) => message.from?.first_name ?? "unknown";
+
+export function historyEntryFor(message: TelegramMessage): { who: string; text: string } {
+  const attached = [...(message.photo ? ["photo"] : []), ...(message.document ? [message.document.file_name ?? "file"] : [])];
+  return { who: `${senderName(message)} in ${chatName(message)}`, text: withAttached(describeContent(message), attached) };
+}
+
+export function promptFor(message: TelegramMessage, { savedFiles, notes }: Attachments, historyFile: string): string {
   return [
-    `[Telegram, ${sender}, in ${chatName(message)}]: ${describeContent(message)}`,
+    `[Telegram, ${senderName(message)}, in ${chatName(message)}]: ${describeContent(message)}`,
     ...savedFiles.map(({ path, mimeType }) => `Attached file: ${path} (${mimeType})`),
     ...notes.map((note) => `(${note})`),
-    replyHint(message.chat.id),
+    replyHint(message.chat.id, historyFile),
   ].join("\n");
 }
