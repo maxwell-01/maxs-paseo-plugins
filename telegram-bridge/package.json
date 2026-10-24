@@ -1,6 +1,6 @@
 {
   "name": "paseo-telegram-bridge",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Talk to a Paseo agent from a Telegram chat: messages, photos and files both ways.",
   "license": "MIT",
   "repository": {

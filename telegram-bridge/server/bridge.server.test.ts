@@ -1,4 +1,4 @@
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { BridgeSettings } from "../shared/settings.shared";
@@ -65,8 +65,10 @@ async function until(condition: () => boolean) {
 function start(settings = fakeSettings(configured), paseo: Promise<AgentMessenger> = Promise.resolve(fakeAgents().messenger)) {
   const logs: string[] = [];
   const paseoHome = makeTempDir("tg-paseo-home-");
-  const bridge = startBridge({ settings, paseo, dataDir: join(paseoHome, "plugin-data", "telegram-bridge"), home: makeTempDir("tg-home-"), paseoHome, apiUrl: bot.url, log: (line) => logs.push(line) });
-  return { ...bridge, logs };
+  const dataDir = join(paseoHome, "plugin-data", "telegram-bridge");
+  const bridge = startBridge({ settings, paseo, dataDir, home: makeTempDir("tg-home-"), paseoHome, apiUrl: bot.url, log: (line) => logs.push(line) });
+  const history = (chatId: number) => readFileSync(join(dataDir, "history", `${chatId}.log`), "utf8").replace(/^\S+ /gm, "");
+  return { ...bridge, logs, dataDir, history };
 }
 
 const sentMessages = () => bot.calls.filter((call) => call.method === "sendMessage").map((call) => call.body);
@@ -75,13 +77,13 @@ describe("bridge, inbound", () => {
   it("sends an allowed message to the agent's conversation without interrupting its turn", async () => {
     const agents = fakeAgents();
     bot.reply("getUpdates", { json: { ok: true, result: [update(5, { text: "status?" })] } });
-    const { stop } = start(undefined, Promise.resolve(agents.messenger));
+    const { stop, dataDir } = start(undefined, Promise.resolve(agents.messenger));
     await until(() => agents.sent.length === 1);
     await stop();
     expect(agents.sent).toEqual([
       {
         agentId: "agent-1",
-        text: `[Telegram, Max, in Crew]: status?\n${replyHint(GROUP)}`,
+        text: `[Telegram, Max, in Crew]: status?\n${replyHint(GROUP, join(dataDir, "history", `${GROUP}.log`))}`,
         options: { messageId: `telegram-${GROUP}-5`, activeTurnBehavior: "steer", images: [] },
       },
     ]);
@@ -249,6 +251,37 @@ describe("bridge, replies", () => {
     await expect(onTurnEnded({ agent: agent("agent-1"), outcome: completed, timeline: [userMessage(`telegram-${GROUP}-5`), said("hi")] })).resolves.toBeUndefined();
     await stop();
     expect(logs).toEqual([`telegram-bridge: could not post the reply to chat ${GROUP}: sendMessage failed: 400 Bad Request: chat not found`]);
+  });
+});
+
+describe("bridge, chat history", () => {
+  it("records each chat's messages and the agent's replies and follow-ups in that chat's own file", async () => {
+    const dir = makeTempDir("tg-out-");
+    writeFileSync(join(dir, "report.pdf"), "pdf");
+    const { stop, onTurnEnded, history } = await afterDelivering("Is the Hell's Kitchen box up?");
+    await onTurnEnded({ agent: agent("agent-1"), outcome: completed, timeline: [userMessage(`telegram-${GROUP}-5`), said(`Yes.\n[[send: ${join(dir, "report.pdf")}]]`)] });
+    await onTurnEnded({ agent: agent("agent-1"), outcome: completed, timeline: [userMessage("app-1"), said(`Back up again.\n[[telegram: ${MAX}]]`)] });
+    await stop();
+    expect(history(GROUP)).toBe("Max in Crew: Is the Hell's Kitchen box up?\nagent: Yes. [attached: report.pdf]\n");
+    expect(history(MAX)).toBe("agent: Back up again.\n");
+  });
+
+  it("records no message from a stranger, and no reply Telegram refused", async () => {
+    bot.reply("getUpdates", { json: { ok: true, result: [update(4, { text: "hello" }, 999), update(5, { text: "status?" })] } });
+    const agents = fakeAgents();
+    const { stop, onTurnEnded, history } = start(undefined, Promise.resolve(agents.messenger));
+    await until(() => agents.sent.length === 1);
+    bot.reply("sendMessage", { status: 400, json: { ok: false, error_code: 400, description: "Bad Request: chat not found" } });
+    await onTurnEnded({ agent: agent("agent-1"), outcome: completed, timeline: [userMessage(`telegram-${GROUP}-5`), said("hi")] });
+    await stop();
+    expect(history(GROUP)).toBe("Max in Crew: status?\n");
+  });
+
+  it("never writes the bot token to the history", async () => {
+    const { stop, onTurnEnded, history } = await afterDelivering(`is ${TOKEN} right?`);
+    await onTurnEnded({ agent: agent("agent-1"), outcome: completed, timeline: [userMessage(`telegram-${GROUP}-5`), said(`Yes, ${TOKEN}.`)] });
+    await stop();
+    expect(history(GROUP)).toBe("Max in Crew: is <bot token> right?\nagent: Yes, <bot token>.\n");
   });
 });
 

@@ -46,7 +46,8 @@ The bridge restarts with the new values on every save.
   is ignored and never reaches the agent; the log names the user and chat ids once, never the text.
 - The agent gets `[Telegram, <first name>, in <chat>]: <text>`, where `<chat>` is the group's
   title or `direct chat`, then a line saying the reply goes back to Telegram, how to send a file,
-  and how to follow up later in that chat.
+  how to follow up later in that chat, and where that chat's history is (see
+  [Chat history](#chat-history)).
 - If the agent is busy with a message from the same chat, or with a turn you started in the app,
   the message joins its current turn rather than interrupting it. A message from another chat
   waits, and starts its own turn when the current one ends.
@@ -91,6 +92,19 @@ chats.
 - A chat that the turn answers anyway gets the reply once.
 - Text and `[[send: ...]]` files follow the same rules as any reply.
 - A marker or send line inside a code block is left in the text as written.
+
+## Chat history
+
+The Bot API cannot fetch a chat's past messages, so the bridge keeps them itself, one file per
+allowed chat: `$PASEO_HOME/plugin-data/telegram-bridge/history/<chat id>.log`, readable by the
+daemon's user only. The agent reads it when it needs context, for example before a follow-up.
+
+- One line per message: the time, who wrote it and in which chat, the text, and the names of any
+  photo or file.
+- It holds the messages that reach the agent and the replies and follow-ups the bridge posts. A
+  message from someone not allowed, and a reply Telegram refused, are not kept.
+- Only the newest 300 messages per chat are kept. The bot token is replaced by `<bot token>`.
+- Like the files folder, it is inside `$PASEO_HOME`, so a reply can never send it to a chat.
 
 ## Limits
 
