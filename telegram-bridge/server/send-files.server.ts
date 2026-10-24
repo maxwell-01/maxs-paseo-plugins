@@ -1,9 +1,9 @@
 import { realpath, stat } from "node:fs/promises";
 import { basename, extname, isAbsolute, relative, sep } from "node:path";
 import { describeError } from "./describe-error.server";
+import { takeMarkedLines } from "./marked-lines.server";
 
 const SEND_LINE = /^\s*\[\[send:\s*(.+?)\s*\]\]\s*$/;
-const CODE_FENCE = /^\s*```/;
 const PHOTO_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp"]);
 const BOT_PHOTO_UPLOAD_LIMIT_BYTES = 10 * 1024 * 1024;
 const BOT_FILE_UPLOAD_LIMIT_BYTES = 50 * 1024 * 1024;
@@ -19,18 +19,6 @@ export interface SendPolicy {
   home: string;
   paseoHome: string;
   bridgeFilesDir: string;
-}
-
-function takeSendLines(reply: string): { text: string; paths: string[] } {
-  const paths: string[] = [];
-  let inCodeBlock = false;
-  const kept = reply.split("\n").filter((line) => {
-    if (CODE_FENCE.test(line)) inCodeBlock = !inCodeBlock;
-    const path = inCodeBlock ? undefined : SEND_LINE.exec(line)?.[1];
-    if (path !== undefined) paths.push(path);
-    return path === undefined;
-  });
-  return { text: kept.join("\n").trim(), paths };
 }
 
 const isInside = (path: string, dir: string) => {
@@ -74,7 +62,7 @@ async function realOrAsGiven(path: string): Promise<string> {
 }
 
 export async function planReply(reply: string, givenPolicy: SendPolicy): Promise<{ body: string; files: FileToSend[] }> {
-  const { text, paths } = takeSendLines(reply);
+  const { text, values: paths } = takeMarkedLines(reply, SEND_LINE);
   const policy: SendPolicy = {
     home: await realOrAsGiven(givenPolicy.home),
     paseoHome: await realOrAsGiven(givenPolicy.paseoHome),

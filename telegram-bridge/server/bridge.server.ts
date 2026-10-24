@@ -6,6 +6,7 @@ import { createIgnoredSenderLog, isAllowed } from "./allow-list.server";
 import { createChatTurns } from "./chat-turns.server";
 import { describeError } from "./describe-error.server";
 import { fetchAttachments } from "./attachments.server";
+import { takeFollowUpChats } from "./follow-ups.server";
 import { hasContentForAgent, isUnsupportedContent, paseoMessageId, promptFor, UNSUPPORTED_REPLY } from "./inbound.server";
 import { createOffsetStore } from "./offset-store.server";
 import { replyFor } from "./outbound.server";
@@ -42,7 +43,7 @@ export function startBridge({ settings, paseo, dataDir, home, paseoHome, apiUrl,
   const sendPolicy = { home, paseoHome, bridgeFilesDir: filesDir };
   const pending = createPendingReplies();
   const turns = createChatTurns();
-  let live: { api: TelegramApi; agentId: string; log(line: string): void } | null = null;
+  let live: { api: TelegramApi; agentId: string; allowedChatIds: number[]; log(line: string): void } | null = null;
 
   function run(state: SettingsState): () => Promise<void> {
     if (state.status !== "ready") {
@@ -89,7 +90,7 @@ export function startBridge({ settings, paseo, dataDir, home, paseoHome, apiUrl,
       await runPoller({ api, offsets, onMessage: (message) => deliver(messenger, message), log: redactedLog, signal: controller.signal });
     }
 
-    live = { api, agentId, log: redactedLog };
+    live = { api, agentId, allowedChatIds: values.allowedChatIds, log: redactedLog };
     const polling = poll().catch((error: unknown) => redactedLog(`telegram-bridge: polling stopped: ${describeError(error)}`));
     return async () => {
       live = null;
@@ -107,9 +108,15 @@ export function startBridge({ settings, paseo, dataDir, home, paseoHome, apiUrl,
   }
 
   async function postReply(current: NonNullable<typeof live>, outcome: TurnEnded["outcome"], timeline: TurnEnded["timeline"]) {
-    const targets = pending.takeAnsweredBy(timeline);
+    const { text, chatIds } = takeFollowUpChats(replyFor(outcome, timeline));
+    const targets: Array<{ chatId: number; replyTo?: number }> = pending.takeAnsweredBy(timeline);
+    for (const chatId of chatIds) {
+      if (targets.some((target) => target.chatId === chatId)) continue;
+      if (current.allowedChatIds.includes(chatId)) targets.push({ chatId });
+      else current.log(`telegram-bridge: did not post a follow-up to chat ${chatId}: it is not in the allowed chat ids`);
+    }
     if (targets.length === 0) return;
-    const plan = await planReply(replyFor(outcome, timeline), sendPolicy);
+    const plan = await planReply(text, sendPolicy);
     await Promise.all(
       targets.map((target) =>
         sendReply(current.api, target, plan).catch((error: unknown) =>

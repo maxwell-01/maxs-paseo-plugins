@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { BridgeSettings } from "../shared/settings.shared";
 import { type AgentMessenger, startBridge } from "./bridge.server";
 import { type FakeBotApi, startFakeBotApi } from "./fake-bot-api.test-support";
-import { REPLY_HINT } from "./inbound.server";
+import { replyHint } from "./inbound.server";
 import { makeTempDir } from "./temp-dir.test-support";
 
 const TOKEN = "123:bridge-token";
@@ -81,7 +81,7 @@ describe("bridge, inbound", () => {
     expect(agents.sent).toEqual([
       {
         agentId: "agent-1",
-        text: `[Telegram, Max, in Crew]: status?\n${REPLY_HINT}`,
+        text: `[Telegram, Max, in Crew]: status?\n${replyHint(GROUP)}`,
         options: { messageId: `telegram-${GROUP}-5`, activeTurnBehavior: "steer", images: [] },
       },
     ]);
@@ -249,6 +249,60 @@ describe("bridge, replies", () => {
     await expect(onTurnEnded({ agent: agent("agent-1"), outcome: completed, timeline: [userMessage(`telegram-${GROUP}-5`), said("hi")] })).resolves.toBeUndefined();
     await stop();
     expect(logs).toEqual([`telegram-bridge: could not post the reply to chat ${GROUP}: sendMessage failed: 400 Bad Request: chat not found`]);
+  });
+});
+
+describe("bridge, follow-ups", () => {
+  const STRANGER_CHAT = -100999;
+  async function started() {
+    const bridge = start();
+    await until(() => bot.calls.length > 0);
+    return bridge;
+  }
+
+  it("posts a later turn's reply to each allowed chat it names, not as a reply, without the marker", async () => {
+    const { stop, onTurnEnded } = await started();
+    await onTurnEnded({ agent: agent("agent-1"), outcome: completed, timeline: [userMessage("app-1"), said(`The download is done.\n[[telegram: ${GROUP}]]\n[[telegram: ${MAX}]]`)] });
+    await stop();
+    expect(sentMessages()).toEqual([
+      { chat_id: GROUP, text: "The download is done." },
+      { chat_id: MAX, text: "The download is done." },
+    ]);
+  });
+
+  it("refuses a chat that is not allowed, and logs it", async () => {
+    const { stop, onTurnEnded, logs } = await started();
+    await onTurnEnded({ agent: agent("agent-1"), outcome: completed, timeline: [userMessage("app-1"), said(`secret\n[[telegram: ${STRANGER_CHAT}]]`)] });
+    await stop();
+    expect(sentMessages()).toEqual([]);
+    expect(logs).toEqual([`telegram-bridge: did not post a follow-up to chat ${STRANGER_CHAT}: it is not in the allowed chat ids`]);
+  });
+
+  it("posts once to a chat the turn already answers", async () => {
+    const { stop, onTurnEnded } = await afterDelivering("status?");
+    await onTurnEnded({ agent: agent("agent-1"), outcome: completed, timeline: [userMessage(`telegram-${GROUP}-5`), said(`All green.\n[[telegram: ${GROUP}]]`)] });
+    await stop();
+    expect(sentMessages()).toEqual([{ chat_id: GROUP, text: "All green.", reply_parameters: { message_id: 5, allow_sending_without_reply: true } }]);
+  });
+
+  it("sends a follow-up's files under the same rules as a reply", async () => {
+    const dir = makeTempDir("tg-out-");
+    writeFileSync(join(dir, "report.pdf"), "pdf");
+    writeFileSync(join(dir, ".env"), "TOKEN=x");
+    const { stop, onTurnEnded } = await started();
+    await onTurnEnded({ agent: agent("agent-1"), outcome: completed, timeline: [userMessage("app-1"), said(`[[send: ${join(dir, "report.pdf")}]]\n[[send: ${join(dir, ".env")}]]\n[[telegram: ${MAX}]]`)] });
+    await stop();
+    expect(bot.calls.filter((call) => call.method !== "getUpdates")).toEqual([
+      { method: "sendMessage", body: { chat_id: MAX, text: `Could not send ${join(dir, ".env")}: it is a hidden file.` } },
+      { method: "sendDocument", body: { chat_id: String(MAX), document: { name: "report.pdf", text: "pdf" } } },
+    ]);
+  });
+
+  it("leaves a marker inside a code block alone", async () => {
+    const { stop, onTurnEnded } = await started();
+    await onTurnEnded({ agent: agent("agent-1"), outcome: completed, timeline: [userMessage("app-1"), said(`\`\`\`\n[[telegram: ${MAX}]]\n\`\`\``)] });
+    await stop();
+    expect(sentMessages()).toEqual([]);
   });
 });
 

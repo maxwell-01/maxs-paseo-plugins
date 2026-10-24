@@ -1,6 +1,5 @@
 import { describeError } from "./describe-error.server";
 import { splitForTelegram } from "./outbound.server";
-import type { ReplyTarget } from "./pending-replies.server";
 import type { FileToSend } from "./send-files.server";
 import { type TelegramApi, TelegramApiError } from "./telegram-api.server";
 
@@ -17,7 +16,7 @@ async function sendFile(api: TelegramApi, chatId: number, { kind, path }: FileTo
   await api.sendFile(chatId, "document", path, replyTo);
 }
 
-export async function sendReply(api: TelegramApi, { chatId, replyTo }: ReplyTarget, { body, files }: { body: string; files: FileToSend[] }) {
+export async function sendReply(api: TelegramApi, { chatId, replyTo }: { chatId: number; replyTo?: number }, { body, files }: { body: string; files: FileToSend[] }) {
   let threadTo: number | undefined = replyTo;
   for (const chunk of splitForTelegram(body)) {
     await api.sendMessage(chatId, chunk, threadTo);
