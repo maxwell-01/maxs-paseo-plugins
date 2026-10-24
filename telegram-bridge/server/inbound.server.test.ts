@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Attachments } from "./attachments.server";
-import { hasContentForAgent, isUnsupportedContent, paseoMessageId, promptFor, REPLY_HINT } from "./inbound.server";
+import { hasContentForAgent, isUnsupportedContent, paseoMessageId, promptFor, replyHint } from "./inbound.server";
 import type { TelegramMessage } from "./telegram-api.server";
 
 const message = (fields: Partial<TelegramMessage>): TelegramMessage => ({
@@ -13,9 +13,10 @@ const photo = [{ file_id: "small" }, { file_id: "large" }];
 const none: Attachments = { images: [], savedFiles: [], notes: [] };
 
 describe("inbound formatting", () => {
-  it("names Telegram, the sender and the group, and says where the reply goes and how to send a file", () => {
-    expect(promptFor(message({ text: "Is the deploy done?" }), none)).toBe(`[Telegram, Max, in Home Server AI]: Is the deploy done?\n${REPLY_HINT}`);
-    expect(REPLY_HINT).toContain("[[send: /absolute/path]]");
+  it("names Telegram, the sender and the group, and says where the reply goes, how to send a file and how to follow up", () => {
+    expect(promptFor(message({ text: "Is the deploy done?" }), none)).toBe(`[Telegram, Max, in Home Server AI]: Is the deploy done?\n${replyHint(-100200)}`);
+    expect(replyHint(-100200)).toContain("[[send: /absolute/path]]");
+    expect(replyHint(-100200)).toContain("[[telegram: -100200]]");
   });
 
   it("names a private chat as the direct chat", () => {
@@ -23,7 +24,7 @@ describe("inbound formatting", () => {
   });
 
   it("uses a photo's caption as the message", () => {
-    expect(promptFor(message({ photo, caption: "Which plant is this?" }), none)).toBe(`[Telegram, Max, in Home Server AI]: Which plant is this?\n${REPLY_HINT}`);
+    expect(promptFor(message({ photo, caption: "Which plant is this?" }), none)).toBe(`[Telegram, Max, in Home Server AI]: Which plant is this?\n${replyHint(-100200)}`);
   });
 
   it("says a photo or file came without a caption", () => {
@@ -42,7 +43,7 @@ describe("inbound formatting", () => {
         "[Telegram, Max, in Home Server AI]: logs",
         "Attached file: /data/files/-100200/17-app.log (text/plain)",
         "(big.zip is over Telegram's 20 MB bot download limit, so it was not fetched.)",
-        REPLY_HINT,
+        replyHint(-100200),
       ].join("\n"),
     );
   });

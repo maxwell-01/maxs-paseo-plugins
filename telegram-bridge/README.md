@@ -45,7 +45,8 @@ The bridge restarts with the new values on every save.
 - A message reaches the agent only if **both** its sender and its chat are allowed. Anything else
   is ignored and never reaches the agent; the log names the user and chat ids once, never the text.
 - The agent gets `[Telegram, <first name>, in <chat>]: <text>`, where `<chat>` is the group's
-  title or `direct chat`, then a line saying the reply goes back to Telegram and how to send a file.
+  title or `direct chat`, then a line saying the reply goes back to Telegram, how to send a file,
+  and how to follow up later in that chat.
 - If the agent is busy with a message from the same chat, or with a turn you started in the app,
   the message joins its current turn rather than interrupting it. A message from another chat
   waits, and starts its own turn when the current one ends.
@@ -65,7 +66,8 @@ reply to that chat, as a reply to your newest message. A turn takes in messages 
 so each chat gets the answers to its own messages. The final reply is the text after the
 agent's last tool call. A failed or canceled turn is reported as such.
 
-- **Turns you start in the Paseo app are not posted to Telegram.**
+- **Turns you start in the Paseo app are not posted to Telegram**, unless the agent asks for it
+  (see [Follow-ups](#follow-ups)).
 - Text is sent as plain text, split into parts of up to 4096 characters, Telegram's limit.
 - **Sending files:** a line of the reply that is exactly `[[send: /absolute/path]]` is taken out
   of the text and the file is uploaded. `.jpg`, `.jpeg`, `.png` and `.webp` files up to 10 MB go as
@@ -75,6 +77,20 @@ agent's last tool call. A failed or canceled turn is reported as such.
   folder that sits in a hidden folder (such as `~/.ssh` or `~/project/.git`), and anything inside
   `$PASEO_HOME` except the bridge's own files folder. Symlinks are followed before the check. Everyone in the group sees what the bot posts, so this keeps an agent
   that followed an injected instruction from posting a key or the bot token there.
+
+## Follow-ups
+
+The agent can post to a chat from any turn, for example when a background task it started has
+finished, or another agent has messaged it with news. A line of its final reply that is exactly
+`[[telegram: <chat id>]]` is taken out of the text, and the reply goes to that chat, not as a reply
+to a message. Each Telegram prompt names the chat's id in that line. One reply can name several
+chats.
+
+- Only chats in **Allowed chat ids** get a follow-up. A line naming any other chat is ignored, and
+  the log names the chat id.
+- A chat that the turn answers anyway gets the reply once.
+- Text and `[[send: ...]]` files follow the same rules as any reply.
+- A marker or send line inside a code block is left in the text as written.
 
 ## Limits
 
