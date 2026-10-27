@@ -10,7 +10,7 @@ import { fetchAttachments } from "./attachments.server";
 import { takeFollowUpChats } from "./follow-ups.server";
 import { hasContentForAgent, historyEntryFor, isUnsupportedContent, paseoMessageId, promptFor, UNSUPPORTED_REPLY } from "./inbound.server";
 import { createOffsetStore } from "./offset-store.server";
-import { replyFor } from "./outbound.server";
+import { replyFor, type Timeline } from "./outbound.server";
 import { createPendingReplies } from "./pending-replies.server";
 import { planReply } from "./send-files.server";
 import { sendReply } from "./send-reply.server";
@@ -20,10 +20,17 @@ import { createTelegramApi, redactToken, type TelegramApi, type TelegramMessage 
 type Settings = PluginSettings<typeof bridgeSettings.schema>;
 type SettingsState = PluginSettingsState<typeof bridgeSettings.schema>;
 type AgentHandle = ReturnType<PluginHookContext["paseo"]["agents"]["ref"]>;
-type TurnEnded = Pick<PluginLifecycleEvents["agent.turn_ended"], "agent" | "outcome" | "timeline">;
+type TurnEnded = Pick<PluginLifecycleEvents["agent.turn_ended"], "agent" | "outcome">;
+
+interface TimelinePage {
+  entries: ReadonlyArray<{ item: Timeline[number] }>;
+  error: string | null;
+}
 
 export interface AgentMessenger {
-  agents: { ref(agentId: string): Pick<AgentHandle, "send"> };
+  agents: {
+    ref(agentId: string): Pick<AgentHandle, "send"> & { timeline: { refetch(options: { direction: "tail"; limit: number }): Promise<TimelinePage> } };
+  };
 }
 
 interface BridgeOptions {
@@ -37,6 +44,8 @@ interface BridgeOptions {
 }
 
 const stopped = async () => {};
+// Since Paseo 0.13 the turn_ended event carries no timeline. This many recent items reach back past a long turn.
+const TIMELINE_TAIL = 200;
 
 export function startBridge({ settings, paseo, dataDir, home, paseoHome, apiUrl, log }: BridgeOptions) {
   const offsets = createOffsetStore(join(dataDir, "state.json"));
@@ -112,15 +121,27 @@ export function startBridge({ settings, paseo, dataDir, home, paseoHome, apiUrl,
 
   const posting = new Set<Promise<void>>();
 
-  async function postReplies({ agent, outcome, timeline }: TurnEnded) {
+  async function postReplies({ agent, outcome }: TurnEnded) {
     const current = live;
     if (!current || agent.id !== current.agentId) return;
-    await Promise.all([turns.turnEnded(), postReply(current, outcome, timeline)]);
+    await Promise.all([turns.turnEnded(), postReply(current, outcome)]);
   }
 
-  async function postReply(current: NonNullable<typeof live>, outcome: TurnEnded["outcome"], timeline: TurnEnded["timeline"]) {
+  async function readTimeline(agentId: string): Promise<Timeline> {
+    const messenger = await paseo;
+    const page = await messenger.agents.ref(agentId).timeline.refetch({ direction: "tail", limit: TIMELINE_TAIL });
+    if (page.error) throw new Error(`could not read the timeline of agent ${agentId}: ${page.error}`);
+    return page.entries.map((entry) => entry.item);
+  }
+
+  async function postReply(current: NonNullable<typeof live>, outcome: TurnEnded["outcome"]) {
+    const timeline = await readTimeline(current.agentId);
     const { text, chatIds } = takeFollowUpChats(replyFor(outcome, timeline));
     const targets: Array<{ chatId: number; replyTo?: number }> = pending.takeAnsweredBy(timeline);
+    const waiting = pending.size();
+    if (targets.length === 0 && waiting > 0) {
+      current.log(`telegram-bridge: agent ${current.agentId} ended a turn without answering ${waiting} waiting Telegram message${waiting === 1 ? "" : "s"}`);
+    }
     for (const chatId of chatIds) {
       if (targets.some((target) => target.chatId === chatId)) continue;
       if (current.allowedChatIds.includes(chatId)) targets.push({ chatId });

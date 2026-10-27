@@ -15,6 +15,7 @@ export function createPendingReplies() {
     forget(paseoMessageId: string) {
       pending.delete(paseoMessageId);
     },
+    size: () => pending.size,
     takeAnsweredBy(timeline: Timeline): ReplyTarget[] {
       if (pending.size === 0) return [];
       const newestPerChat = new Map<number, ReplyTarget>();
