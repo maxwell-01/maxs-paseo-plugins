@@ -49,7 +49,6 @@ function startToolServer(
 export function registerCrossDaemon(server: PluginServerContext, { readOwnPeer, stateDir, cli, ownDaemon }: CrossDaemonDependencies) {
   const settings = server.registerSettings(crossDaemonSettings);
   const peerStore = stateDir.then(createPeerStore);
-  const ownPasswordStore = stateDir.then(createOwnPasswordStore);
   const toolServer = Promise.all([stateDir, peerStore]).then(([dir, peers]) => startToolServer(dir, peers, { cli, ownDaemon }));
   toolServer.catch((error: unknown) => console.error("cross-daemon: the tool server did not start", error));
   const clearPeersUnlessSwitchedOn = async () => {
@@ -70,14 +69,14 @@ export function registerCrossDaemon(server: PluginServerContext, { readOwnPeer, 
   server.handle(describeDaemon, async (_input, { paseo }) => {
     const { config } = await paseo.config.get();
     const own = await readOwnPeer(config.relay?.enabled === true);
-    const password = (await ownPasswordStore).read();
+    const password = createOwnPasswordStore(await stateDir).read();
     const switchedOn = isSwitchedOn(await settings.read());
     const member = switchedOn && own ? { ...own, ...(password ? { password } : {}) } : null;
     return { serverId: own?.serverId ?? (await ownDaemon()).serverId, switchedOn, passwordSet: password !== null, member };
   });
 
   server.handle(setOwnPassword, async ({ password }) => {
-    (await ownPasswordStore).write(password);
+    createOwnPasswordStore(await stateDir).write(password);
     return { passwordSet: password !== null };
   });
 
