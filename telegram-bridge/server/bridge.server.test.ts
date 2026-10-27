@@ -5,6 +5,7 @@ import type { BridgeSettings } from "../shared/settings.shared";
 import { type AgentMessenger, startBridge } from "./bridge.server";
 import { type FakeBotApi, startFakeBotApi } from "./fake-bot-api.test-support";
 import { replyHint } from "./inbound.server";
+import type { Timeline } from "./outbound.server";
 import { makeTempDir } from "./temp-dir.test-support";
 
 const TOKEN = "123:bridge-token";
@@ -19,8 +20,10 @@ const update = (updateId: number, fields: Record<string, unknown>, from = MAX, c
 });
 
 let bot: FakeBotApi;
+let agentTimeline: Timeline = [];
 beforeEach(async () => {
   bot = await startFakeBotApi(TOKEN);
+  agentTimeline = [];
 });
 afterEach(() => bot.close());
 
@@ -40,6 +43,8 @@ function fakeSettings(saved: BridgeSettings) {
   };
 }
 
+const fakeTimeline = { refetch: async () => ({ entries: agentTimeline.map((item) => ({ item })), error: null }) };
+
 function fakeAgents({ fail = false } = {}) {
   const sent: Array<{ agentId: string; text: string; options: unknown }> = [];
   const messenger: AgentMessenger = {
@@ -49,6 +54,7 @@ function fakeAgents({ fail = false } = {}) {
           if (fail) throw new Error("Agent agent-1 not found");
           sent.push({ agentId, text, options });
         },
+        timeline: fakeTimeline,
       }),
     },
   };
@@ -62,13 +68,23 @@ async function until(condition: () => boolean) {
   }
 }
 
+const agent = (id: string) => ({ id, workspaceId: null, parentAgentId: null, provider: "claude", cwd: "/tmp", title: null });
+const completed = { kind: "completed" as const };
+const userMessage = (messageId: string) => ({ type: "user_message" as const, text: "", messageId });
+const said = (text: string) => ({ type: "assistant_message" as const, text });
+type TurnOutcome = Parameters<ReturnType<typeof startBridge>["onTurnEnded"]>[0]["outcome"];
+
 function start(settings = fakeSettings(configured), paseo: Promise<AgentMessenger> = Promise.resolve(fakeAgents().messenger)) {
   const logs: string[] = [];
   const paseoHome = makeTempDir("tg-paseo-home-");
   const dataDir = join(paseoHome, "plugin-data", "telegram-bridge");
   const bridge = startBridge({ settings, paseo, dataDir, home: makeTempDir("tg-home-"), paseoHome, apiUrl: bot.url, log: (line) => logs.push(line) });
   const history = (chatId: number) => readFileSync(join(dataDir, "history", `${chatId}.log`), "utf8").replace(/^\S+ /gm, "");
-  return { ...bridge, logs, dataDir, history };
+  function endTurn(timeline: Timeline, outcome: TurnOutcome = completed, agentId = "agent-1") {
+    agentTimeline = timeline;
+    return bridge.onTurnEnded({ agent: agent(agentId), outcome });
+  }
+  return { ...bridge, endTurn, logs, dataDir, history };
 }
 
 const sentMessages = () => bot.calls.filter((call) => call.method === "sendMessage").map((call) => call.body);
@@ -163,10 +179,6 @@ describe("bridge, inbound", () => {
   });
 });
 
-const agent = (id: string) => ({ id, workspaceId: null, parentAgentId: null, provider: "claude", cwd: "/tmp", title: null });
-const completed = { kind: "completed" as const };
-const userMessage = (messageId: string) => ({ type: "user_message" as const, text: "", messageId });
-const said = (text: string) => ({ type: "assistant_message" as const, text });
 
 async function afterDelivering(text: string) {
   const agents = fakeAgents();
@@ -178,8 +190,8 @@ async function afterDelivering(text: string) {
 
 describe("bridge, replies", () => {
   it("posts the final reply of a turn that took in a Telegram message to that chat", async () => {
-    const { stop, onTurnEnded } = await afterDelivering("status?");
-    await onTurnEnded({ agent: agent("agent-1"), outcome: completed, timeline: [userMessage(`telegram-${GROUP}-5`), said("All green.")] });
+    const { stop, endTurn } = await afterDelivering("status?");
+    await endTurn([userMessage(`telegram-${GROUP}-5`), said("All green.")]);
     await stop();
     expect(sentMessages()).toEqual([{ chat_id: GROUP, text: "All green.", reply_parameters: { message_id: 5, allow_sending_without_reply: true } }]);
   });
@@ -190,8 +202,9 @@ describe("bridge, replies", () => {
       agents: {
         ref: () => ({
           async send(_text, options) {
-            await bridge?.onTurnEnded({ agent: agent("agent-1"), outcome: completed, timeline: [userMessage(options?.messageId ?? ""), said("quick")] });
+            await bridge?.endTurn([userMessage(options?.messageId ?? ""), said("quick")]);
           },
+          timeline: fakeTimeline,
         }),
       },
     };
@@ -203,16 +216,16 @@ describe("bridge, replies", () => {
   });
 
   it("does not mirror a turn started from the app, or another agent's turn", async () => {
-    const { stop, onTurnEnded } = await afterDelivering("status?");
-    await onTurnEnded({ agent: agent("agent-1"), outcome: completed, timeline: [userMessage("app-1"), said("app answer")] });
-    await onTurnEnded({ agent: agent("agent-2"), outcome: completed, timeline: [userMessage(`telegram-${GROUP}-5`), said("not ours")] });
+    const { stop, endTurn } = await afterDelivering("status?");
+    await endTurn([userMessage("app-1"), said("app answer")]);
+    await endTurn([userMessage(`telegram-${GROUP}-5`), said("not ours")], completed, "agent-2");
     await stop();
     expect(sentMessages()).toEqual([]);
   });
 
   it("splits a long reply, replying to the message only with the first part", async () => {
-    const { stop, onTurnEnded } = await afterDelivering("write a lot");
-    await onTurnEnded({ agent: agent("agent-1"), outcome: completed, timeline: [userMessage(`telegram-${GROUP}-5`), said("x".repeat(5000))] });
+    const { stop, endTurn } = await afterDelivering("write a lot");
+    await endTurn([userMessage(`telegram-${GROUP}-5`), said("x".repeat(5000))]);
     await stop();
     expect(sentMessages().map((body) => [String(body.text).length, body.reply_parameters !== undefined])).toEqual([
       [4096, true],
@@ -221,8 +234,8 @@ describe("bridge, replies", () => {
   });
 
   it("tells the chat when the turn failed", async () => {
-    const { stop, onTurnEnded } = await afterDelivering("status?");
-    await onTurnEnded({ agent: agent("agent-1"), outcome: { kind: "failed", error: { message: "rate limited" } }, timeline: [userMessage(`telegram-${GROUP}-5`)] });
+    const { stop, endTurn } = await afterDelivering("status?");
+    await endTurn([userMessage(`telegram-${GROUP}-5`)], { kind: "failed", error: { message: "rate limited" } });
     await stop();
     expect(sentMessages().map((body) => body.text)).toEqual(["The agent's turn failed: rate limited"]);
   });
@@ -230,14 +243,14 @@ describe("bridge, replies", () => {
   it("answers each chat in its own turn when a second chat writes while the agent answers the first", async () => {
     const agents = fakeAgents();
     bot.reply("getUpdates", { json: { ok: true, result: [update(5, { text: "group question" }), update(6, { text: "direct question" }, MAX, directChat)] } });
-    const { stop, onTurnEnded } = start(undefined, Promise.resolve(agents.messenger));
+    const { stop, endTurn } = start(undefined, Promise.resolve(agents.messenger));
     await until(() => bot.calls.filter((call) => call.method === "getUpdates").length >= 2);
     expect(agents.sent.map((sent) => sent.text.split("\n")[0])).toEqual(["[Telegram, Max, in Crew]: group question"]);
 
-    await onTurnEnded({ agent: agent("agent-1"), outcome: completed, timeline: [userMessage(`telegram-${GROUP}-5`), said("group answer")] });
+    await endTurn([userMessage(`telegram-${GROUP}-5`), said("group answer")]);
     await until(() => agents.sent.length === 2);
     expect(agents.sent[1].text.split("\n")[0]).toBe("[Telegram, Max, in direct chat]: direct question");
-    await onTurnEnded({ agent: agent("agent-1"), outcome: completed, timeline: [userMessage(`telegram-${GROUP}-5`), said("group answer"), userMessage(`telegram-${MAX}-6`), said("direct answer")] });
+    await endTurn([userMessage(`telegram-${GROUP}-5`), said("group answer"), userMessage(`telegram-${MAX}-6`), said("direct answer")]);
     await stop();
     expect(sentMessages().map((body) => [body.chat_id, body.text])).toEqual([
       [GROUP, "group answer"],
@@ -245,10 +258,29 @@ describe("bridge, replies", () => {
     ]);
   });
 
+  it("logs a turn that ends without answering a waiting Telegram message", async () => {
+    const { stop, endTurn, logs } = await afterDelivering("status?");
+    await endTurn([userMessage("app-1"), said("app answer")]);
+    await stop();
+    expect(sentMessages()).toEqual([]);
+    expect(logs).toEqual(["telegram-bridge: agent agent-1 ended a turn without answering 1 waiting Telegram message"]);
+  });
+
+  it("logs a timeline Paseo could not return, without throwing out of the hook", async () => {
+    const failing: AgentMessenger = {
+      agents: { ref: () => ({ send: async () => {}, timeline: { refetch: async () => ({ entries: [], error: "agent not loaded" }) } }) },
+    };
+    const { stop, onTurnEnded, logs } = start(undefined, Promise.resolve(failing));
+    await until(() => bot.calls.length > 0);
+    await onTurnEnded({ agent: agent("agent-1"), outcome: completed });
+    await stop();
+    expect(logs).toEqual(["telegram-bridge: could not post a reply: could not read the timeline of agent agent-1: agent not loaded"]);
+  });
+
   it("logs a reply Telegram refuses, without throwing out of the hook", async () => {
-    const { stop, onTurnEnded, logs } = await afterDelivering("status?");
+    const { stop, endTurn, logs } = await afterDelivering("status?");
     bot.reply("sendMessage", { status: 400, json: { ok: false, error_code: 400, description: "Bad Request: chat not found" } });
-    await expect(onTurnEnded({ agent: agent("agent-1"), outcome: completed, timeline: [userMessage(`telegram-${GROUP}-5`), said("hi")] })).resolves.toBeUndefined();
+    await expect(endTurn([userMessage(`telegram-${GROUP}-5`), said("hi")])).resolves.toBeUndefined();
     await stop();
     expect(logs).toEqual([`telegram-bridge: could not post the reply to chat ${GROUP}: sendMessage failed: 400 Bad Request: chat not found`]);
   });
@@ -258,9 +290,9 @@ describe("bridge, chat history", () => {
   it("records each chat's messages and the agent's replies and follow-ups in that chat's own file", async () => {
     const dir = makeTempDir("tg-out-");
     writeFileSync(join(dir, "report.pdf"), "pdf");
-    const { stop, onTurnEnded, history } = await afterDelivering("Is the Hell's Kitchen box up?");
-    await onTurnEnded({ agent: agent("agent-1"), outcome: completed, timeline: [userMessage(`telegram-${GROUP}-5`), said(`Yes.\n[[send: ${join(dir, "report.pdf")}]]`)] });
-    await onTurnEnded({ agent: agent("agent-1"), outcome: completed, timeline: [userMessage("app-1"), said(`Back up again.\n[[telegram: ${MAX}]]`)] });
+    const { stop, endTurn, history } = await afterDelivering("Is the Hell's Kitchen box up?");
+    await endTurn([userMessage(`telegram-${GROUP}-5`), said(`Yes.\n[[send: ${join(dir, "report.pdf")}]]`)]);
+    await endTurn([userMessage("app-1"), said(`Back up again.\n[[telegram: ${MAX}]]`)]);
     await stop();
     expect(history(GROUP)).toBe("Max in Crew: Is the Hell's Kitchen box up?\nagent: Yes. [attached: report.pdf]\n");
     expect(history(MAX)).toBe("agent: Back up again.\n");
@@ -269,17 +301,17 @@ describe("bridge, chat history", () => {
   it("records no message from a stranger, and no reply Telegram refused", async () => {
     bot.reply("getUpdates", { json: { ok: true, result: [update(4, { text: "hello" }, 999), update(5, { text: "status?" })] } });
     const agents = fakeAgents();
-    const { stop, onTurnEnded, history } = start(undefined, Promise.resolve(agents.messenger));
+    const { stop, endTurn, history } = start(undefined, Promise.resolve(agents.messenger));
     await until(() => agents.sent.length === 1);
     bot.reply("sendMessage", { status: 400, json: { ok: false, error_code: 400, description: "Bad Request: chat not found" } });
-    await onTurnEnded({ agent: agent("agent-1"), outcome: completed, timeline: [userMessage(`telegram-${GROUP}-5`), said("hi")] });
+    await endTurn([userMessage(`telegram-${GROUP}-5`), said("hi")]);
     await stop();
     expect(history(GROUP)).toBe("Max in Crew: status?\n");
   });
 
   it("never writes the bot token to the history", async () => {
-    const { stop, onTurnEnded, history } = await afterDelivering(`is ${TOKEN} right?`);
-    await onTurnEnded({ agent: agent("agent-1"), outcome: completed, timeline: [userMessage(`telegram-${GROUP}-5`), said(`Yes, ${TOKEN}.`)] });
+    const { stop, endTurn, history } = await afterDelivering(`is ${TOKEN} right?`);
+    await endTurn([userMessage(`telegram-${GROUP}-5`), said(`Yes, ${TOKEN}.`)]);
     await stop();
     expect(history(GROUP)).toBe("Max in Crew: is <bot token> right?\nagent: Yes, <bot token>.\n");
   });
@@ -294,8 +326,8 @@ describe("bridge, follow-ups", () => {
   }
 
   it("posts a later turn's reply to each allowed chat it names, not as a reply, without the marker", async () => {
-    const { stop, onTurnEnded } = await started();
-    await onTurnEnded({ agent: agent("agent-1"), outcome: completed, timeline: [userMessage("app-1"), said(`The download is done.\n[[telegram: ${GROUP}]]\n[[telegram: ${MAX}]]`)] });
+    const { stop, endTurn } = await started();
+    await endTurn([userMessage("app-1"), said(`The download is done.\n[[telegram: ${GROUP}]]\n[[telegram: ${MAX}]]`)]);
     await stop();
     expect(sentMessages()).toEqual([
       { chat_id: GROUP, text: "The download is done." },
@@ -304,16 +336,16 @@ describe("bridge, follow-ups", () => {
   });
 
   it("refuses a chat that is not allowed, and logs it", async () => {
-    const { stop, onTurnEnded, logs } = await started();
-    await onTurnEnded({ agent: agent("agent-1"), outcome: completed, timeline: [userMessage("app-1"), said(`secret\n[[telegram: ${STRANGER_CHAT}]]`)] });
+    const { stop, endTurn, logs } = await started();
+    await endTurn([userMessage("app-1"), said(`secret\n[[telegram: ${STRANGER_CHAT}]]`)]);
     await stop();
     expect(sentMessages()).toEqual([]);
     expect(logs).toEqual([`telegram-bridge: did not post a follow-up to chat ${STRANGER_CHAT}: it is not in the allowed chat ids`]);
   });
 
   it("posts once to a chat the turn already answers", async () => {
-    const { stop, onTurnEnded } = await afterDelivering("status?");
-    await onTurnEnded({ agent: agent("agent-1"), outcome: completed, timeline: [userMessage(`telegram-${GROUP}-5`), said(`All green.\n[[telegram: ${GROUP}]]`)] });
+    const { stop, endTurn } = await afterDelivering("status?");
+    await endTurn([userMessage(`telegram-${GROUP}-5`), said(`All green.\n[[telegram: ${GROUP}]]`)]);
     await stop();
     expect(sentMessages()).toEqual([{ chat_id: GROUP, text: "All green.", reply_parameters: { message_id: 5, allow_sending_without_reply: true } }]);
   });
@@ -322,8 +354,8 @@ describe("bridge, follow-ups", () => {
     const dir = makeTempDir("tg-out-");
     writeFileSync(join(dir, "report.pdf"), "pdf");
     writeFileSync(join(dir, ".env"), "TOKEN=x");
-    const { stop, onTurnEnded } = await started();
-    await onTurnEnded({ agent: agent("agent-1"), outcome: completed, timeline: [userMessage("app-1"), said(`[[send: ${join(dir, "report.pdf")}]]\n[[send: ${join(dir, ".env")}]]\n[[telegram: ${MAX}]]`)] });
+    const { stop, endTurn } = await started();
+    await endTurn([userMessage("app-1"), said(`[[send: ${join(dir, "report.pdf")}]]\n[[send: ${join(dir, ".env")}]]\n[[telegram: ${MAX}]]`)]);
     await stop();
     expect(bot.calls.filter((call) => call.method !== "getUpdates")).toEqual([
       { method: "sendMessage", body: { chat_id: MAX, text: `Could not send ${join(dir, ".env")}: it is a hidden file.` } },
@@ -332,8 +364,8 @@ describe("bridge, follow-ups", () => {
   });
 
   it("leaves a marker inside a code block alone", async () => {
-    const { stop, onTurnEnded } = await started();
-    await onTurnEnded({ agent: agent("agent-1"), outcome: completed, timeline: [userMessage("app-1"), said(`\`\`\`\n[[telegram: ${MAX}]]\n\`\`\``)] });
+    const { stop, endTurn } = await started();
+    await endTurn([userMessage("app-1"), said(`\`\`\`\n[[telegram: ${MAX}]]\n\`\`\``)]);
     await stop();
     expect(sentMessages()).toEqual([]);
   });
@@ -355,9 +387,9 @@ describe("bridge, files", () => {
     const dir = makeTempDir("tg-out-");
     writeFileSync(join(dir, "chart.png"), "png bytes");
     writeFileSync(join(dir, "data.csv"), "a,b");
-    const { stop, onTurnEnded } = await afterDelivering("send me the chart");
+    const { stop, endTurn } = await afterDelivering("send me the chart");
     const reply = ["Here you go.", `[[send: ${join(dir, "chart.png")}]]`, `[[send: ${join(dir, "data.csv")}]]`, "[[send: notes.txt]]"].join("\n");
-    await onTurnEnded({ agent: agent("agent-1"), outcome: completed, timeline: [userMessage(`telegram-${GROUP}-5`), said(reply)] });
+    await endTurn([userMessage(`telegram-${GROUP}-5`), said(reply)]);
     await stop();
     const outbound = bot.calls.filter((call) => call.method !== "getUpdates");
     expect(outbound).toEqual([
@@ -373,8 +405,8 @@ describe("bridge, files", () => {
   it("sends only the file when the reply is nothing but a send line", async () => {
     const file = join(makeTempDir("tg-out-"), "report.pdf");
     writeFileSync(file, "pdf");
-    const { stop, onTurnEnded } = await afterDelivering("report please");
-    await onTurnEnded({ agent: agent("agent-1"), outcome: completed, timeline: [userMessage(`telegram-${GROUP}-5`), said(`[[send: ${file}]]`)] });
+    const { stop, endTurn } = await afterDelivering("report please");
+    await endTurn([userMessage(`telegram-${GROUP}-5`), said(`[[send: ${file}]]`)]);
     await stop();
     expect(bot.calls.filter((call) => call.method !== "getUpdates").map((call) => call.method)).toEqual(["sendDocument"]);
   });
