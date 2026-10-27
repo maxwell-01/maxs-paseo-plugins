@@ -138,7 +138,7 @@ export function createTools(deps: ToolDependencies): Tools {
     }
   };
   const onPeer = (ref: string, args: readonly string[]) =>
-    reachPeer(ref, async (peer) => ({ text: await deps.cli.run(peer.link, args) }));
+    reachPeer(ref, async (peer) => ({ text: await deps.cli.run(peer, args) }));
 
   const tools = [
     defineTool({

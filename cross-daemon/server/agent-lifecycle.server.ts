@@ -47,7 +47,7 @@ function asPaseoLsShows(path: string): string {
 export function createAgentLifecycle({ cli, watches, startedAgents }: AgentLifecycleDependencies) {
   async function runStartCommand(peer: Peer, args: readonly string[]) {
     try {
-      return await cli.run(peer.link, args);
+      return await cli.run(peer, args);
     } catch (error) {
       if (CUT_OFF.test(describeError(error, peer))) {
         throw new MaybeDeliveredError(`The start timed out, so an agent may have started on ${peer.name}. Check list_agents before you try again; archive_agent cannot close it.`);
@@ -71,7 +71,7 @@ export function createAgentLifecycle({ cli, watches, startedAgents }: AgentLifec
 
   async function archiveUnusedWorkspace(peer: Peer, workspaceId: string, startError: unknown) {
     try {
-      await cli.run(peer.link, ["workspace", "archive", "--json", "--", workspaceId]);
+      await cli.run(peer, ["workspace", "archive", "--json", "--", workspaceId]);
     } catch (archiveError) {
       throw new Error(`${describeError(startError, peer)}. Workspace ${workspaceId}, made for the agent, is left: ${describeError(archiveError, peer)}`);
     }
@@ -107,7 +107,7 @@ export function createAgentLifecycle({ cli, watches, startedAgents }: AgentLifec
     const started = startedAgents.find({ peerServerId: peer.serverId, agentId: agent.id });
     if (!started) return { kind: "not-started-here", agentId: agent.id };
     if (agent.busy) return { kind: "busy", agentId: agent.id };
-    await cli.run(peer.link, ["archive", agent.id, "--json"]);
+    await cli.run(peer, ["archive", agent.id, "--json"]);
     startedAgents.remove(started);
     const workspace = started.createdWorkspace ? await archiveCreatedWorkspace(peer, started.createdWorkspace) : { kind: "none" as const };
     return { kind: "archived", agentId: agent.id, workspace };
@@ -120,7 +120,7 @@ export function createAgentLifecycle({ cli, watches, startedAgents }: AgentLifec
       if (liveAgents.length >= AGENT_LIST_PAGE) return { kind: "unchecked", workspaceId };
       const isInFolder = (live: { cwd: string }) => live.cwd === cwd || live.cwd === asPaseoLsShows(cwd);
       if (liveAgents.some(isInFolder)) return { kind: "in-use", workspaceId, cwd };
-      await cli.run(peer.link, ["workspace", "archive", "--json", "--", workspaceId]);
+      await cli.run(peer, ["workspace", "archive", "--json", "--", workspaceId]);
       return { kind: "archived" };
     } catch (error) {
       return { kind: "failed", workspaceId, reason: describeError(error, peer) };

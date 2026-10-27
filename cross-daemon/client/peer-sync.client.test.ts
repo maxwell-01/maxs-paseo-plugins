@@ -20,8 +20,8 @@ function fakeDaemon(description: DaemonDescription | Error) {
 }
 
 const peer = (name: string): Peer => ({ serverId: `srv_${name}`, name, link: `https://app.paseo.sh/#offer=${name}` });
-const on = (name: string): DaemonDescription => ({ serverId: `srv_${name}`, switchedOn: true, member: peer(name) });
-const off = (name: string): DaemonDescription => ({ serverId: `srv_${name}`, switchedOn: false, member: null });
+const on = (name: string): DaemonDescription => ({ serverId: `srv_${name}`, switchedOn: true, passwordSet: false, member: peer(name) });
+const off = (name: string): DaemonDescription => ({ serverId: `srv_${name}`, switchedOn: false, passwordSet: false, member: null });
 
 describe("syncPeers", () => {
   afterEach(() => vi.restoreAllMocks());
@@ -35,6 +35,15 @@ describe("syncPeers", () => {
     expect(mac.received[0].peers).toEqual([peer("tower"), peer("laptop")]);
   });
 
+  it("gives a password-protected daemon's password only to the daemons that call it", async () => {
+    const protectedTower = { ...peer("tower"), password: "tower-password" };
+    const tower = fakeDaemon({ serverId: "srv_tower", switchedOn: true, passwordSet: true, member: protectedTower });
+    const mac = fakeDaemon(on("mac"));
+    await syncPeers([tower.port, mac.port]);
+    expect(mac.received[0].peers).toEqual([protectedTower]);
+    expect(tower.received[0].peers).toEqual([peer("mac")]);
+  });
+
   it("leaves a switched-off daemon out of every list, and says it answered so its old link is dropped", async () => {
     const tower = fakeDaemon(on("tower"));
     const lonely = fakeDaemon(off("lonely"));
@@ -44,7 +53,7 @@ describe("syncPeers", () => {
 
   it("leaves out a daemon with no link, such as one with the relay off", async () => {
     const tower = fakeDaemon(on("tower"));
-    const noRelay = fakeDaemon({ serverId: "srv_norelay", switchedOn: true, member: null });
+    const noRelay = fakeDaemon({ serverId: "srv_norelay", switchedOn: true, passwordSet: false, member: null });
     await syncPeers([tower.port, noRelay.port]);
     expect(tower.received).toEqual([{ peers: [], answeredServerIds: ["srv_tower", "srv_norelay"] }]);
   });

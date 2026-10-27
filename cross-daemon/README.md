@@ -28,6 +28,17 @@ on. A pairing link grants full control of that daemon. Peers are stored owner-on
 `$PASEO_HOME/plugin-data/cross-daemon/`, which keeps other users out but not the daemon's own
 agents: they run as the same user. The cross-daemon tools never print a link.
 
+## Passwords
+
+A daemon with a password refuses a pairing link on its own. Paseo keeps only a hash of that
+password, and the app does not show plugins the passwords it holds, so enter the password once in
+that daemon's own **This daemon → This daemon's password**. The plugin keeps it owner-only in
+`$PASEO_HOME/plugin-data/cross-daemon/own-password.json` and gives it, with the link, to the other
+switched-on daemons at each sync. They store it with that peer and pass it to the CLI as
+`PASEO_PASSWORD` only for calls to that daemon, never on the command line and never to another
+daemon. No tool or listing shows a password. **Forget** stops giving it; peers drop it at their next
+sync. Without it, calls to that daemon fail with `Password required`.
+
 ## Agent tools
 
 Every new Claude, Codex or OpenCode agent on a daemon with the plugin gets a `cross-daemon` MCP

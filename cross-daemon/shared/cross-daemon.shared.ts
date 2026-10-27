@@ -14,13 +14,23 @@ export const peerSchema = z.object({
   serverId: z.string().min(1),
   name: z.string().min(1),
   link: z.string().regex(PAIRING_LINK, "not a Paseo pairing link"),
+  // Set when the daemon requires a password over the relay. Used only for calls to this peer.
+  password: z.string().min(1).optional(),
 });
 export type Peer = z.infer<typeof peerSchema>;
 
 export const describeDaemon = defineRpc({
   name: "cross-daemon.describe",
   input: z.object({}),
-  output: z.object({ serverId: z.string(), switchedOn: z.boolean(), member: peerSchema.nullable() }),
+  output: z.object({ serverId: z.string(), switchedOn: z.boolean(), passwordSet: z.boolean(), member: peerSchema.nullable() }),
+});
+
+// The password peers need to reach this daemon over the relay. Null forgets it. It is never read back
+// except inside this daemon's own description.
+export const setOwnPassword = defineRpc({
+  name: "cross-daemon.set-own-password",
+  input: z.object({ password: z.string().min(1).nullable() }),
+  output: z.object({ passwordSet: z.boolean() }),
 });
 
 export const setPeers = defineRpc({

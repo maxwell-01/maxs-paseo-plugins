@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ScrollView, Text } from "react-native";
 import { crossDaemonSettings, listPeers } from "../shared/cross-daemon.shared";
 import { DaemonsSection } from "./daemons-section.client";
+import { OwnPasswordRows } from "./own-password-rows.client";
 import { requestPeerSync } from "./sync-scheduler.client";
 
 const PEERS_KEY = ["cross-daemon", "peers"];
@@ -78,6 +79,7 @@ function ThisDaemonSection({ theme }: Pick<PluginSurfaceProps, "theme">) {
           hint={describeReach(peers.data?.peers.map((peer) => peer.name), peers.isError)}
           error={peers.error?.message ?? null}
         />
+        <OwnPasswordRows />
       </SettingsCard>
     </SettingsSection>
   );
