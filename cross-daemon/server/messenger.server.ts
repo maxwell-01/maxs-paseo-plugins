@@ -170,7 +170,7 @@ export function createMessenger({ queue, watches, readPeers, cli, now = Date.now
         return;
       }
       if (!watch.sawBusy && state.updatedAt === watch.updatedAtBeforeSend) return;
-      const lastMessage = await cli.run(peer.link, ["logs", watch.agentId, "--filter", "text", "--tail", "1"]);
+      const lastMessage = await cli.run(peer, ["logs", watch.agentId, "--filter", "text", "--tail", "1"]);
       tellSender(watch.callerAgentId, composeFinishNotice(peer, watch.agentId, lastMessage));
       watches.remove(watch.id);
     } catch (error) {

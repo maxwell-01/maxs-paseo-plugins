@@ -36,9 +36,9 @@ function toolsWith(peers: Peer[], reply: (link: string, args: readonly string[])
       async runLocal() {
         throw new Error("no local calls expected");
       },
-      async run(link, args) {
-        calls.push({ link, args: [...args] });
-        const result = reply(link, args);
+      async run(peer, args) {
+        calls.push({ link: peer.link, args: [...args] });
+        const result = reply(peer.link, args);
         if (result instanceof Error) throw result;
         return result;
       },

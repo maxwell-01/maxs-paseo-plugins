@@ -35,7 +35,7 @@ export interface PaseoCliOptions {
 }
 
 export interface PaseoCli {
-  run(link: string, args: readonly string[], options?: PaseoCliOptions): Promise<string>;
+  run(peer: Peer, args: readonly string[], options?: PaseoCliOptions): Promise<string>;
   runLocal(args: readonly string[], options?: PaseoCliOptions): Promise<string>;
 }
 
@@ -43,7 +43,7 @@ export interface PaseoCli {
 export type Daemon = Peer | null;
 
 export function runOn(cli: PaseoCli, daemon: Daemon, args: readonly string[], options?: PaseoCliOptions) {
-  return daemon ? cli.run(daemon.link, args, options) : cli.runLocal(args, options);
+  return daemon ? cli.run(daemon, args, options) : cli.runLocal(args, options);
 }
 
 export async function runJson<Schema extends z.ZodType>(cli: PaseoCli, daemon: Daemon, args: readonly string[], schema: Schema) {
@@ -81,10 +81,11 @@ function runPaseo(cli: PaseoCliCommand, args: readonly string[], env: NodeJS.Pro
 
 export function createPaseoCli(cli: PaseoCliCommand, timeoutMs = CLI_TIMEOUT_MS): PaseoCli {
   return {
-    run(link, args, options) {
+    run(peer, args, options) {
       const env = { ...process.env };
       delete env.PASEO_PASSWORD;
-      return runPaseo(cli, ["--host", link, ...args], env, timeoutMs, options);
+      if (peer.password) env.PASEO_PASSWORD = peer.password;
+      return runPaseo(cli, ["--host", peer.link, ...args], env, timeoutMs, options);
     },
     runLocal(args, options) {
       return runPaseo(cli, ["--home", cli.home, ...args], process.env, timeoutMs, options);

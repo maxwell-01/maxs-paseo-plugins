@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, statSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { PluginServerContext, PluginSettingsState } from "@getpaseo/plugin/server";
 import type { PaseoApi } from "@getpaseo/client";
@@ -91,9 +91,9 @@ describe("cross-daemon switch", () => {
 
   it("shares this daemon's link only while switched on", async () => {
     const plugin = startPlugin(on);
-    await expect(plugin.call("cross-daemon.describe")).resolves.toEqual({ serverId: "srv_tower", switchedOn: true, member: tower });
+    await expect(plugin.call("cross-daemon.describe")).resolves.toEqual({ serverId: "srv_tower", switchedOn: true, passwordSet: false, member: tower });
     await plugin.switchTo(off);
-    await expect(plugin.call("cross-daemon.describe")).resolves.toEqual({ serverId: "srv_tower", switchedOn: false, member: null });
+    await expect(plugin.call("cross-daemon.describe")).resolves.toEqual({ serverId: "srv_tower", switchedOn: false, passwordSet: false, member: null });
   });
 
   it("stores the other daemons it is given while switched on, but never itself", async () => {
@@ -130,13 +130,55 @@ describe("cross-daemon switch", () => {
 
   it("still reports its server ID when its relay is off, so the app can match it to a host", async () => {
     const plugin = startPlugin(on, [], undefined, false);
-    await expect(plugin.call("cross-daemon.describe")).resolves.toEqual({ serverId: "srv_tower", switchedOn: true, member: null });
+    await expect(plugin.call("cross-daemon.describe")).resolves.toEqual({ serverId: "srv_tower", switchedOn: true, passwordSet: false, member: null });
   });
 
   it("stores no peers while switched off", async () => {
     const plugin = startPlugin(off);
     await expect(plugin.call("cross-daemon.set-peers", { peers: [mac], answeredServerIds: ["srv_mac"] })).resolves.toEqual({ stored: 0 });
     expect(plugin.storedPeers()).toEqual([]);
+  });
+});
+
+describe("this daemon's password", () => {
+  it("gives its password to its peers with its link, so they can reach it over the relay", async () => {
+    const plugin = startPlugin(on);
+    await expect(plugin.call("cross-daemon.set-own-password", { password: "tower-password" })).resolves.toEqual({ passwordSet: true });
+    await expect(plugin.call("cross-daemon.describe")).resolves.toEqual({
+      serverId: "srv_tower",
+      switchedOn: true,
+      passwordSet: true,
+      member: { ...tower, password: "tower-password" },
+    });
+  });
+
+  it("shares no password while switched off", async () => {
+    const plugin = startPlugin(off);
+    await plugin.call("cross-daemon.set-own-password", { password: "tower-password" });
+    await expect(plugin.call("cross-daemon.describe")).resolves.toEqual({ serverId: "srv_tower", switchedOn: false, passwordSet: true, member: null });
+  });
+
+  it("keeps the password across a restart, in an owner-only file", async () => {
+    const plugin = startPlugin(on);
+    await plugin.call("cross-daemon.set-own-password", { password: "tower-password" });
+    const restarted = startPlugin(on, [], Promise.resolve(plugin.stateDir));
+    await expect(restarted.call("cross-daemon.describe")).resolves.toMatchObject({ member: { password: "tower-password" } });
+    expect(statSync(join(plugin.stateDir, "own-password.json")).mode & 0o777).toBe(0o600);
+  });
+
+  it("stops sharing the password once it is cleared", async () => {
+    const plugin = startPlugin(on);
+    await plugin.call("cross-daemon.set-own-password", { password: "tower-password" });
+    await expect(plugin.call("cross-daemon.set-own-password", { password: null })).resolves.toEqual({ passwordSet: false });
+    await expect(plugin.call("cross-daemon.describe")).resolves.toEqual({ serverId: "srv_tower", switchedOn: true, passwordSet: false, member: tower });
+  });
+
+  it("stores a peer's password with it but never lists it", async () => {
+    const plugin = startPlugin(on);
+    const protectedMac = { ...mac, password: "mac-password" };
+    await plugin.call("cross-daemon.set-peers", { peers: [protectedMac], answeredServerIds: ["srv_mac"] });
+    expect(plugin.storedPeers()).toEqual([protectedMac]);
+    await expect(plugin.call("cross-daemon.list-peers")).resolves.toEqual({ peers: [{ serverId: "srv_mac", name: "mac" }] });
   });
 });
 

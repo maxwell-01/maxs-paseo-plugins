@@ -91,8 +91,8 @@ export function fakeDaemons() {
     throw new Error(`unexpected command ${command}`);
   };
   const cli: PaseoCli = {
-    run: (link, args, options) => {
-      if (link !== mac.link) throw new Error("unknown link");
+    run: (peer, args, options) => {
+      if (peer.link !== mac.link) throw new Error("unknown link");
       return handle("mac", args, options?.promptText);
     },
     runLocal: (args, options) => handle("local", args, options?.promptText),

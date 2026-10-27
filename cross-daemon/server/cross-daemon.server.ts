@@ -1,11 +1,12 @@
 import { join } from "node:path";
 import type { PluginServerContext } from "@getpaseo/plugin/server";
-import { crossDaemonSettings, describeDaemon, listPeers, type Peer, setPeers } from "../shared/cross-daemon.shared";
+import { crossDaemonSettings, describeDaemon, listPeers, type Peer, setOwnPassword, setPeers } from "../shared/cross-daemon.shared";
 import { withCrossDaemonTools } from "./agent-injection.server";
 import { createAgentLifecycle } from "./agent-lifecycle.server";
 import type { PaseoCli } from "./paseo-cli.server";
 import { createMessenger, startDeliveryWorker } from "./messenger.server";
 import { createMessageQueue } from "./message-queue.server";
+import { createOwnPasswordStore } from "./own-password-store.server";
 import { createPeerStore } from "./peer-store.server";
 import { createStartedAgents } from "./started-agents.server";
 import { createWatchList } from "./watch-list.server";
@@ -48,6 +49,7 @@ function startToolServer(
 export function registerCrossDaemon(server: PluginServerContext, { readOwnPeer, stateDir, cli, ownDaemon }: CrossDaemonDependencies) {
   const settings = server.registerSettings(crossDaemonSettings);
   const peerStore = stateDir.then(createPeerStore);
+  const ownPasswordStore = stateDir.then(createOwnPasswordStore);
   const toolServer = Promise.all([stateDir, peerStore]).then(([dir, peers]) => startToolServer(dir, peers, { cli, ownDaemon }));
   toolServer.catch((error: unknown) => console.error("cross-daemon: the tool server did not start", error));
   const clearPeersUnlessSwitchedOn = async () => {
@@ -68,8 +70,15 @@ export function registerCrossDaemon(server: PluginServerContext, { readOwnPeer, 
   server.handle(describeDaemon, async (_input, { paseo }) => {
     const { config } = await paseo.config.get();
     const own = await readOwnPeer(config.relay?.enabled === true);
+    const password = (await ownPasswordStore).read();
     const switchedOn = isSwitchedOn(await settings.read());
-    return { serverId: own?.serverId ?? (await ownDaemon()).serverId, switchedOn, member: switchedOn ? own : null };
+    const member = switchedOn && own ? { ...own, ...(password ? { password } : {}) } : null;
+    return { serverId: own?.serverId ?? (await ownDaemon()).serverId, switchedOn, passwordSet: password !== null, member };
+  });
+
+  server.handle(setOwnPassword, async ({ password }) => {
+    (await ownPasswordStore).write(password);
+    return { passwordSet: password !== null };
   });
 
   server.handle(setPeers, async (input, { paseo }) => {
