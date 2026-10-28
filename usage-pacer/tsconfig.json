@@ -3,8 +3,9 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
+    "jsx": "react-jsx",
     "lib": ["ES2023"],
-    "types": ["node"],
+    "types": ["node", "react"],
     "strict": true,
     "noEmit": true,
     "skipLibCheck": true,
@@ -12,5 +13,5 @@
     "resolveJsonModule": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["index.server.ts", "server/**/*.ts", "shared/**/*.ts"]
+  "include": ["**/*.ts", "**/*.tsx"]
 }
