@@ -9,5 +9,13 @@ export function firstMateHome(env: NodeJS.ProcessEnv = process.env): string {
 
 // install.py links this into the host's myStuff clone, which the guard's watch keeps on main.
 export function guardFile(env: NodeJS.ProcessEnv = process.env): string {
-  return join(firstMateHome(env), "data", "subscription-usage-watch", "assets", "guard.py");
+  return join(guardData(env), "assets", "guard.py");
+}
+
+export function pacingOverridesFile(env: NodeJS.ProcessEnv = process.env): string {
+  return join(guardData(env), "pacing-overrides.json");
+}
+
+function guardData(env: NodeJS.ProcessEnv): string {
+  return join(firstMateHome(env), "data", "subscription-usage-watch");
 }

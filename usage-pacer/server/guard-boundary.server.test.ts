@@ -2,6 +2,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "n
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { runGuard } from "./guard-run.server";
+import { writePacingOverrides } from "./pacing-overrides.server";
 import { makeTempDir } from "./temp-dir.test-support";
 
 // The real guard lives in Max's myStuff clone, which this repo's checkout does not have.
@@ -54,13 +55,14 @@ function firstMateHomeAt(fiveHourPct: number) {
         },
       ],
       agents: [
-        { id: "first-mate", provider: "claude", status: "running", labels: {} },
+        { id: "first-mate", provider: "claude", status: "running", labels: {}, pendingPermissionCount: 0 },
         {
           id: "crewmate",
           provider: "claude",
           status: "running",
           labels: { "firstmate.role": "crew" },
           parentAgentId: "first-mate",
+          pendingPermissionCount: 0,
         },
       ],
     }),
@@ -100,6 +102,16 @@ describe.skipIf(!realGuard)("the real usage guard, run by the pacer (set USAGE_P
     const sends = made.filter(([command]) => command === "send");
     expect(sends.map(([, parent]) => parent)).toEqual(["first-mate"]);
     expect(sends[0][sends[0].indexOf("--prompt") + 1]).toContain("crewmate (claude: actual usage >=90%)");
+  });
+
+  it("holds the crewmate at 85% once the settings lower the hard stop to 80%", async () => {
+    const { home, data } = firstMateHomeAt(85);
+    await writePacingOverrides(join(data, "pacing-overrides.json"), { stop_pct: 80 });
+    const log = await runRealGuard(home);
+    expect(log).not.toHaveBeenCalled();
+    expect(calls(home).filter(([command]) => command === "stop").map(([, id]) => id)).toEqual(["crewmate"]);
+    const gate = JSON.parse(readFileSync(join(data, "gate.json"), "utf8"));
+    expect(gate.providers.claude).toMatchObject({ mode: "paused", reason: "actual usage >=80%" });
   });
 
   it("stops nothing at 40%", async () => {

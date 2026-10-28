@@ -5,8 +5,32 @@ agent starts a turn. The guard then stops managed crew over the cap within secon
 3-minute watch. Callers no longer need to run the guard to have it enforced. Requires **Paseo 0.13.2 or
 newer**, and the first mate's guard installed on the same host.
 
-The plugin holds no usage rules. The caps, the 75% and 90% tiers, the weekend allowance, overrides and
-`stopped.json` all stay in the guard (`home/server/paseo/subscriptionUsage` in myStuff).
+The guard owns the usage rules: the caps, the tiers, the weekend allowance, overrides and `stopped.json`
+(`home/server/paseo/subscriptionUsage` in myStuff). The plugin only runs it and can change the pacing
+limits it reads, below.
+
+## Pacing settings
+
+The guard's pacing limits come from `pacing.json` in myStuff's paced-workflows skill. The plugin keeps a
+host settings document, `pacing`, with the same keys. Each value is optional; an unset value means "use
+pacing.json". When the plugin starts and after every save, it writes the set values to
+`pacing-overrides.json` beside the guard's `gate.json`. Every guard run on the host, the first mate's
+watch included, merges that file over pacing.json. A bad value in it fails the guard closed.
+
+| Setting              | pacing.json default | Meaning                                                     |
+| -------------------- | ------------------- | ----------------------------------------------------------- |
+| `weekly_target_pct`  | 90                  | Weekly usage to reach by the end of the pace period         |
+| `contingency_5h_pct` | 10                  | 5-hour reserve; the 5-hour ceiling is 100 minus this        |
+| `contingency_7d_pct` | 10                  | Weekly reserve; the weekly ceiling is 100 minus this        |
+| `emergency_5h_pct`   | 90                  | 5-hour usage that forces minimum pace                       |
+| `emergency_7d_pct`   | 90                  | Weekly usage that forces minimum pace                       |
+| `stop_pct`           | 90                  | Hard stop: usage that pauses new work and stops crew        |
+| `up_margin_pct`      | 15                  | Headroom a forecast needs below a limit before a raise      |
+| `max_concurrency`    | 10                  | Most crew agents per provider                               |
+| `weekly_pace`        | `working_week`      | `working_week`: reach the target by end of Friday; `whole_week`: pace evenly to the reset |
+
+Percents are 0-100, `max_concurrency` is a whole number of at least 1. Removing the plugin leaves the
+last `pacing-overrides.json` in place; delete it to go back to pacing.json.
 
 ## What it runs
 
