@@ -6,7 +6,7 @@ own `package.json`, tests and README.
 | Plugin | What it does |
 | --- | --- |
 | [beam](beam/) | Mirrors a workspace's working tree onto your main checkout, so a running dev environment shows its changes. |
-| [crew-flows](crew-flows/) | Shows each repo's ticket-loop workflow, its agent roles, and the teams running now. |
+| [crew-flows](crew-flows/) | Shows each repo's crew-flows workflow, its agent roles, and the teams running now. |
 | [cross-daemon](cross-daemon/) | Lets agents on different Paseo daemons list and message each other, without interrupting a working agent. |
 | [repo-notes](repo-notes/) | Gives every agent your own notes for its repo, kept out of the repo and synced across daemons. |
 | [telegram-bridge](telegram-bridge/) | Lets you talk to one Paseo agent from a Telegram chat, with photos and files both ways. |

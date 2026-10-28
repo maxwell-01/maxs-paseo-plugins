@@ -5,13 +5,13 @@ import { z } from "zod";
 import type { Brief, Flow, FlowList, Stage } from "../shared/flows.shared";
 import { git } from "./git.server";
 
-const MANIFEST = ".claude/ticket-loop.json";
+const MANIFEST = ".claude/crew-flows.json";
 const MAIN = "origin/main";
 const SKILL_PREFIX = "skill:";
 
 // The defaults loop.py's load() applies, so a stage shows what the engine will actually run.
 export const manifestSchema = z.object({
-  name: z.string().default("ticket-loop"),
+  name: z.string().default("crew-flows"),
   model: z.string().default("claude-sonnet-5"),
   thinking: z.string().default("medium"),
   max_rounds: z.number().default(3),

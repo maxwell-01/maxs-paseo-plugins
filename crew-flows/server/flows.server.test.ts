@@ -39,7 +39,7 @@ const PLAN_REVIEW = `## The task
 function traqx(root: string) {
   const briefs = ["plan", "develop", "code-review", "qa", "deploy"];
   return repoOnMain(root, "traqx-bookings", {
-    ".claude/ticket-loop.json": fixture("traqx.ticket-loop.json"),
+    ".claude/crew-flows.json": fixture("traqx.crew-flows.json"),
     ".claude/briefs/plan-review.md": PLAN_REVIEW,
     ...Object.fromEntries(briefs.map((b) => [`.claude/briefs/${b}.md`, `**Outcome:** ${b} done.\n`])),
   }, "https://github.com/maxwell-01/traqx-bookings.git");
@@ -56,7 +56,7 @@ describe("readFlows", () => {
   it("reads each repo's manifest from origin/main, not its working tree", async () => {
     const root = makeTempDir("crew-flows-root-");
     const dir = traqx(root);
-    write(join(dir, ".claude/ticket-loop.json"), JSON.stringify({ name: "stale", stages: [] }));
+    write(join(dir, ".claude/crew-flows.json"), JSON.stringify({ name: "stale", stages: [] }));
     const { flows } = await readFlows({ roots: [root], skillDir: skillDir() });
     expect(flows.map((f) => f.name)).toEqual(["traqx"]);
     expect(flows[0]).toMatchObject({ repoDir: dir, remote: "maxwell-01/traqx-bookings", maxRounds: 3, stallSeconds: 1800 });
@@ -85,7 +85,7 @@ describe("readFlows", () => {
     });
   });
 
-  it("reads a skill: brief from the ticket-loop skill and counts the shared craft brief", async () => {
+  it("reads a skill: brief from the crewFlows skill and counts the shared craft brief", async () => {
     const root = makeTempDir("crew-flows-root-");
     traqx(root);
     const result = await readFlows({ roots: [root], skillDir: skillDir() });
@@ -99,7 +99,7 @@ describe("readFlows", () => {
   it("uses a brief's first line when it has no outcome, and surfaces keys loop.py ignores", async () => {
     const root = makeTempDir("crew-flows-root-");
     repoOnMain(root, "gsmail", {
-      ".claude/ticket-loop.json": fixture("gsmail.ticket-loop.json"),
+      ".claude/crew-flows.json": fixture("gsmail.crew-flows.json"),
       ".claude/briefs/plan.md": "# Plan\n\nPlan the ticket in at most `8` lines.\n",
       ".claude/briefs/plan-review.md": "Read the plan.",
       ".claude/briefs/develop.md": "Implement it.",
@@ -125,8 +125,8 @@ describe("readFlows", () => {
     mkdirSync(join(root, "not-a-repo"));
     write(join(root, "dangling/.git"), "gitdir: /nonexistent/worktree\n");
     repoOnMain(root, "no-loop", { "README.md": "hi" });
-    repoOnMain(root, "broken", { ".claude/ticket-loop.json": "{ not json" });
-    repoOnMain(root, "half", { ".claude/ticket-loop.json": JSON.stringify({ name: "half", stages: [{ id: "plan", brief: "briefs/plan.md" }] }) });
+    repoOnMain(root, "broken", { ".claude/crew-flows.json": "{ not json" });
+    repoOnMain(root, "half", { ".claude/crew-flows.json": JSON.stringify({ name: "half", stages: [{ id: "plan", brief: "briefs/plan.md" }] }) });
     const result = await readFlows({ roots: [root], skillDir: skillDir() });
     expect(result.flows.map((f) => f.name)).toEqual(["half"]);
     expect(result.flows[0].stages[0].brief).toBeNull();

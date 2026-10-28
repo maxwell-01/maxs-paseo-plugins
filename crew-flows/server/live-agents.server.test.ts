@@ -19,8 +19,8 @@ describe("lastSaid", () => {
 
 describe("isTeamAgent", () => {
   it("keeps an agent with any label under a team prefix", () => {
-    expect(isTeamAgent({ "ticket-loop.run": "r" }, ["ticket-loop."])).toBe(true);
-    expect(isTeamAgent({ "ticket-loopy": "r", other: "x" }, ["ticket-loop."])).toBe(false);
+    expect(isTeamAgent({ "crew-flows.run": "r" }, ["crew-flows."])).toBe(true);
+    expect(isTeamAgent({ "crew-flowsy": "r", other: "x" }, ["crew-flows."])).toBe(false);
   });
 });
 

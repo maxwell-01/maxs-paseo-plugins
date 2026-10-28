@@ -7,7 +7,7 @@ import { listFlows } from "./shared/flows.shared";
 import { sources } from "./shared/settings.shared";
 import { listTeams } from "./shared/teams.shared";
 
-const TEAM_LABELS = ["ticket-loop.", "firstmate."];
+const TEAM_LABELS = ["crew-flows.", "firstmate."];
 
 export default function contribute(server: PluginServerContext) {
   const settings = server.registerSettings(sources);

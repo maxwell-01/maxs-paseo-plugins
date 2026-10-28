@@ -26,10 +26,10 @@ describe("crewOf", () => {
     ]);
   });
 
-  it("leaves ticket-loop agents to their run, even when the subscription guard labels them crew", () => {
+  it("leaves crew-flows agents to their run, even when the subscription guard labels them crew", () => {
     const { crew } = crewOf([
-      agent("loop", { "firstmate.role": "crew", "ticket-loop.run": "traqx-294-x" }),
-      agent("older-loop", { "firstmate.role": "crew", "firstmate.task": "ticket-loop:traqx" }),
+      agent("loop", { "firstmate.role": "crew", "crew-flows.run": "traqx-294-x" }),
+      agent("older-loop", { "firstmate.role": "crew", "firstmate.task": "crew-flows:traqx" }),
     ]);
     expect(crew).toEqual([]);
   });
@@ -37,7 +37,7 @@ describe("crewOf", () => {
 
 describe("waitingOnYou", () => {
   it("counts agents asking for a permission and crewmates that stopped for a decision", () => {
-    const asking = { ...agent("asking", { "ticket-loop.run": "r" }), needsYou: true };
+    const asking = { ...agent("asking", { "crew-flows.run": "r" }), needsYou: true };
     const agents = [asking, agent("deciding", { "firstmate.role": "crew" }, "needs-decision: pick one"),
       agent("blocked", { "firstmate.role": "crew" }, "blocked: no access"), agent("busy", { "firstmate.role": "crew" }, "working: on it")];
     expect(waitingOnYou(agents, crewOf(agents).crew).map((a) => a.id)).toEqual(["asking", "deciding", "blocked"]);

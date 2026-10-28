@@ -68,7 +68,7 @@ function RunCard({ theme, run, cells, now, navigation }: {
       <StageStrip theme={theme} cells={cells} />
       {speaker?.lastSaid ? (
         <View style={{ borderLeftWidth: 2, borderColor: colors.border, paddingLeft: 10, gap: 2 }}>
-          <Text style={{ color: colors.foregroundMuted, fontSize: 11 }}>{speaker.labels["ticket-loop.stage"] ?? speaker.title}</Text>
+          <Text style={{ color: colors.foregroundMuted, fontSize: 11 }}>{speaker.labels["crew-flows.stage"] ?? speaker.title}</Text>
           <Text selectable numberOfLines={4} style={{ color: colors.foreground, fontSize: 13 }}>{speaker.lastSaid}</Text>
         </View>
       ) : null}
@@ -79,7 +79,7 @@ function RunCard({ theme, run, cells, now, navigation }: {
         </Text>
       ) : null}
       {speaker ? <AgentActions key={speaker.id} theme={theme} agentId={speaker.id} navigation={navigation}
-        openLabel={`Open ${speaker.labels["ticket-loop.stage"] ?? "agent"} in Paseo`} /> : null}
+        openLabel={`Open ${speaker.labels["crew-flows.stage"] ?? "agent"} in Paseo`} /> : null}
       {run.logTail ? (
         <View style={{ flexDirection: "row" }}>
           <ActionButton theme={theme} label={showLog ? "Hide run log" : "Run log"} onPress={() => setShowLog(!showLog)} />
@@ -109,7 +109,7 @@ export function TeamsTab({ theme, layout, navigation }: PluginSurfaceProps) {
   const now = Date.now();
   const { runs, agents, problems } = teams.data;
   const live = runs.filter((run) => runState(run, now) === "live");
-  const loopAgents = agents.filter((agent) => agent.labels["ticket-loop.run"]);
+  const loopAgents = agents.filter((agent) => agent.labels["crew-flows.run"]);
   const { mate, crew } = crewOf(agents);
   const needsYou = waitingOnYou(agents, crew);
   return (
@@ -122,7 +122,7 @@ export function TeamsTab({ theme, layout, navigation }: PluginSurfaceProps) {
       </View>
       {problems.map((problem) => <Notice key={problem} theme={theme} tone="warning">{problem}</Notice>)}
       {flows.isError ? <Notice theme={theme} tone="warning">{flows.error.message}</Notice> : null}
-      <SectionTitle theme={theme}>Ticket-loop runs</SectionTitle>
+      <SectionTitle theme={theme}>crewFlows runs</SectionTitle>
       {runs.length === 0 ? <Notice theme={theme} tone="neutral">No run has left state in the run state folder (Settings → Plugins → crew-flows).</Notice> : null}
       {runs.map((run) => (
         <RunCard key={run.stateDir} theme={theme} run={run} now={now} navigation={navigation}
