@@ -38,6 +38,7 @@ export const manifestSchema = z.object({
 
 export interface FlowSources {
   roots: string[];
+  repoDirs: string[];
   skillDir: string;
 }
 
@@ -109,25 +110,26 @@ async function readFlow(dir: string, skillDir: string, problems: string[]): Prom
   };
 }
 
-export async function readFlows({ roots, skillDir }: FlowSources): Promise<FlowList> {
+export async function readFlows({ roots, repoDirs, skillDir }: FlowSources): Promise<FlowList> {
   const problems: string[] = [];
-  const flows: Flow[] = [];
+  const dirs = [...repoDirs];
   for (const root of roots) {
     if (!existsSync(root)) {
       problems.push(`repo folder ${root} does not exist`);
       continue;
     }
-    for (const dir of await gitRepos(root)) {
-      try {
-        const flow = await readFlow(dir, skillDir, problems);
-        if (flow) flows.push(flow);
-      } catch (error) {
-        problems.push(`${dir}: ${error instanceof Error ? error.message : String(error)}`);
-      }
+    dirs.push(...await gitRepos(root));
+  }
+  const flows: Flow[] = [];
+  for (const dir of dirs) {
+    try {
+      const flow = await readFlow(dir, skillDir, problems);
+      if (flow) flows.push(flow);
+    } catch (error) {
+      problems.push(`${dir}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
   const craft = join(skillDir, "briefs", "craft.md");
   const craftWords = existsSync(craft) ? summariseBrief("craft.md", await readFile(craft, "utf8")).words : null;
-  if (craftWords === null) problems.push(`shared brief ${craft} not found`);
   return { flows, craftWords, problems };
 }

@@ -4,6 +4,8 @@ import { Platform, Pressable, Text, View, type ViewStyle } from "react-native";
 
 export type Tone = "neutral" | "accent" | "warning" | "success" | "danger";
 
+export const NO_FLOWS = "No repo here has a crew-flows manifest on origin/main yet. A repo run by the crewFlows manager shows on Teams while a ticket runs.";
+
 export const MONO = Platform.select({ ios: "Menlo", default: "monospace" });
 
 export function toneColor(theme: PluginTheme, tone: Tone): string {

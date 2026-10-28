@@ -5,7 +5,7 @@ import { useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { useFlows } from "./flows-query.client";
 import { groupRoles, modelLabel, type Role, type RoleVariant, stageEffects } from "./roles.client";
-import { Card, Chips, Field, MONO, Notice, Pill, SectionTitle } from "./ui.client";
+import { Card, Chips, Field, MONO, NO_FLOWS, Notice, Pill, SectionTitle } from "./ui.client";
 
 const ALL = "";
 
@@ -71,7 +71,9 @@ function VariantDetail({ theme, variant, craftWords }: { theme: PluginTheme; var
       <Field theme={theme} label="On FAIL" value={effects.onFail} />
       <Field theme={theme} label="On PASS" value={effects.onPass} />
       <Field theme={theme} label="Brief" value={briefPath} mono />
-      <Field theme={theme} label="Prepended" value={`craft.md${craftWords === null ? "" : ` (${craftWords} words)`}, shared by every repo`} />
+      <Field theme={theme} label="Prepended" value={craftWords === null
+        ? "craft.md, not found in the crewFlows skill folder (Settings → Plugins → crew-flows)"
+        : `craft.md (${craftWords} words), shared by every repo`} />
       <Field theme={theme} label="Verdict" value={`${stage.id}-<round>.json`} mono />
       {stage.ownerApproves || stage.asks ? (
         <Notice theme={theme} tone="warning">
@@ -117,7 +119,7 @@ export function AgentsTab({ theme, layout }: PluginSurfaceProps) {
             options={[{ id: ALL, label: "All repos" }, ...all.map((flow) => ({ id: flow.name, label: flow.name }))]} />
         </View>
         {problems.map((problem) => <Notice key={problem} theme={theme} tone="warning">{problem}</Notice>)}
-        {all.length === 0 ? <Notice theme={theme} tone="neutral">No repo in the repo folders has a crew-flows manifest on origin/main (Settings → Plugins → crew-flows).</Notice> : null}
+        {all.length === 0 ? <Notice theme={theme} tone="neutral">{NO_FLOWS}</Notice> : null}
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
           {roles.map((role) => (
             <View key={role.id} style={{ width: layout.compact ? "100%" : "48.5%" }}>

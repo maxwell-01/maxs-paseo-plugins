@@ -6,7 +6,7 @@ import type { Flow } from "../shared/flows.shared";
 import { queueSummary } from "./diagram.client";
 import { FlowDiagram } from "./flow-diagram.client";
 import { useFlows } from "./flows-query.client";
-import { Card, Chips, MONO, Notice, Pill, SectionTitle } from "./ui.client";
+import { Card, Chips, MONO, NO_FLOWS, Notice, Pill, SectionTitle } from "./ui.client";
 
 const ALL = "";
 
@@ -74,7 +74,7 @@ export function WorkflowsTab({ theme, layout }: PluginSurfaceProps) {
           options={[{ id: ALL, label: "All repos" }, ...all.map((flow) => ({ id: flow.name, label: flow.name }))]} />
       </View>
       {problems.map((problem) => <Notice key={problem} theme={theme} tone="warning">{problem}</Notice>)}
-      <Legend theme={theme} />
+      {all.length === 0 ? <Notice theme={theme} tone="neutral">{NO_FLOWS}</Notice> : <Legend theme={theme} />}
       {all.filter((flow) => repo === ALL || flow.name === repo).map((flow) => (
         <FlowCard key={flow.repoDir} theme={theme} flow={flow} vertical={layout.compact} />
       ))}

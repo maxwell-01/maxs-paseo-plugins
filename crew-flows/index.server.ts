@@ -17,7 +17,12 @@ export default function contribute(server: PluginServerContext) {
     const { repoRoots, stateRoot, skillDir } = current.values;
     return { roots: repoRoots.map(expandHome), stateRoot: expandHome(stateRoot), skillDir: expandHome(skillDir) };
   }
-  server.handle(listFlows, async () => readFlows(await readSources()));
+  server.handle(listFlows, async (_input, { paseo }) => {
+    const { roots, skillDir } = await readSources();
+    const projects = roots.length ? [] : (await paseo.projects.list()).projects;
+    const repoDirs = projects.filter((project) => project.projectKind === "git").map((project) => project.projectRootPath);
+    return readFlows({ roots, repoDirs, skillDir });
+  });
   server.handle(listTeams, async (_input, { paseo }) => {
     const [runs, live] = await Promise.all([
       readSources().then(({ stateRoot }) => readRuns(stateRoot)),

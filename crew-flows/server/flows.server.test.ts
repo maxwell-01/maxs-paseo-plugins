@@ -57,7 +57,7 @@ describe("readFlows", () => {
     const root = makeTempDir("crew-flows-root-");
     const dir = traqx(root);
     write(join(dir, ".claude/crew-flows.json"), JSON.stringify({ name: "stale", stages: [] }));
-    const { flows } = await readFlows({ roots: [root], skillDir: skillDir() });
+    const { flows } = await readFlows({ roots: [root], repoDirs: [], skillDir: skillDir() });
     expect(flows.map((f) => f.name)).toEqual(["traqx"]);
     expect(flows[0]).toMatchObject({ repoDir: dir, remote: "maxwell-01/traqx-bookings", maxRounds: 3, stallSeconds: 1800 });
     expect(flows[0].queue).toMatchObject({ repo: "maxwell-01/traqx-bookings", excludeLabels: ["blocked", "loop:active"], maxTickets: 3 });
@@ -66,7 +66,7 @@ describe("readFlows", () => {
   it("gives every stage the manifest's model and thinking unless it names its own", async () => {
     const root = makeTempDir("crew-flows-root-");
     traqx(root);
-    const [flow] = (await readFlows({ roots: [root], skillDir: skillDir() })).flows;
+    const [flow] = (await readFlows({ roots: [root], repoDirs: [], skillDir: skillDir() })).flows;
     const stage = (id: string) => flow.stages.find((s) => s.id === id);
     expect(stage("plan")).toMatchObject({ model: "claude-opus-5", thinking: "high", persist: true, reviews: null });
     expect(stage("develop")).toMatchObject({ model: "claude-sonnet-5", thinking: "medium" });
@@ -76,7 +76,7 @@ describe("readFlows", () => {
   it("summarises a brief by its outcome line, its checks and its length", async () => {
     const root = makeTempDir("crew-flows-root-");
     traqx(root);
-    const [flow] = (await readFlows({ roots: [root], skillDir: skillDir() })).flows;
+    const [flow] = (await readFlows({ roots: [root], repoDirs: [], skillDir: skillDir() })).flows;
     expect(flow.stages.find((s) => s.id === "plan-review")?.brief).toEqual({
       ref: "briefs/plan-review.md",
       words: PLAN_REVIEW.split(/\s+/).filter(Boolean).length,
@@ -88,7 +88,7 @@ describe("readFlows", () => {
   it("reads a skill: brief from the crewFlows skill and counts the shared craft brief", async () => {
     const root = makeTempDir("crew-flows-root-");
     traqx(root);
-    const result = await readFlows({ roots: [root], skillDir: skillDir() });
+    const result = await readFlows({ roots: [root], repoDirs: [], skillDir: skillDir() });
     expect(result.flows[0].stages.find((s) => s.id === "retro")?.brief?.outcome).toBe(
       "a record of what this run reveals about the PROCESS.",
     );
@@ -105,17 +105,32 @@ describe("readFlows", () => {
       ".claude/briefs/develop.md": "Implement it.",
       ".claude/briefs/code-review.md": "Check it.",
     });
-    const [flow] = (await readFlows({ roots: [root], skillDir: skillDir() })).flows;
+    const [flow] = (await readFlows({ roots: [root], repoDirs: [], skillDir: skillDir() })).flows;
     expect(flow.remote).toBeNull();
     expect(flow.stages[0]).toMatchObject({ ownerApproves: true, model: "claude-sonnet-5", thinking: "low" });
     expect(flow.stages[0].brief?.outcome).toBe("Plan the ticket in at most 8 lines.");
     expect(flow.stages[2].asks).toBe("plan");
   });
 
+  it("reads repos given directly, as the host's Paseo projects are", async () => {
+    const root = makeTempDir("crew-flows-root-");
+    const dir = traqx(root);
+    const result = await readFlows({ roots: [], repoDirs: [dir], skillDir: skillDir() });
+    expect(result.flows.map((f) => f.repoDir)).toEqual([dir]);
+  });
+
+  it("leaves a missing craft.md to the brief that prepends it, not to the problems", async () => {
+    const root = makeTempDir("crew-flows-root-");
+    traqx(root);
+    const result = await readFlows({ roots: [root], repoDirs: [], skillDir: makeTempDir("crew-flows-skill-") });
+    expect(result.craftWords).toBeNull();
+    expect(result.problems.filter((p) => p.includes("craft.md"))).toEqual([]);
+  });
+
   it("reports a repo folder that does not exist on this host and still reads the others", async () => {
     const root = makeTempDir("crew-flows-root-");
     traqx(root);
-    const result = await readFlows({ roots: [join(root, "typo"), root], skillDir: skillDir() });
+    const result = await readFlows({ roots: [join(root, "typo"), root], repoDirs: [], skillDir: skillDir() });
     expect(result.flows.map((f) => f.name)).toEqual(["traqx"]);
     expect(result.problems).toEqual([`repo folder ${join(root, "typo")} does not exist`]);
   });
@@ -127,7 +142,7 @@ describe("readFlows", () => {
     repoOnMain(root, "no-loop", { "README.md": "hi" });
     repoOnMain(root, "broken", { ".claude/crew-flows.json": "{ not json" });
     repoOnMain(root, "half", { ".claude/crew-flows.json": JSON.stringify({ name: "half", stages: [{ id: "plan", brief: "briefs/plan.md" }] }) });
-    const result = await readFlows({ roots: [root], skillDir: skillDir() });
+    const result = await readFlows({ roots: [root], repoDirs: [], skillDir: skillDir() });
     expect(result.flows.map((f) => f.name)).toEqual(["half"]);
     expect(result.flows[0].stages[0].brief).toBeNull();
     expect(result.problems).toHaveLength(3);
