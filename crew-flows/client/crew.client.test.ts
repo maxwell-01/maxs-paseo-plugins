@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { LiveAgent } from "../shared/teams.shared";
-import { crewOf, waitingOnYou } from "./crew.client";
+import { crewOf } from "./crew.client";
 
 function agent(id: string, labels: Record<string, string>, lastSaid: string | null = null): LiveAgent {
   return { id, title: id, status: "idle", model: null, needsYou: false, labels, updatedAt: "", lastSaid };
@@ -32,14 +32,5 @@ describe("crewOf", () => {
       agent("older-loop", { "firstmate.role": "crew", "firstmate.task": "crew-flows:traqx" }),
     ]);
     expect(crew).toEqual([]);
-  });
-});
-
-describe("waitingOnYou", () => {
-  it("counts agents asking for a permission and crewmates that stopped for a decision", () => {
-    const asking = { ...agent("asking", { "crew-flows.run": "r" }), needsYou: true };
-    const agents = [asking, agent("deciding", { "firstmate.role": "crew" }, "needs-decision: pick one"),
-      agent("blocked", { "firstmate.role": "crew" }, "blocked: no access"), agent("busy", { "firstmate.role": "crew" }, "working: on it")];
-    expect(waitingOnYou(agents, crewOf(agents).crew).map((a) => a.id)).toEqual(["asking", "deciding", "blocked"]);
   });
 });

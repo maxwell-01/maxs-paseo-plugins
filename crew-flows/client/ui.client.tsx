@@ -1,5 +1,5 @@
 import type { PluginTheme } from "@getpaseo/plugin";
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { Platform, Pressable, Text, View, type ViewStyle } from "react-native";
 
 export type Tone = "neutral" | "accent" | "warning" | "success" | "danger";
@@ -62,4 +62,16 @@ export function Field({ theme, label, value, mono = false }: { theme: PluginThem
 
 export function Notice({ theme, tone, children }: { theme: PluginTheme; tone: Tone; children: ReactNode }) {
   return <Text selectable style={{ color: toneColor(theme, tone), fontSize: 13 }}>{children}</Text>;
+}
+
+export function Disclosure({ theme, title, children }: { theme: PluginTheme; title: ReactNode; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <View style={{ gap: 8 }}>
+      <Pressable accessibilityRole="button" accessibilityState={{ expanded: open }} onPress={() => setOpen(!open)}>
+        <Text style={{ color: theme.colors.foregroundMuted, fontSize: 13 }}>{open ? "▾" : "▸"} {title}</Text>
+      </Pressable>
+      {open ? children : null}
+    </View>
+  );
 }

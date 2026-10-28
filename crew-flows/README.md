@@ -10,10 +10,16 @@ Open it from **Crew & Flows** in the sidebar, or **Open Crew & Flows** in the Co
 
 ![Teams tab](images/teams.png)
 
-Each crew-flows run, from its state folder: every stage with its latest verdict and live agent,
-what the current agent last said, and the run log. Below that, the [FirstMate](https://paseo.cafe/plugins/firstmate)
-first mate and its crew, each with the status line its last turn ended with. **Open** jumps to an
-agent; **Send a note…** posts a follow-up to it. The tab refreshes every 5 seconds.
+What needs you, then what is running. One line counts each group. Then:
+
+- **Needs you.** An agent that asks for a permission, and each [FirstMate](https://paseo.cafe/plugins/firstmate)
+  crewmate whose last turn ended `needs-decision`, `blocked` or `failed`, with its question.
+- **Running now.** Each live crew-flows run, with every stage's latest verdict and live agent and
+  what the current agent last said. Then each crewmate that is running.
+- **Recent runs.** Runs that ended or stopped, one line each. Tap one to open it.
+- **Done and idle**, the first mate, and any problem reading this host, each in a closed row.
+
+**Open** jumps to an agent; **Send a note…** posts a follow-up to it. The tab refreshes every 5 seconds.
 
 ## Workflows
 
