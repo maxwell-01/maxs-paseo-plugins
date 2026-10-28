@@ -11,7 +11,8 @@ limits it reads, below.
 
 ## Pacing settings
 
-The guard's pacing limits come from `pacing.json` in myStuff's paced-workflows skill. The plugin keeps a
+The guard's pacing limits come from `pacing.json` in myStuff's paced-workflows skill. Edit them per host
+in **Settings → Plugins → usage-pacer → Usage pacing**; an empty field shows the pacing.json value. The plugin keeps a
 host settings document, `pacing`, with the same keys. Each value is optional; an unset value means "use
 pacing.json". When the plugin starts and after every save, it writes the set values to
 `pacing-overrides.json` beside the guard's `gate.json`. Every guard run on the host, the first mate's
