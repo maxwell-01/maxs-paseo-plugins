@@ -24,7 +24,7 @@ describe("readRuns", () => {
       "plan-review-1.json": JSON.stringify({ verdict: "FAIL", findings: ["one", { file: "a.ts" }] }),
       "loop.log": "line 1\nline 2\n",
     });
-    const [run] = (await readRuns(root)).runs;
+    const [run] = (await readRuns(root, makeTempDir("crew-flows-skill-"))).runs;
     expect(run).toMatchObject({
       name: "traqx", runId: "traqx-294-20261006T172341Z", issue: "294", stage: "plan-review", round: 2,
       beaconAt: "2026-10-06T17:25:42Z", outcome: null, agents: { plan: "a1", "plan-review": "a2" },
@@ -40,13 +40,38 @@ describe("readRuns", () => {
     ]);
   });
 
+  it("gives a role stage of the run's manifest the model its role defaults to", async () => {
+    const root = makeTempDir("crew-flows-runs-");
+    const skill = makeTempDir("crew-flows-skill-");
+    mkdirSync(join(skill, "roles"));
+    writeFileSync(join(skill, "roles/defaults.json"), JSON.stringify({ "code-review": { model: "claude-fable-5-1", persist: false } }));
+    const manifest = join(root, "crew-flows.json");
+    writeFileSync(manifest, JSON.stringify({ name: "editor", model: "claude-sonnet-5-5", stages: [{ id: "develop", brief: "b.md" }, { id: "code-review", reviews: "develop" }] }));
+    stateDir(root, "editor-398", { alive: JSON.stringify({ run_id: "editor-398-20261028T130000Z", issue: "398", stage: "code-review", round: 1, manifest }) });
+    const [run] = (await readRuns(root, skill)).runs;
+    expect(run.stages).toEqual([
+      { id: "develop", reviews: null, persist: true, always: false, model: "claude-sonnet-5-5" },
+      { id: "code-review", reviews: "develop", persist: false, always: false, model: "claude-fable-5-1" },
+    ]);
+  });
+
+  it("still shows a run whose manifest's role stages cannot be resolved, without its stages", async () => {
+    const root = makeTempDir("crew-flows-runs-");
+    const manifest = join(root, "crew-flows.json");
+    writeFileSync(manifest, JSON.stringify({ name: "editor", stages: [{ id: "develop" }] }));
+    stateDir(root, "editor-398", { alive: JSON.stringify({ run_id: "editor-398-20261028T130000Z", issue: "398", stage: "develop", round: 1, manifest }) });
+    const { runs, problems } = await readRuns(root, makeTempDir("crew-flows-skill-"));
+    expect(runs.map((run) => [run.name, run.stages])).toEqual([["editor", null]]);
+    expect(problems).toEqual([expect.stringContaining("editor develop: role defaults")]);
+  });
+
   it("names a run from before the beacon recorded its manifest by its run id, and reads its outcome file", async () => {
     const root = makeTempDir("crew-flows-runs-");
     stateDir(root, "ha-896", {
       alive: JSON.stringify({ run_id: "homeassistant-896-20261006T171344Z", issue: "896", stage: "qa", round: 1, ts: "2026-10-06T17:13:44Z" }),
       outcome: "SUBSCRIPTION_PAUSED\n",
     });
-    const [run] = (await readRuns(root)).runs;
+    const [run] = (await readRuns(root, makeTempDir("crew-flows-skill-"))).runs;
     expect(run).toMatchObject({ name: "homeassistant", stages: null, agents: {}, outcome: "SUBSCRIPTION_PAUSED", manifestPath: null, logTail: null });
   });
 
@@ -56,7 +81,7 @@ describe("readRuns", () => {
       alive: JSON.stringify({ run_id: "a-1b-7-20261006T171344Z", issue: "7", stage: "plan", round: 1 }),
       "plan-1.json": "{\"verdict\": \"PA",
     });
-    const { runs, problems } = await readRuns(root);
+    const { runs, problems } = await readRuns(root, makeTempDir("crew-flows-skill-"));
     expect(runs.map((run) => [run.name, run.verdicts])).toEqual([["a-1b", []]]);
     expect(problems).toHaveLength(1);
     expect(problems[0]).toContain("plan-1.json");
@@ -67,10 +92,10 @@ describe("readRuns", () => {
     stateDir(root, "empty", {});
     mkdirSync(join(root, "traqx-31"));
     stateDir(root, "broken", { alive: "{", "plan-1.json": "{}" });
-    const { runs, problems } = await readRuns(root);
+    const { runs, problems } = await readRuns(root, makeTempDir("crew-flows-skill-"));
     expect(runs).toEqual([]);
     expect(problems).toHaveLength(1);
     expect(problems[0]).toContain("broken-state");
-    expect(await readRuns(join(root, "absent"))).toEqual({ runs: [], problems: [] });
+    expect(await readRuns(join(root, "absent"), root)).toEqual({ runs: [], problems: [] });
   });
 });

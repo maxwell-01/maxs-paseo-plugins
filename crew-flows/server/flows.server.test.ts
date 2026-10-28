@@ -52,6 +52,33 @@ function skillDir() {
   return dir;
 }
 
+// The current crewFlows format: a stage with no brief runs the shared role of its `role`, or of its id.
+const ROLE_MANIFEST = {
+  name: "editor", model: "claude-sonnet-5-5", thinking: "low", queue: { repo: "o/editor" },
+  stages: [
+    { id: "plan" },
+    { id: "size-plan", role: "right-size", reviews: "plan" },
+    { id: "develop", model: "codex/gpt-6-astra", thinking: "high" },
+    { id: "notes", brief: "skill:briefs/notes.md" },
+    { id: "qa" },
+  ],
+};
+
+function roleSkillDir() {
+  const dir = skillDir();
+  write(join(dir, "roles/defaults.json"), JSON.stringify({
+    plan: { model: "claude-opus-5-5", thinking: "medium" },
+    "right-size": { model: "claude-sonnet-5-5", thinking: "medium", persist: false },
+    develop: { model: "claude-sonnet-5-5", thinking: "medium" },
+  }));
+  write(join(dir, "roles/plan.md"), "**Outcome:** a plan.\n");
+  write(join(dir, "roles/right-size.md"), "**Outcome:** the smallest change.\n");
+  write(join(dir, "roles/develop.md"), "**Outcome:** the change.\n");
+  write(join(dir, "briefs/notes.md"), "**Outcome:** notes.\n");
+  write(join(dir, "roles/qa.md"), "**Outcome:** proof.\n");
+  return dir;
+}
+
 describe("readFlows", () => {
   it("reads each repo's manifest from origin/main, not its working tree", async () => {
     const root = makeTempDir("crew-flows-root-");
@@ -110,6 +137,52 @@ describe("readFlows", () => {
     expect(flow.stages[0]).toMatchObject({ ownerApproves: true, model: "claude-sonnet-5", thinking: "low" });
     expect(flow.stages[0].brief?.outcome).toBe("Plan the ticket in at most 8 lines.");
     expect(flow.stages[2].asks).toBe("plan");
+  });
+
+  it("reads a stage with no brief as a shared role, with the role's prompt and defaults from the crewFlows skill", async () => {
+    const root = makeTempDir("crew-flows-root-");
+    repoOnMain(root, "editor", { ".claude/crew-flows.json": JSON.stringify(ROLE_MANIFEST) });
+    const result = await readFlows({ roots: [root], repoDirs: [], skillDir: roleSkillDir() });
+    expect(result.problems).toEqual([]);
+    expect(result.flows[0].stages.map((s) => [s.id, s.model, s.thinking, s.persist, s.reviews, s.brief?.ref, s.brief?.outcome])).toEqual([
+      ["plan", "claude-opus-5-5", "medium", true, null, "skill:roles/plan.md", "a plan."],
+      ["size-plan", "claude-sonnet-5-5", "medium", false, "plan", "skill:roles/right-size.md", "the smallest change."],
+      ["develop", "codex/gpt-6-astra", "high", true, null, "skill:roles/develop.md", "the change."],
+      ["notes", "claude-sonnet-5-5", "low", true, null, "skill:briefs/notes.md", "notes."],
+      ["qa", "claude-sonnet-5-5", "low", true, null, "skill:roles/qa.md", "proof."],
+    ]);
+  });
+
+  it("refuses a stage that names both a role and a brief, as loop.py does", async () => {
+    const root = makeTempDir("crew-flows-root-");
+    repoOnMain(root, "editor", { ".claude/crew-flows.json": JSON.stringify({ name: "editor", stages: [{ id: "plan", role: "plan", brief: "briefs/plan.md" }] }) });
+    const result = await readFlows({ roots: [root], repoDirs: [], skillDir: roleSkillDir() });
+    expect(result.flows).toEqual([]);
+    expect(result.problems).toHaveLength(1);
+    expect(result.problems[0]).toContain("names both a role and a brief");
+  });
+
+  it("reports a role stage when the crewFlows skill folder has no role defaults", async () => {
+    const root = makeTempDir("crew-flows-root-");
+    repoOnMain(root, "editor", { ".claude/crew-flows.json": JSON.stringify(ROLE_MANIFEST) });
+    const skill = skillDir();
+    const result = await readFlows({ roots: [root], repoDirs: [], skillDir: skill });
+    expect(result.flows).toEqual([]);
+    expect(result.problems).toEqual([expect.stringContaining(`${join(skill, "roles/defaults.json")} not found`)]);
+  });
+
+  it("reports a role defaults file that does not parse once, and still reads a manifest of briefs", async () => {
+    const root = makeTempDir("crew-flows-root-");
+    traqx(root);
+    repoOnMain(root, "editor", { ".claude/crew-flows.json": JSON.stringify(ROLE_MANIFEST) });
+    const skill = roleSkillDir();
+    write(join(skill, "roles/defaults.json"), "{ not json");
+    const result = await readFlows({ roots: [root], repoDirs: [], skillDir: skill });
+    expect(result.flows.map((f) => f.name)).toEqual(["traqx"]);
+    expect(result.problems).toEqual([
+      expect.stringContaining(`${join(skill, "roles/defaults.json")}:`),
+      expect.stringContaining("editor plan: role defaults"),
+    ]);
   });
 
   it("reads repos given directly, as the host's Paseo projects are", async () => {

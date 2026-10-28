@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { z } from "zod";
 import type { Brief, Flow, FlowList, Stage } from "../shared/flows.shared";
 import { git } from "./git.server";
+import { readRoleDefaults, type RoleDefaults, stageSetup } from "./role-stages.server";
 
 const MANIFEST = ".claude/crew-flows.json";
 const MAIN = "origin/main";
@@ -18,14 +19,17 @@ export const manifestSchema = z.object({
   stall_seconds: z.number().default(420),
   stages: z.array(z.object({
     id: z.string(),
-    brief: z.string(),
+    brief: z.string().optional(),
+    role: z.string().optional(),
     reviews: z.string().optional(),
-    persist: z.boolean().default(true),
+    persist: z.boolean().optional(),
     always: z.boolean().default(false),
     model: z.string().optional(),
     thinking: z.string().optional(),
     owner_approves: z.boolean().default(false),
     asks: z.string().optional(),
+  }).refine((stage) => stage.brief === undefined || stage.role === undefined, {
+    message: "a stage names both a role and a brief; a brief replaces the role",
   })).min(1),
   queue: z.object({
     repo: z.string(),
@@ -35,6 +39,9 @@ export const manifestSchema = z.object({
     max_tickets: z.number().optional(),
   }).optional(),
 });
+
+export type Manifest = z.infer<typeof manifestSchema>;
+export type ManifestStage = Manifest["stages"][number];
 
 export interface FlowSources {
   roots: string[];
@@ -62,7 +69,7 @@ async function gitRepos(root: string): Promise<string[]> {
     .filter((dir) => existsSync(join(dir, ".git")));
 }
 
-async function readFlow(dir: string, skillDir: string, problems: string[]): Promise<Flow | null> {
+async function readFlow(dir: string, skillDir: string, roles: RoleDefaults | null, problems: string[]): Promise<Flow | null> {
   if (!(await git(dir, ["for-each-ref", `refs/remotes/${MAIN}`])).trim()) return null;
   const onMain = new Set((await git(dir, ["ls-tree", "-r", "--name-only", MAIN, "--", ".claude"])).split("\n"));
   if (!onMain.has(MANIFEST)) return null;
@@ -83,16 +90,17 @@ async function readFlow(dir: string, skillDir: string, problems: string[]): Prom
 
   const stages: Stage[] = [];
   for (const s of manifest.stages) {
+    const setup = stageSetup(s, manifest, roles, skillDir);
     stages.push({
       id: s.id,
-      model: s.model ?? manifest.model,
-      thinking: s.thinking ?? manifest.thinking,
-      persist: s.persist,
+      model: setup.model,
+      thinking: setup.thinking,
+      persist: setup.persist,
       always: s.always,
       reviews: s.reviews ?? null,
       ownerApproves: s.owner_approves,
       asks: s.asks ?? null,
-      brief: await brief(s.brief, s.id),
+      brief: await brief(setup.briefRef, s.id),
     });
   }
   const queue = manifest.queue;
@@ -120,10 +128,11 @@ export async function readFlows({ roots, repoDirs, skillDir }: FlowSources): Pro
     }
     dirs.push(...await gitRepos(root));
   }
+  const roles = await readRoleDefaults(skillDir, problems);
   const flows: Flow[] = [];
   for (const dir of dirs) {
     try {
-      const flow = await readFlow(dir, skillDir, problems);
+      const flow = await readFlow(dir, skillDir, roles, problems);
       if (flow) flows.push(flow);
     } catch (error) {
       problems.push(`${dir}: ${error instanceof Error ? error.message : String(error)}`);

@@ -1,6 +1,6 @@
 {
   "name": "paseo-crew-flows",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "See every crew-flows workflow, its agents, and the teams running now.",
   "license": "MIT",
   "repository": {

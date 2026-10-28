@@ -52,7 +52,7 @@ The plugin reads the machine of the daemon it is installed on. Change its folder
 | --- | --- | --- |
 | Repo folders | empty | Comma-separated. Every git repo directly inside is checked for a loop. Empty means this host's Paseo projects. |
 | Run state folder | `~/.crew-flows` | Where each run's `*-state` folder is. The crewFlows manager writes here; a `loop.py` manifest may set its own `run_dir`. |
-| crewFlows skill | `~/.claude/plugins/marketplaces/max-personal/claudeConfig/skills/crew-flows` | Holds `skill:` briefs and the shared `craft.md`. |
+| crewFlows skill | `~/.claude/plugins/marketplaces/max-personal/claudeConfig/skills/crew-flows` | Holds `skill:` briefs, the shared roles and `craft.md`. |
 
 ## Where it reads from
 
@@ -60,7 +60,9 @@ The plugin reads the machine of the daemon it is installed on. Change its folder
   plugin reads `origin/main`, not the working tree, so a stale checkout does not hide a loop. It
   never fetches, so the view is as fresh as your last `git fetch`.
 - **Briefs.** A stage's brief comes from the same `origin/main`. A `skill:` brief, and `craft.md`,
-  come from the crewFlows skill folder.
+  come from the crewFlows skill folder. A stage with no brief runs a shared role: its brief is
+  `roles/<role>.md` and its model, thinking and persistence default from `roles/defaults.json`, both in
+  the crewFlows skill folder.
 - **Runs.** Each `*-state` folder in the run state folder. A run finds its agents by their
   `crew-flows.run` label, or by the agent map in its beacon.
 - **Crew.** The agent labelled `firstmate.role=first-mate`, and its crew. A crewmate's state is the

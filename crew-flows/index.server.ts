@@ -25,7 +25,7 @@ export default function contribute(server: PluginServerContext) {
   });
   server.handle(listTeams, async (_input, { paseo }) => {
     const [runs, live] = await Promise.all([
-      readSources().then(({ stateRoot }) => readRuns(stateRoot)),
+      readSources().then(({ stateRoot, skillDir }) => readRuns(stateRoot, skillDir)),
       liveAgentsLabelled(paseo, TEAM_LABELS),
     ]);
     return { runs: runs.runs, agents: live.agents, problems: [...runs.problems, ...live.problems] };
