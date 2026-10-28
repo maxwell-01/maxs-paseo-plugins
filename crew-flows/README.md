@@ -50,8 +50,8 @@ The plugin reads the machine of the daemon it is installed on. Change its folder
 
 | Setting | Default | What it is |
 | --- | --- | --- |
-| Repo folders | `/workspace` | Comma-separated. Every git repo directly inside is checked for a loop. |
-| Run state folder | `/workspace/.crew-flows` | Where the loop writes each run's `*-state` folder. |
+| Repo folders | empty | Comma-separated. Every git repo directly inside is checked for a loop. Empty means this host's Paseo projects. |
+| Run state folder | `~/.crew-flows` | Where each run's `*-state` folder is. The crewFlows manager writes here; a `loop.py` manifest may set its own `run_dir`. |
 | crewFlows skill | `~/.claude/plugins/marketplaces/max-personal/claudeConfig/skills/crew-flows` | Holds `skill:` briefs and the shared `craft.md`. |
 
 ## Where it reads from
@@ -67,7 +67,7 @@ The plugin reads the machine of the daemon it is installed on. Change its folder
   `<state>: <line>` its last turn ended with.
 
 A manifest that does not parse, a brief that is missing, or a folder that cannot be read shows as a
-problem. The rest of the screen still shows.
+problem. The rest of the screen still shows. A missing `craft.md` shows only in an Agents detail.
 
 ## Caveats
 

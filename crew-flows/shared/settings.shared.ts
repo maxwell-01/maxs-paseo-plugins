@@ -6,8 +6,10 @@ export const sources = defineSettings({
   scope: "host",
   version: 1,
   schema: z.object({
-    repoRoots: z.array(z.string().min(1)).min(1).default(["/workspace"]),
-    stateRoot: z.string().min(1).default("/workspace/.crew-flows"),
+    // Empty means this host's Paseo projects.
+    repoRoots: z.array(z.string().min(1)).default([]),
+    // Where the crewFlows manager writes each run's state folder.
+    stateRoot: z.string().min(1).default("~/.crew-flows"),
     // The marketplace checkout is the copy update.sh keeps current, so it holds the briefs loop.py runs.
     skillDir: z.string().min(1).default("~/.claude/plugins/marketplaces/max-personal/claudeConfig/skills/crew-flows"),
   }),

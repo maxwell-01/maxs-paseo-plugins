@@ -30,9 +30,9 @@ export function SourcesSettingsScreen({ theme, layout }: PluginSurfaceProps) {
     <ScrollView contentContainerStyle={{ padding: layout.compact ? 0 : 8 }}>
       <SettingsSection title="Where Crew & Flows reads on this host">
         <SettingsCard>
-          <SettingsInput label="Repo folders" hint="Comma-separated. Each git repo directly inside is checked for .claude/crew-flows.json on origin/main."
+          <SettingsInput label="Repo folders" hint="Comma-separated. Each git repo directly inside is checked for .claude/crew-flows.json on origin/main. Leave empty to check this host's Paseo projects."
             initialValue={shown.repoRoots} onChangeText={edit("repoRoots")} />
-          <SettingsInput label="Run state folder" hint="Where loop.py's <run_dir>-state folders live." initialValue={shown.stateRoot} onChangeText={edit("stateRoot")} />
+          <SettingsInput label="Run state folder" hint="Where each run's <name>-state folder lives. The crewFlows manager writes to ~/.crew-flows." initialValue={shown.stateRoot} onChangeText={edit("stateRoot")} />
           <SettingsInput label="crewFlows skill" hint="Holds skill: briefs and craft.md. ~ is this host's home." initialValue={shown.skillDir} onChangeText={edit("skillDir")} />
           <SettingsAction label={settings.saveError ?? "Applies the next time a tab refreshes."} actionLabel={settings.saving ? "Saving…" : "Save"}
             disabled={draft === null || settings.saving} onPress={save} />
