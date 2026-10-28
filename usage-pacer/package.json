@@ -1,0 +1,23 @@
+{
+  "name": "paseo-usage-pacer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Run the first mate's subscription usage guard whenever an agent starts a turn.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/maxwell-01/maxs-paseo-plugins.git",
+    "directory": "usage-pacer"
+  },
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@getpaseo/plugin": "0.13.2",
+    "@types/node": "^20.9.0",
+    "typescript": "^7.0.2",
+    "vitest": "^3.2.7"
+  }
+}
