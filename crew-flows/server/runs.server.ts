@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { z } from "zod";
 import type { Run } from "../shared/teams.shared";
 import { manifestSchema } from "./flows.server";
+import { readRoleDefaults, type RoleDefaults, stageSetup } from "./role-stages.server";
 
 const STATE_SUFFIX = "-state";
 const LOG_TAIL_LINES = 20;
@@ -27,14 +28,27 @@ async function readText(path: string): Promise<string | null> {
   return existsSync(path) ? readFile(path, "utf8") : null;
 }
 
-async function manifestStages(path: string) {
+async function manifestStages(path: string, roles: RoleDefaults | null, skillDir: string) {
   const text = await readText(path);
   if (text === null) return null;
   const manifest = manifestSchema.parse(JSON.parse(text));
   return {
     name: manifest.name,
-    stages: manifest.stages.map((s) => ({ id: s.id, reviews: s.reviews ?? null, persist: s.persist, always: s.always, model: s.model ?? manifest.model })),
+    stages: manifest.stages.map((s) => {
+      const { persist, model } = stageSetup(s, manifest, roles, skillDir);
+      return { id: s.id, reviews: s.reviews ?? null, persist, always: s.always, model };
+    }),
   };
+}
+
+// A run is still live with or without its stage strip, so a manifest it cannot resolve costs only the strip.
+async function runManifest(dir: string, path: string, roles: RoleDefaults | null, skillDir: string, problems: string[]) {
+  try {
+    return await manifestStages(path, roles, skillDir);
+  } catch (error) {
+    problems.push(`${dir}: ${error instanceof Error ? error.message : String(error)}`);
+    return null;
+  }
 }
 
 function runName(runId: string, issue: string | null): string {
@@ -42,11 +56,11 @@ function runName(runId: string, issue: string | null): string {
   return issue && name.endsWith(`-${issue}`) ? name.slice(0, -issue.length - 1) : name;
 }
 
-async function readRun(dir: string, problems: string[]): Promise<Run | null> {
+async function readRun(dir: string, roles: RoleDefaults | null, skillDir: string, problems: string[]): Promise<Run | null> {
   const alive = await readText(join(dir, "alive"));
   if (alive === null) return null;
   const beacon = beaconSchema.parse(JSON.parse(alive));
-  const manifest = beacon.manifest ? await manifestStages(beacon.manifest) : null;
+  const manifest = beacon.manifest ? await runManifest(dir, beacon.manifest, roles, skillDir, problems) : null;
   const files = (await readdir(dir)).sort();
   const verdicts = [];
   for (const file of files) {
@@ -79,16 +93,17 @@ async function readRun(dir: string, problems: string[]): Promise<Run | null> {
   };
 }
 
-export async function readRuns(stateRoot: string): Promise<{ runs: Run[]; problems: string[] }> {
+export async function readRuns(stateRoot: string, skillDir: string): Promise<{ runs: Run[]; problems: string[] }> {
   if (!existsSync(stateRoot)) return { runs: [], problems: [] };
   const dirs = (await readdir(stateRoot, { withFileTypes: true }))
     .filter((entry) => entry.isDirectory() && entry.name.endsWith(STATE_SUFFIX));
   const runs: Run[] = [];
   const problems: string[] = [];
+  const roles = await readRoleDefaults(skillDir, problems);
   for (const entry of dirs) {
     const dir = join(stateRoot, entry.name);
     try {
-      const run = await readRun(dir, problems);
+      const run = await readRun(dir, roles, skillDir, problems);
       if (run) runs.push(run);
     } catch (error) {
       problems.push(`${dir}: ${error instanceof Error ? error.message : String(error)}`);
