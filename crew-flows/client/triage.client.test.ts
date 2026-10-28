@@ -32,6 +32,12 @@ describe("triage", () => {
     ]);
   });
 
+  it("puts a crewmate whose last turn failed under needs you, with its failure", () => {
+    const { needsYou, doneOrIdle } = triage([mate, agent("broke", CREW, "failed: tests red on main")], [], NOW);
+    expect(needsYou.map((m) => [m.agent.id, m.state, m.line])).toEqual([["broke", "failed", "tests red on main"]]);
+    expect(ids(doneOrIdle)).toEqual([]);
+  });
+
   it("lists a crewmate that is both flagged by Paseo and stopped for a decision once", () => {
     const both = { ...agent("both", CREW, "needs-decision: which port?"), needsYou: true };
     expect(ids(triage([mate, both], [], NOW).needsYou)).toEqual(["both"]);

@@ -2,7 +2,7 @@ import type { LiveAgent, Run } from "../shared/teams.shared";
 import { type Crewmate, crewOf, readStateLine } from "./crew.client";
 import { runState } from "./teams.client";
 
-const WAITING_STATES = new Set(["needs-decision", "blocked"]);
+const WAITING_STATES = new Set(["needs-decision", "blocked", "failed"]);
 
 export interface Triage {
   mate: LiveAgent | null;

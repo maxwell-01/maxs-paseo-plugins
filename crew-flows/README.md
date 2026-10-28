@@ -13,7 +13,7 @@ Open it from **Crew & Flows** in the sidebar, or **Open Crew & Flows** in the Co
 What needs you, then what is running. One line counts each group. Then:
 
 - **Needs you.** An agent that asks for a permission, and each [FirstMate](https://paseo.cafe/plugins/firstmate)
-  crewmate whose last turn ended `needs-decision` or `blocked`, with its question.
+  crewmate whose last turn ended `needs-decision`, `blocked` or `failed`, with its question.
 - **Running now.** Each live crew-flows run, with every stage's latest verdict and live agent and
   what the current agent last said. Then each crewmate that is running.
 - **Recent runs.** Runs that ended or stopped, one line each. Tap one to open it.
