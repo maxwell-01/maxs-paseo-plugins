@@ -19,7 +19,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        plugin: [beam, crew-flows, cross-daemon, repo-notes]
+        plugin: [beam, cross-daemon, repo-notes]
     defaults:
       run:
         working-directory: ${{ matrix.plugin }}

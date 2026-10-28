@@ -37,6 +37,8 @@ brief, and whether it persists or gates. Pick a repo's stage to see how the loop
 
 ## Install
 
+This plugin is private: it is not published to npm, and it needs Max's private crewFlows skill.
+
 ```bash
 paseo plugin install https://github.com/maxwell-01/maxs-paseo-plugins.git:crew-flows
 ```
