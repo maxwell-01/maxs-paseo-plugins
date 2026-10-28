@@ -1,0 +1,4 @@
+{
+  "id": "usage-pacer",
+  "requirements": { "paseo": ">=0.13.2" }
+}
