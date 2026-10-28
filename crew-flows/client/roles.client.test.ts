@@ -10,7 +10,7 @@ function stage(id: string, extra: Partial<Stage> = {}): Stage {
 }
 
 function flow(name: string, stages: Stage[]): Flow {
-  return { name, repoDir: `/workspace/${name}`, remote: null, manifestPath: ".claude/ticket-loop.json",
+  return { name, repoDir: `/workspace/${name}`, remote: null, manifestPath: ".claude/crew-flows.json",
     maxRounds: 3, stallSeconds: 420, queue: null, stages };
 }
 

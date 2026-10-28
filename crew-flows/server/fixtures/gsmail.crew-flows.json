@@ -2,7 +2,7 @@
   "name": "gsmail",
   "model": "claude-sonnet-5",
   "thinking": "low",
-  "run_dir": "/workspace/.ticket-loop/gsmail-{{ISSUE}}",
+  "run_dir": "/workspace/.crew-flows/gsmail-{{ISSUE}}",
   "stages": [
     {"id": "plan", "brief": "briefs/plan.md", "owner_approves": true},
     {"id": "plan-review", "brief": "briefs/plan-review.md", "reviews": "plan"},

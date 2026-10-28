@@ -10,9 +10,9 @@ export interface Crewmate {
 }
 
 // Under --subscription-guard loop.py labels its agents as crew too; runs from before the
-// ticket-loop.run label carry only this task.
+// crew-flows.run label carry only this task.
 const isLoopAgent = (agent: LiveAgent) =>
-  Boolean(agent.labels["ticket-loop.run"]) || (agent.labels["firstmate.task"] ?? "").startsWith("ticket-loop:");
+  Boolean(agent.labels["crew-flows.run"]) || (agent.labels["firstmate.task"] ?? "").startsWith("crew-flows:");
 
 const WAITING_STATES = new Set(["needs-decision", "blocked"]);
 

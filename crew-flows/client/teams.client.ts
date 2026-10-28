@@ -26,7 +26,7 @@ export function runStages(run: Run, flows: Pick<Flow, "name" | "stages">[], agen
   const live = runState(run, now) === "live";
   return stages.map((stage) => {
     const verdicts = run.verdicts.filter((v) => v.stage === stage.id).sort((a, b) => b.round - a.round);
-    const agent = agents.find((a) => a.labels["ticket-loop.run"] === run.runId && a.labels["ticket-loop.stage"] === stage.id)
+    const agent = agents.find((a) => a.labels["crew-flows.run"] === run.runId && a.labels["crew-flows.stage"] === stage.id)
       ?? agents.find((a) => a.id === run.agents[stage.id])
       ?? null;
     return { id: stage.id, reviews: stage.reviews, persist: stage.persist, model: stage.model,

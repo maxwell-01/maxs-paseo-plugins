@@ -14,7 +14,7 @@ function stateDir(root: string, name: string, files: Record<string, string>) {
 describe("readRuns", () => {
   it("reads a run's beacon, the agent of each stage, its manifest's stages and its verdicts", async () => {
     const root = makeTempDir("crew-flows-runs-");
-    const manifest = join(root, "ticket-loop.json");
+    const manifest = join(root, "crew-flows.json");
     writeFileSync(manifest, JSON.stringify({ name: "traqx", stages: [
       { id: "plan", brief: "b.md" }, { id: "plan-review", brief: "b.md", reviews: "plan", persist: false }] }));
     stateDir(root, "traqx-294", {
