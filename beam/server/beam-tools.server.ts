@@ -32,7 +32,7 @@ function heldText(holder: BeamHolder | null, waiting: WaitingAgent[], callerAgen
   const whoToTell = !holder
     ? ""
     : holder.agentId
-      ? ` Message ${holder.agentId} to say you are waiting.`
+      ? ` Message ${holder.agentId} to say you are waiting, if you have not already.`
       : " It was beamed in from the Paseo app, not by an agent, so wait for it.";
   return `Beam is held by ${describeHolder(holder)}.${queue}${whoToTell} ${KEEP_WAITING}`;
 }
@@ -80,10 +80,12 @@ export function createBeamTools({ agentBeam, paseo }: { agentBeam: ReturnType<ty
         const outcome = await agentBeam.beamIn(port, agentId, { waitSeconds, signal: caller.signal });
         switch (outcome.result) {
           case "beamed-in":
-            return { text: "Beamed in. Your workspace is now mirrored onto the main checkout. Call beam_out when you are done testing." };
+            return {
+              text: `Beamed in. Your workspace is now mirrored onto the main checkout. Call beam_out when you are done testing.${queueForHolder(outcome.waiting, "Tell them where they stand.")}`,
+            };
           case "already-yours":
             return {
-              text: `Your workspace is already beaming onto the main checkout.${queueForHolder(outcome.waiting, "Tell them where they stand, and beam out as soon as you are done.")}`,
+              text: `Your workspace is already beaming onto the main checkout.${queueForHolder(outcome.waiting, "Tell them where they stand if you have not already, and beam out as soon as you are done.")}`,
             };
           case "held":
             return { text: heldText(outcome.holder, outcome.waiting, agentId) };

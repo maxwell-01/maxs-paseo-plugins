@@ -126,7 +126,7 @@ describe("beam tools through the real socket and proxy", () => {
     const rival = await runCli(proxyPath, ["beam_in", "--wait", "0"], "agent-b");
     expect(rival.code).toBe(0);
     expect(rival.stdout).toContain('held by agent "Browser QA" (agent-a) in workspace "alpha"');
-    expect(rival.stdout).toContain("Message agent-a to say you are waiting.");
+    expect(rival.stdout).toContain("Message agent-a to say you are waiting");
 
     const holderStatus = await runCli(proxyPath, ["beam_status"], "agent-a");
     expect(JSON.parse(holderStatus.stdout)).toMatchObject({ youHoldIt: true, waiting: [{ agentId: "agent-b", agentTitle: "Eval worker" }] });

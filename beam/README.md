@@ -96,9 +96,10 @@ Waiting works like this:
 - Several agents can wait at once. Beam gives no guarantee about who goes first.
 - When the beam is held, `beam_in` names the agent that beamed in and tells the caller to message
   that agent that it is waiting. Beam keeps a list of the agents that were refused, in the order
-  they first asked. The holding agent sees that list in `beam_status`, in a repeat `beam_in`, and in
-  its `beam_out` reply, which asks it to tell the first waiting agent that the beam is free. An
-  agent leaves the list when it beams in, or 30 minutes after it last asked.
+  they first asked. The holding agent sees that list in `beam_status`, in its `beam_in` replies, and
+  in its `beam_out` reply, which asks it to tell the first waiting agent that the beam is free. An
+  agent leaves the list when it beams in, when its wait is cancelled, or 30 minutes after it last
+  asked.
 - A click on the Beam button in the app does not wait in line. It beams in at once, or fails if the
   beam is held.
 - If an agent's tool call is cancelled or its process dies, the wait stops and that agent never

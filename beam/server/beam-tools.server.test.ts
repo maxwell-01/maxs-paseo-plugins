@@ -24,10 +24,10 @@ function tools(overrides: { beamIn?: BeamInResult; beamOut?: BeamOutResult; call
     async status() {
       return current
         ? { active: true as const, holder: current, callerHolds: overrides.callerHolds ?? false, waiting }
-        : { active: false as const, callerHolds: false, waiting };
+        : { active: false as const, callerHolds: false, waiting: [] };
     },
     async beamIn() {
-      return overrides.beamIn ?? { result: "beamed-in" as const };
+      return overrides.beamIn ?? { result: "beamed-in" as const, waiting: [] };
     },
     async beamOut() {
       return overrides.beamOut ?? { result: "beamed-out" as const, waiting: [] };
@@ -94,7 +94,7 @@ describe("beam tools", () => {
     expect(result.text).toBe(
       'Beam is held by agent "Browser QA" (agent-q) in workspace "alpha" (/work/alpha) since 2026-01-01T10:00:00.000Z. ' +
         'Agents waiting, in order: 1. "Eval worker" (agent-e), 2. agent-u (you). ' +
-        "Message agent-q to say you are waiting. Call beam_in again to keep waiting; call beam_status first if a call timed out.",
+        "Message agent-q to say you are waiting, if you have not already. Call beam_in again to keep waiting; call beam_status first if a call timed out.",
     );
   });
 
@@ -114,7 +114,15 @@ describe("beam tools", () => {
     expect(result.text).toBe(
       "Your workspace is already beaming onto the main checkout. " +
         'Agents waiting for the beam, in order: 1. "Eval worker" (agent-e), 2. agent-u. ' +
-        "Tell them where they stand, and beam out as soon as you are done.",
+        "Tell them where they stand if you have not already, and beam out as soon as you are done.",
+    );
+  });
+
+  it("tells a new holder which agents are still waiting", async () => {
+    const result = await tools({ beamIn: { result: "beamed-in", waiting: [untitled] } }).call("beam_in");
+    expect(result.text).toBe(
+      "Beamed in. Your workspace is now mirrored onto the main checkout. Call beam_out when you are done testing. " +
+        "Agents waiting for the beam, in order: 1. agent-u. Tell them where they stand.",
     );
   });
 

@@ -31,7 +31,7 @@ interface CallerWorkspace {
 }
 
 export type BeamInResult =
-  | { result: "beamed-in" }
+  | { result: "beamed-in"; waiting: WaitingAgent[] }
   | { result: "already-yours"; waiting: WaitingAgent[] }
   | { result: "held"; holder: BeamHolder | null; waiting: WaitingAgent[]; waitedSeconds: number }
   | { result: "aborted" };
@@ -91,7 +91,7 @@ export function createAgentBeam({ pollMs }: { pollMs: number }) {
     await releaseStaleHolder(port);
     const holder = readHolder();
     if (!holder) {
-      return { active: false, callerHolds: false, waiting: waitingAgents.list() };
+      return { active: false, callerHolds: false, waiting: [] };
     }
     const callerWorkspaceId = agentId ? (await port.agents.ref(agentId).refresh())?.agent.workspaceId : null;
     return { active: true, holder, callerHolds: holder.workspaceId === callerWorkspaceId, waiting: waitingAgents.list() };
@@ -109,6 +109,7 @@ export function createAgentBeam({ pollMs }: { pollMs: number }) {
     for (;;) {
       await releaseStaleHolder(port);
       if (options.signal.aborted) {
+        waitingAgents.left(agentId);
         return { result: "aborted" };
       }
       if (readHolder()?.workspaceId === caller.workspaceId) {
@@ -119,9 +120,10 @@ export function createAgentBeam({ pollMs }: { pollMs: number }) {
         const { agentTitle, ...workspace } = caller;
         await beamWorkspaceIn(port, { ...workspace, agent: { agentId, agentTitle } }, options.signal);
         waitingAgents.left(agentId);
-        return { result: "beamed-in" };
+        return { result: "beamed-in", waiting: waitingAgents.list() };
       } catch (error) {
         if (options.signal.aborted) {
+          waitingAgents.left(agentId);
           return { result: "aborted" };
         }
         if (!(error instanceof BeamHeldError)) {
