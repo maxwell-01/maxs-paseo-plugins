@@ -14,6 +14,7 @@ function toolProxyMain(settings: { socketPath: string; tools: unknown[]; pluginT
   const net: typeof import("node:net") = require("node:net");
   const readline: typeof import("node:readline") = require("node:readline");
   const callerAgentId = process.env.PASEO_AGENT_ID ?? null;
+  const callerToken = process.env.BEAM_AGENT_TOKEN ?? null;
   const pluginTimeoutMs = settings.pluginTimeoutMs;
   const pendingCalls = new Map<unknown, import("node:net").Socket>();
 
@@ -45,7 +46,7 @@ function toolProxyMain(settings: { socketPath: string; tools: unknown[]; pluginT
     });
 
   const callPlugin = async (name: unknown, args: unknown, requestId: unknown) => {
-    const answer = await askPlugin({ type: "call", name, arguments: args ?? {}, callerAgentId }, requestId);
+    const answer = await askPlugin({ type: "call", name, arguments: args ?? {}, callerAgentId, callerToken }, requestId);
     return {
       text: typeof answer.text === "string" ? answer.text : String(answer.error ?? "No reply"),
       isError: answer.isError === true || answer.error !== undefined,

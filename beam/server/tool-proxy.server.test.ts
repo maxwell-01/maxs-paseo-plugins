@@ -6,6 +6,8 @@ import { installToolProxy } from "./tool-proxy.server";
 import { serveTools } from "./tool-socket.server";
 import type { Tools } from "./tools.server";
 
+const noTokens = () => null;
+
 const echoTools: Tools = {
   definitions: [{ name: "echo", description: "Echo", inputSchema: { type: "object" } }],
   async call(name, args, caller) {
@@ -21,12 +23,12 @@ describe("tool proxy started by an agent", () => {
   const install = async (tools: Tools, pluginTimeoutMs = 10_000) => {
     const dir = makeTempDir("beam-");
     const socketPath = join(dir, "tools.sock");
-    stops.push(await await serveTools(socketPath, tools));
+    stops.push(await await serveTools(socketPath, tools, noTokens));
     return installToolProxy(dir, { socketPath, tools: tools.definitions, pluginTimeoutMs });
   };
 
   it("lists its tools and forwards calls to the plugin, naming the calling agent", async () => {
-    const proxy = startProxy(await install(echoTools), "agent-7");
+    const proxy = startProxy(await install(echoTools), { PASEO_AGENT_ID: "agent-7" });
     stops.push(() => proxy.child.kill());
 
     const init = await proxy.request("initialize", { protocolVersion: "2025-06-18" });
@@ -38,9 +40,19 @@ describe("tool proxy started by an agent", () => {
     expect(JSON.parse(call.result.content[0].text)).toEqual({ name: "echo", args: { waitSeconds: 3 }, callerAgentId: "agent-7" });
   });
 
+  it("sends its agent token to the plugin, which names the agent it belongs to", async () => {
+    const dir = makeTempDir("beam-");
+    const socketPath = join(dir, "tools.sock");
+    stops.push(await serveTools(socketPath, echoTools, (token) => (token === "token-1" ? "agent-codex" : null)));
+    const proxy = startProxy(installToolProxy(dir, { socketPath, tools: echoTools.definitions, pluginTimeoutMs: 10_000 }), { BEAM_AGENT_TOKEN: "token-1" });
+    stops.push(() => proxy.child.kill());
+    const call = await proxy.request("tools/call", { name: "echo", arguments: {} });
+    expect(JSON.parse(call.result.content[0].text)).toMatchObject({ callerAgentId: "agent-codex" });
+  });
+
   it("reports an error to the agent when the plugin is not running", async () => {
     const dir = makeTempDir("beam-");
-    const proxy = startProxy(installToolProxy(dir, { socketPath: join(dir, "missing.sock"), tools: echoTools.definitions, pluginTimeoutMs: 10_000 }), "agent-7");
+    const proxy = startProxy(installToolProxy(dir, { socketPath: join(dir, "missing.sock"), tools: echoTools.definitions, pluginTimeoutMs: 10_000 }), { PASEO_AGENT_ID: "agent-7" });
     stops.push(() => proxy.child.kill());
     const list = await proxy.request("tools/list");
     expect(list.result.tools.map((tool: { name: string }) => tool.name)).toEqual(["echo"]);
@@ -51,7 +63,7 @@ describe("tool proxy started by an agent", () => {
 
   it("answers a line that is not JSON with a parse error instead of dying", async () => {
     const dir = makeTempDir("beam-");
-    const proxy = startProxy(installToolProxy(dir, { socketPath: join(dir, "missing.sock"), tools: [], pluginTimeoutMs: 10_000 }), "agent-7");
+    const proxy = startProxy(installToolProxy(dir, { socketPath: join(dir, "missing.sock"), tools: [], pluginTimeoutMs: 10_000 }), { PASEO_AGENT_ID: "agent-7" });
     stops.push(() => proxy.child.kill());
     expect(await proxy.sendRaw("not json")).toMatchObject({ id: null, error: { code: -32700 } });
     expect(await proxy.sendRaw("null")).toMatchObject({ id: null, error: { code: -32600 } });
@@ -60,7 +72,7 @@ describe("tool proxy started by an agent", () => {
   });
 
   it("gives up on a plugin that does not answer within the timeout it was installed with", async () => {
-    const proxy = startProxy(await install({ definitions: echoTools.definitions, call: () => new Promise(() => {}) }, 200), "agent-7");
+    const proxy = startProxy(await install({ definitions: echoTools.definitions, call: () => new Promise(() => {}) }, 200), { PASEO_AGENT_ID: "agent-7" });
     stops.push(() => proxy.child.kill());
     const call = await proxy.request("tools/call", { name: "echo", arguments: {} });
     expect(call.result.isError).toBe(true);
@@ -80,7 +92,7 @@ describe("tool proxy started by an agent", () => {
             caller.signal.addEventListener("abort", () => resolve({ text: "aborted" }));
           }),
       }),
-      "agent-7",
+      { PASEO_AGENT_ID: "agent-7" },
     );
     stops.push(() => proxy.child.kill());
 
@@ -101,7 +113,7 @@ describe("tool proxy run as a command", () => {
   const install = async () => {
     const dir = makeTempDir("beam-");
     const socketPath = join(dir, "tools.sock");
-    stops.push(await serveTools(socketPath, echoTools));
+    stops.push(await serveTools(socketPath, echoTools, noTokens));
     return installToolProxy(dir, { socketPath, tools: echoTools.definitions, pluginTimeoutMs: 10_000 });
   };
 

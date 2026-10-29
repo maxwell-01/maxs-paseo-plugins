@@ -12,9 +12,12 @@ const toolCallSchema = z.object({
   name: z.string(),
   arguments: z.unknown(),
   callerAgentId: z.string().nullable(),
+  callerToken: z.string().nullable().optional(),
 });
 
-async function answer(tools: Tools, line: string, signal: AbortSignal): Promise<unknown> {
+type AgentIdForToken = (token: string) => string | null;
+
+async function answer(tools: Tools, agentIdForToken: AgentIdForToken, line: string, signal: AbortSignal): Promise<unknown> {
   let body: unknown;
   try {
     body = JSON.parse(line);
@@ -23,14 +26,16 @@ async function answer(tools: Tools, line: string, signal: AbortSignal): Promise<
   }
   const request = toolCallSchema.safeParse(body);
   if (!request.success) return { error: `Malformed tool request: ${z.prettifyError(request.error)}` };
+  const { name, callerAgentId, callerToken } = request.data;
   try {
-    return await tools.call(request.data.name, request.data.arguments ?? {}, { callerAgentId: request.data.callerAgentId, signal });
+    const caller = { callerAgentId: callerAgentId ?? (callerToken ? agentIdForToken(callerToken) : null), signal };
+    return await tools.call(name, request.data.arguments ?? {}, caller);
   } catch (error) {
-    return { text: `beam tool ${request.data.name} failed: ${String(error)}`, isError: true };
+    return { text: `beam tool ${name} failed: ${String(error)}`, isError: true };
   }
 }
 
-function serveConnection(tools: Tools, socket: Socket): void {
+function serveConnection(tools: Tools, agentIdForToken: AgentIdForToken, socket: Socket): void {
   const disconnected = new AbortController();
   let buffered = "";
   let received = false;
@@ -41,7 +46,7 @@ function serveConnection(tools: Tools, socket: Socket): void {
     const newline = buffered.indexOf("\n");
     if (newline === -1) return;
     received = true;
-    void answer(tools, buffered.slice(0, newline), disconnected.signal).then((reply) => {
+    void answer(tools, agentIdForToken, buffered.slice(0, newline), disconnected.signal).then((reply) => {
       if (!disconnected.signal.aborted) socket.end(JSON.stringify(reply));
     });
   });
@@ -54,10 +59,10 @@ function serveConnection(tools: Tools, socket: Socket): void {
 
 // One request per connection: the proxy writes one JSON line and keeps its side open; the reply is
 // the whole response stream. If the connection ends before the reply is written, the tool's signal aborts.
-export async function serveTools(socketPath: string, tools: Tools): Promise<() => void> {
+export async function serveTools(socketPath: string, tools: Tools, agentIdForToken: AgentIdForToken): Promise<() => void> {
   mkdirSync(dirname(socketPath), { recursive: true, mode: OWNER_ONLY_DIR });
   rmSync(socketPath, { force: true });
-  const server = createServer((socket) => serveConnection(tools, socket));
+  const server = createServer((socket) => serveConnection(tools, agentIdForToken, socket));
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(socketPath, () => {

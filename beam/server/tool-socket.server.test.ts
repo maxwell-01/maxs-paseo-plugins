@@ -5,8 +5,10 @@ import { makeTempDir } from "./temp-dir.test-support";
 import { serveTools } from "./tool-socket.server";
 import type { Tools } from "./tools.server";
 
-const request = (name: string, callerAgentId: string | null = null) =>
-  `${JSON.stringify({ type: "call", name, arguments: {}, callerAgentId })}\n`;
+const request = (name: string, callerAgentId: string | null = null, callerToken: string | null = null) =>
+  `${JSON.stringify({ type: "call", name, arguments: {}, callerAgentId, callerToken })}\n`;
+
+const tokens = (token: string) => (token === "token-1" ? "agent-codex" : null);
 
 function connect(socketPath: string): Promise<Socket> {
   return new Promise((resolve) => {
@@ -34,7 +36,7 @@ describe("serveTools", () => {
 
   const serve = async (tools: Tools) => {
     const socketPath = join(makeTempDir("beam-"), "not-yet", "tools.sock");
-    stops.push(await serveTools(socketPath, tools));
+    stops.push(await serveTools(socketPath, tools, tokens));
     return socketPath;
   };
 
@@ -46,9 +48,29 @@ describe("serveTools", () => {
     expect(JSON.parse(await reply)).toEqual({ text: "ping for agent-1" });
   });
 
+  it("names a caller with no agent id by its token, as a Codex agent's proxy is", async () => {
+    const socketPath = await serve({ definitions: [], call: async (name, _args, caller) => ({ text: `${name} for ${caller.callerAgentId}` }) });
+    const ask = async (callerToken: string) => {
+      const socket = await connect(socketPath);
+      const reply = readReply(socket);
+      socket.write(request("ping", null, callerToken));
+      return JSON.parse(await reply);
+    };
+    expect(await ask("token-1")).toEqual({ text: "ping for agent-codex" });
+    expect(await ask("token-unknown")).toEqual({ text: "ping for null" });
+  });
+
+  it("still serves a proxy written before agent tokens, which sends no token field", async () => {
+    const socketPath = await serve({ definitions: [], call: async (name, _args, caller) => ({ text: `${name} for ${caller.callerAgentId}` }) });
+    const socket = await connect(socketPath);
+    const reply = readReply(socket);
+    socket.write(`${JSON.stringify({ type: "call", name: "ping", arguments: {}, callerAgentId: "agent-1" })}\n`);
+    expect(JSON.parse(await reply)).toEqual({ text: "ping for agent-1" });
+  });
+
   it("rejects when it cannot listen", async () => {
     const tooLongForASocket = join(makeTempDir("beam-"), "x".repeat(200), "tools.sock");
-    await expect(serveTools(tooLongForASocket, { definitions: [], call: async () => ({ text: "" }) })).rejects.toThrow();
+    await expect(serveTools(tooLongForASocket, { definitions: [], call: async () => ({ text: "" }) }, tokens)).rejects.toThrow();
   });
 
   it("answers a malformed request with an error", async () => {

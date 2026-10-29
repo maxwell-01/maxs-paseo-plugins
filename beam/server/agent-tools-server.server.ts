@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { createAgentTokens } from "./agent-tokens.server";
 import { type AgentBeamPort, type createAgentBeam, MAX_WAIT_SECONDS } from "./agent-beam.server";
 import { createBeamTools } from "./beam-tools.server";
 import { installToolProxy } from "./tool-proxy.server";
@@ -18,6 +19,7 @@ export async function startAgentTools(options: {
     tools: tools.definitions,
     pluginTimeoutMs: (MAX_WAIT_SECONDS + PROXY_TIMEOUT_MARGIN_SECONDS) * 1000,
   });
-  const stop = await serveTools(socketPath, tools);
-  return { launch: { command: process.execPath, proxyPath }, toolNames: tools.definitions.map((tool) => tool.name), stop };
+  const tokens = createAgentTokens(join(options.stateDir, "agent-tokens.json"));
+  const stop = await serveTools(socketPath, tools, tokens.agentIdFor);
+  return { launch: { command: process.execPath, proxyPath }, toolNames: tools.definitions.map((tool) => tool.name), tokens, stop };
 }
