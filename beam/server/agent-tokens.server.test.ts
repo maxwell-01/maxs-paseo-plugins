@@ -32,7 +32,7 @@ describe("agent tokens", () => {
   it("refuses a file it cannot read rather than treating every token as unknown", () => {
     const path = join(makeTempDir("beam-tokens-"), "agent-tokens.json");
     writeFileSync(path, "not json");
-    expect(() => createAgentTokens(path).agentIdFor("token-1")).toThrow();
+    expect(() => createAgentTokens(path).agentIdFor("token-1")).toThrow(path);
   });
 });
 

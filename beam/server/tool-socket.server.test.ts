@@ -57,7 +57,7 @@ describe("serveTools", () => {
       return JSON.parse(await reply);
     };
     expect(await ask("token-1")).toEqual({ text: "ping for agent-codex" });
-    expect(await ask("token-unknown")).toEqual({ text: "ping for null" });
+    expect(await ask("token-unknown")).toEqual({ text: expect.stringContaining("does not recognise this agent's BEAM_AGENT_TOKEN"), isError: true });
   });
 
   it("still serves a proxy written before agent tokens, which sends no token field", async () => {

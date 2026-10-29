@@ -12,10 +12,16 @@ const toolCallSchema = z.object({
   name: z.string(),
   arguments: z.unknown(),
   callerAgentId: z.string().nullable(),
-  callerToken: z.string().nullable().optional(),
+  callerToken: z.string().nullish(),
 });
 
 type AgentIdForToken = (token: string) => string | null;
+
+const UNKNOWN_TOKEN =
+  "Beam does not recognise this agent's BEAM_AGENT_TOKEN, so it cannot tell which agent is calling. " +
+  'Run the same tool as a command instead: node "${PASEO_HOME:-$HOME/.paseo}/plugin-data/beam/tool-proxy.cjs" <tool>';
+
+const agentIdOfToken = (token: string | null | undefined, agentIdForToken: AgentIdForToken) => (token ? agentIdForToken(token) : null);
 
 async function answer(tools: Tools, agentIdForToken: AgentIdForToken, line: string, signal: AbortSignal): Promise<unknown> {
   let body: unknown;
@@ -28,8 +34,9 @@ async function answer(tools: Tools, agentIdForToken: AgentIdForToken, line: stri
   if (!request.success) return { error: `Malformed tool request: ${z.prettifyError(request.error)}` };
   const { name, callerAgentId, callerToken } = request.data;
   try {
-    const caller = { callerAgentId: callerAgentId ?? (callerToken ? agentIdForToken(callerToken) : null), signal };
-    return await tools.call(name, request.data.arguments ?? {}, caller);
+    const agentId = callerAgentId ?? agentIdOfToken(callerToken, agentIdForToken);
+    if (agentId === null && callerToken) return { text: UNKNOWN_TOKEN, isError: true };
+    return await tools.call(name, request.data.arguments ?? {}, { callerAgentId: agentId, signal });
   } catch (error) {
     return { text: `beam tool ${name} failed: ${String(error)}`, isError: true };
   }

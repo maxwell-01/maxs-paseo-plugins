@@ -1,11 +1,8 @@
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 
-// The tests run inside a Paseo agent, whose own identity must not leak into the proxy.
-function envWith(callerEnv: Record<string, string>) {
-  const { PASEO_AGENT_ID: _agentId, BEAM_AGENT_TOKEN: _token, ...env } = process.env;
-  return { ...env, ...callerEnv };
-}
+// Only the caller's identity, so the identity of the agent running these tests cannot leak in.
+const envWith = (callerEnv: Record<string, string>) => ({ PATH: process.env.PATH ?? "", ...callerEnv });
 
 export function startProxy(proxyPath: string, callerEnv: Record<string, string>) {
   const child = spawn(process.execPath, [proxyPath], { env: envWith(callerEnv) });

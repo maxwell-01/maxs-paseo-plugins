@@ -76,8 +76,8 @@ Codex and OpenCode agent created after the plugin is installed or updated:
   can do this.
 
 The tools find the calling agent through `PASEO_AGENT_ID`. Codex does not pass that variable to MCP
-servers, so Beam gives each agent's tool server a random `BEAM_AGENT_TOKEN` and records which agent
-it belongs to in `~/.paseo/plugin-data/beam/agent-tokens.json` when Paseo opens the agent.
+servers, so Beam gives each Codex agent's tool server a random `BEAM_AGENT_TOKEN` and records which agent
+it belongs to in `${PASEO_HOME:-$HOME/.paseo}/plugin-data/beam/agent-tokens.json` when Paseo opens the agent.
 
 Agents created before the update, and agents on other providers, run the same tools as a command
 instead. The command's shell has `PASEO_AGENT_ID`:
