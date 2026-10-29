@@ -50,8 +50,8 @@ describe("beam tools through the real socket and proxy", () => {
         "ws-2": { name: "beta", directory: workspaceDirs[1], title: null },
       },
       agents: {
-        "agent-a": { workspaceId: "ws-1", provider: "claude" },
-        "agent-b": { workspaceId: "ws-2", provider: "claude" },
+        "agent-a": { workspaceId: "ws-1", provider: "claude", title: "Browser QA" },
+        "agent-b": { workspaceId: "ws-2", provider: "claude", title: "Eval worker" },
       },
     });
     const tools = createBeamTools({ agentBeam: createAgentBeam({ pollMs: POLL_MS }), paseo: () => world.port });
@@ -116,7 +116,7 @@ describe("beam tools through the real socket and proxy", () => {
   it("serves a command-line call through the same script", async () => {
     const status = await runCli(proxyPath, ["beam_status"], "agent-a");
     expect(status.code).toBe(0);
-    expect(JSON.parse(status.stdout)).toEqual({ active: false, youHoldIt: false });
+    expect(JSON.parse(status.stdout)).toEqual({ active: false, youHoldIt: false, waiting: [] });
 
     const beamIn = await runCli(proxyPath, ["beam_in", "--wait", "0"], "agent-a");
     expect(beamIn.code).toBe(0);
@@ -125,6 +125,10 @@ describe("beam tools through the real socket and proxy", () => {
 
     const rival = await runCli(proxyPath, ["beam_in", "--wait", "0"], "agent-b");
     expect(rival.code).toBe(0);
-    expect(rival.stdout).toContain('held by workspace "alpha"');
+    expect(rival.stdout).toContain('held by agent "Browser QA" (agent-a) in workspace "alpha"');
+    expect(rival.stdout).toContain("Message agent-a to say you are waiting");
+
+    const holderStatus = await runCli(proxyPath, ["beam_status"], "agent-a");
+    expect(JSON.parse(holderStatus.stdout)).toMatchObject({ youHoldIt: true, waiting: [{ agentId: "agent-b", agentTitle: "Eval worker" }] });
   });
 });

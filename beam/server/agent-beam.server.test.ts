@@ -16,6 +16,7 @@ describe("agent beam", () => {
   let mainRepo: string;
   let ws1: string;
   let ws2: string;
+  let ws3: string;
   let realHome: string | undefined;
 
   beforeEach(() => {
@@ -23,6 +24,7 @@ describe("agent beam", () => {
     mainRepo = join(root, "main");
     ws1 = join(root, "ws1");
     ws2 = join(root, "ws2");
+    ws3 = join(root, "ws3");
     mkdirSync(mainRepo, { recursive: true });
     git(mainRepo, "init", "-b", "main");
     git(mainRepo, "config", "user.email", "beam-test@example.com");
@@ -33,6 +35,7 @@ describe("agent beam", () => {
     git(mainRepo, "commit", "-m", "initial");
     git(mainRepo, "worktree", "add", "-b", "one", ws1);
     git(mainRepo, "worktree", "add", "-b", "two", ws2);
+    git(mainRepo, "worktree", "add", "-b", "three", ws3);
     writeFileSync(join(ws1, "owner.txt"), "ws1\n");
     writeFileSync(join(ws2, "owner.txt"), "ws2\n");
 
@@ -52,12 +55,15 @@ describe("agent beam", () => {
       workspaces: {
         "ws-1": { name: "alpha", directory: ws1, title: null },
         "ws-2": { name: "beta", directory: ws2, title: "Checkout rewrite" },
+        "ws-3": { name: "gamma", directory: ws3, title: null },
       },
       agents: {
-        "agent-a": { workspaceId: "ws-1", provider: "claude" },
-        "agent-a2": { workspaceId: "ws-1", provider: "claude" },
-        "agent-b": { workspaceId: "ws-2", provider: "claude" },
-        "agent-lost": { workspaceId: null, provider: "claude" },
+        "agent-a": { workspaceId: "ws-1", provider: "claude", title: "Browser QA" },
+        "agent-a2": { workspaceId: "ws-1", provider: "claude", title: null },
+        "agent-b": { workspaceId: "ws-2", provider: "claude", title: "Eval worker" },
+        "agent-b2": { workspaceId: "ws-2", provider: "claude", title: null },
+        "agent-c": { workspaceId: "ws-3", provider: "claude", title: "Docs pass" },
+        "agent-lost": { workspaceId: null, provider: "claude", title: null },
       },
     });
   }
@@ -71,6 +77,7 @@ describe("agent beam", () => {
         workspaceId: "ws-2",
         workspaceName: "beta",
         workspaceDir: ws2,
+        agentTitle: "Eval worker",
       });
     });
 
@@ -114,6 +121,7 @@ describe("agent beam", () => {
 
       await expect(beam.beamIn(world.port, "agent-a", { signal: signal() })).resolves.toEqual({
         result: "beamed-in",
+        waiting: [],
       });
 
       expect(mainOwner()).toBe("ws1\n");
@@ -129,6 +137,7 @@ describe("agent beam", () => {
 
       await expect(beam.beamIn(world.port, "agent-a2", { signal: signal() })).resolves.toEqual({
         result: "already-yours",
+        waiting: [],
       });
 
       expect(readHolder()?.startedAt).toBe(startedAt);
@@ -155,7 +164,7 @@ describe("agent beam", () => {
       expect(mainOwner()).toBe("ws1\n");
       await beam.beamOut(world.port, "agent-a");
 
-      await expect(waiting).resolves.toEqual({ result: "beamed-in" });
+      await expect(waiting).resolves.toEqual({ result: "beamed-in", waiting: [] });
       expect(mainOwner()).toBe("ws2\n");
       expect(world.titleOf("ws-2")).toBe("⚡ Checkout rewrite");
     });
@@ -223,7 +232,7 @@ describe("agent beam", () => {
 
       await expect(
         beam.beamIn(world.port, "agent-b", { waitSeconds: 0, signal: signal() }),
-      ).resolves.toEqual({ result: "beamed-in" });
+      ).resolves.toEqual({ result: "beamed-in", waiting: [] });
 
       expect(mainOwner()).toBe("ws2\n");
       expect(readHolder()?.workspaceId).toBe("ws-2");
@@ -272,13 +281,115 @@ describe("agent beam", () => {
     });
   });
 
+  describe("waiting agents", () => {
+    it("records which agent holds the beam", async () => {
+      const world = fakeWorld();
+      await createAgentBeam({ pollMs: 10 }).beamIn(world.port, "agent-a", { signal: signal() });
+
+      expect(readHolder()).toMatchObject({ agentId: "agent-a", agentTitle: "Browser QA" });
+    });
+
+    it("queues refused agents in the order they first asked, once each", async () => {
+      const world = fakeWorld();
+      const beam = createAgentBeam({ pollMs: 10 });
+      await beam.beamIn(world.port, "agent-a", { signal: signal() });
+
+      await beam.beamIn(world.port, "agent-b", { waitSeconds: 0, signal: signal() });
+      await beam.beamIn(world.port, "agent-b2", { waitSeconds: 0, signal: signal() });
+      const outcome = await beam.beamIn(world.port, "agent-b", { waitSeconds: 0, signal: signal() });
+
+      expect(outcome).toMatchObject({
+        result: "held",
+        holder: { agentId: "agent-a", agentTitle: "Browser QA" },
+        waiting: [
+          { agentId: "agent-b", agentTitle: "Eval worker", workspaceName: "beta" },
+          { agentId: "agent-b2", agentTitle: null, workspaceName: "beta" },
+        ],
+      });
+    });
+
+    it("tells the holder who is waiting, in its status, a repeat beam_in and its beam out", async () => {
+      const world = fakeWorld();
+      const beam = createAgentBeam({ pollMs: 10 });
+      await beam.beamIn(world.port, "agent-a", { signal: signal() });
+      await beam.beamIn(world.port, "agent-b", { waitSeconds: 0, signal: signal() });
+      const waiting = [{ agentId: "agent-b", agentTitle: "Eval worker", workspaceName: "beta" }];
+
+      await expect(beam.status(world.port, "agent-a")).resolves.toMatchObject({ callerHolds: true, waiting });
+      await expect(beam.beamIn(world.port, "agent-a", { signal: signal() })).resolves.toMatchObject({ result: "already-yours", waiting });
+      await expect(beam.beamOut(world.port, "agent-a")).resolves.toMatchObject({ result: "beamed-out", waiting });
+    });
+
+    it("drops an agent from the queue once it beams in", async () => {
+      const world = fakeWorld();
+      const beam = createAgentBeam({ pollMs: 10 });
+      await beam.beamIn(world.port, "agent-a", { signal: signal() });
+      await beam.beamIn(world.port, "agent-b", { waitSeconds: 0, signal: signal() });
+      await beam.beamOut(world.port, "agent-a");
+
+      await beam.beamIn(world.port, "agent-b", { signal: signal() });
+
+      await expect(beam.status(world.port, "agent-b")).resolves.toMatchObject({ waiting: [] });
+    });
+
+    it("shows the next holder who is still waiting when it beams in", async () => {
+      const world = fakeWorld();
+      const beam = createAgentBeam({ pollMs: 10 });
+      await beam.beamIn(world.port, "agent-a", { signal: signal() });
+      await beam.beamIn(world.port, "agent-b", { waitSeconds: 0, signal: signal() });
+      await beam.beamIn(world.port, "agent-c", { waitSeconds: 0, signal: signal() });
+      await beam.beamOut(world.port, "agent-a");
+
+      await expect(beam.beamIn(world.port, "agent-b", { signal: signal() })).resolves.toMatchObject({
+        result: "beamed-in",
+        waiting: [{ agentId: "agent-c", agentTitle: "Docs pass", workspaceName: "gamma" }],
+      });
+    });
+
+    it("lists no waiting agents while nothing is beaming", async () => {
+      const world = fakeWorld();
+      const beam = createAgentBeam({ pollMs: 10 });
+      await beam.beamIn(world.port, "agent-a", { signal: signal() });
+      await beam.beamIn(world.port, "agent-b", { waitSeconds: 0, signal: signal() });
+      await beam.beamOut(world.port, "agent-a");
+
+      await expect(beam.status(world.port, "agent-b")).resolves.toEqual({ active: false, callerHolds: false, waiting: [] });
+    });
+
+    it("drops an agent from the queue when its wait is cancelled", async () => {
+      const world = fakeWorld();
+      const beam = createAgentBeam({ pollMs: 10 });
+      await beam.beamIn(world.port, "agent-a", { signal: signal() });
+      const controller = new AbortController();
+      const waiting = beam.beamIn(world.port, "agent-b", { waitSeconds: 5, signal: controller.signal });
+      await new Promise((done) => setTimeout(done, 50));
+
+      controller.abort();
+      await waiting;
+
+      await expect(beam.status(world.port, "agent-a")).resolves.toMatchObject({ waiting: [] });
+    });
+
+    it("forgets an agent that has not asked again for 30 minutes", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      const world = fakeWorld();
+      const beam = createAgentBeam({ pollMs: 10 });
+      await beam.beamIn(world.port, "agent-a", { signal: signal() });
+      await beam.beamIn(world.port, "agent-b", { waitSeconds: 0, signal: signal() });
+
+      vi.setSystemTime(Date.now() + 30 * 60_000 + 1);
+
+      await expect(beam.status(world.port, "agent-a")).resolves.toMatchObject({ waiting: [] });
+    });
+  });
+
   describe("beamOut", () => {
     it("lets any agent in the holding workspace beam out, restoring main and the title", async () => {
       const world = fakeWorld();
       const beam = createAgentBeam({ pollMs: 10 });
       await beam.beamIn(world.port, "agent-a", { signal: signal() });
 
-      await expect(beam.beamOut(world.port, "agent-a2")).resolves.toEqual({ result: "beamed-out" });
+      await expect(beam.beamOut(world.port, "agent-a2")).resolves.toEqual({ result: "beamed-out", waiting: [] });
 
       expect(mainOwner()).toBe("main\n");
       expect(world.titleOf("ws-1")).toBeNull();
@@ -310,6 +421,7 @@ describe("agent beam", () => {
       await expect(beam.status(world.port, "agent-a")).resolves.toEqual({
         active: false,
         callerHolds: false,
+        waiting: [],
       });
       await beam.beamIn(world.port, "agent-a", { signal: signal() });
 
@@ -335,6 +447,7 @@ describe("agent beam", () => {
       await expect(beam.status(fakeWorld().port, "nobody")).resolves.toEqual({
         active: false,
         callerHolds: false,
+        waiting: [],
       });
     });
 
@@ -377,6 +490,7 @@ describe("agent beam", () => {
       await expect(beam.status(world.port, "agent-b")).resolves.toEqual({
         active: false,
         callerHolds: false,
+        waiting: [],
       });
       expect(mainOwner()).toBe("main\n");
     });

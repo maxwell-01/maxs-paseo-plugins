@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createFakeAgentPort } from "./agent-port.fake";
 import type { AgentBeamPort, BeamInResult, BeamOutResult } from "./agent-beam.server";
 import type { BeamHolder } from "./beam.server";
+import type { WaitingAgent } from "./waiting-agents.server";
 import { createBeamTools } from "./beam-tools.server";
 
 const holder: BeamHolder = {
@@ -11,19 +12,25 @@ const holder: BeamHolder = {
   mainPath: "/main",
   startedAt: "2026-01-01T10:00:00.000Z",
 };
+const agentHolder: BeamHolder = { ...holder, agentId: "agent-q", agentTitle: "Browser QA" };
+const evalWorker: WaitingAgent = { agentId: "agent-e", agentTitle: "Eval worker", workspaceName: "beta", since: "2026-01-01T10:05:00.000Z" };
+const untitled: WaitingAgent = { agentId: "agent-u", agentTitle: null, workspaceName: "gamma", since: "2026-01-01T10:06:00.000Z" };
 const port = createFakeAgentPort({ workspaces: {}, agents: {} }).port;
 
-function tools(overrides: { beamIn?: BeamInResult; beamOut?: BeamOutResult; callerHolds?: boolean; holder?: BeamHolder | null; port?: AgentBeamPort | null } = {}) {
+function tools(overrides: { beamIn?: BeamInResult; beamOut?: BeamOutResult; callerHolds?: boolean; holder?: BeamHolder | null; waiting?: WaitingAgent[]; port?: AgentBeamPort | null } = {}) {
   const current = overrides.holder === undefined ? holder : overrides.holder;
+  const waiting = overrides.waiting ?? [];
   const agentBeam = {
     async status() {
-      return current ? { active: true as const, holder: current, callerHolds: overrides.callerHolds ?? false } : { active: false as const, callerHolds: false };
+      return current
+        ? { active: true as const, holder: current, callerHolds: overrides.callerHolds ?? false, waiting }
+        : { active: false as const, callerHolds: false, waiting: [] };
     },
     async beamIn() {
-      return overrides.beamIn ?? { result: "beamed-in" as const };
+      return overrides.beamIn ?? { result: "beamed-in" as const, waiting: [] };
     },
     async beamOut() {
-      return overrides.beamOut ?? { result: "beamed-out" as const };
+      return overrides.beamOut ?? { result: "beamed-out" as const, waiting: [] };
     },
   };
   const beamTools = createBeamTools({ agentBeam, paseo: () => (overrides.port === undefined ? port : overrides.port) });
@@ -49,12 +56,22 @@ describe("beam tools", () => {
       workspaceDir: "/work/alpha",
       startedAt: holder.startedAt,
       youHoldIt: true,
+      waiting: [],
+    });
+  });
+
+  it("names the holding agent and the agents waiting, in order", async () => {
+    const result = await tools({ holder: agentHolder, waiting: [evalWorker, untitled] }).call("beam_status");
+    expect(JSON.parse(result.text)).toMatchObject({
+      holderAgentId: "agent-q",
+      holderAgentTitle: "Browser QA",
+      waiting: [evalWorker, untitled],
     });
   });
 
   it("reports an idle beam", async () => {
     const result = await tools({ holder: null }).call("beam_status");
-    expect(JSON.parse(result.text)).toEqual({ active: false, youHoldIt: false });
+    expect(JSON.parse(result.text)).toEqual({ active: false, youHoldIt: false, waiting: [] });
   });
 
   it("rejects a wait above 300 seconds", async () => {
@@ -63,16 +80,59 @@ describe("beam tools", () => {
   });
 
   it("says another workspace holds the beam and what to do next", async () => {
-    const result = await tools({ beamIn: { result: "held", holder, waitedSeconds: 5 } }).call("beam_in");
+    const result = await tools({ beamIn: { result: "held", holder, waiting: [], waitedSeconds: 5 } }).call("beam_in");
     expect(result.text).toBe(
-      'Beam is held by workspace "alpha" (/work/alpha) since 2026-01-01T10:00:00.000Z. Call beam_in again to keep waiting; call beam_status first if a call timed out.',
+      'Beam is held by workspace "alpha" (/work/alpha) since 2026-01-01T10:00:00.000Z. It was beamed in from the Paseo app, not by an agent, so wait for it. Call beam_in again to keep waiting; call beam_status first if a call timed out.',
     );
   });
 
+  it("names the holding agent, the queue and who to message when the beam is held", async () => {
+    const result = await tools({ beamIn: { result: "held", holder: agentHolder, waiting: [evalWorker, untitled], waitedSeconds: 300 } }).call("beam_in", {}, {
+      callerAgentId: "agent-u",
+      signal: new AbortController().signal,
+    });
+    expect(result.text).toBe(
+      'Beam is held by agent "Browser QA" (agent-q) in workspace "alpha" (/work/alpha) since 2026-01-01T10:00:00.000Z. ' +
+        'Agents waiting, in order: 1. "Eval worker" (agent-e), 2. agent-u (you). ' +
+        "Message agent-q to say you are waiting, if you have not already. Call beam_in again to keep waiting; call beam_status first if a call timed out.",
+    );
+  });
+
+  it("says a beam started from the app has no agent to message", async () => {
+    const result = await tools({ beamIn: { result: "held", holder, waiting: [evalWorker], waitedSeconds: 300 } }).call("beam_in");
+    expect(result.text).toContain("It was beamed in from the Paseo app, not by an agent, so wait for it.");
+  });
+
   it("says the workspace is already beaming", async () => {
-    const result = await tools({ beamIn: { result: "already-yours" } }).call("beam_in");
-    expect(result.text).toContain("already beaming");
+    const result = await tools({ beamIn: { result: "already-yours", waiting: [] } }).call("beam_in");
+    expect(result.text).toBe("Your workspace is already beaming onto the main checkout.");
     expect(result.isError).toBeUndefined();
+  });
+
+  it("tells the holder which agents are waiting for the beam", async () => {
+    const result = await tools({ beamIn: { result: "already-yours", waiting: [evalWorker, untitled] } }).call("beam_in");
+    expect(result.text).toBe(
+      "Your workspace is already beaming onto the main checkout. " +
+        'Agents waiting for the beam, in order: 1. "Eval worker" (agent-e), 2. agent-u. ' +
+        "Tell them where they stand if you have not already, and beam out as soon as you are done.",
+    );
+  });
+
+  it("tells a new holder which agents are still waiting", async () => {
+    const result = await tools({ beamIn: { result: "beamed-in", waiting: [untitled] } }).call("beam_in");
+    expect(result.text).toBe(
+      "Beamed in. Your workspace is now mirrored onto the main checkout. Call beam_out when you are done testing. " +
+        "Agents waiting for the beam, in order: 1. agent-u. Tell them where they stand.",
+    );
+  });
+
+  it("asks the holder to tell the first waiting agent when it beams out", async () => {
+    const result = await tools({ beamOut: { result: "beamed-out", waiting: [evalWorker, untitled] } }).call("beam_out");
+    expect(result.text).toBe(
+      "Beamed out. The main checkout is restored. " +
+        'Agents waiting for the beam, in order: 1. "Eval worker" (agent-e), 2. agent-u. ' +
+        "Message agent-e that the beam is free.",
+    );
   });
 
   it("reports an aborted wait as an error", async () => {
