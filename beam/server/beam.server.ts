@@ -12,6 +12,8 @@ const BeamStateSchema = z.object({
   workspaceId: z.string(),
   workspaceName: z.string().optional(),
   workspaceDir: z.string(),
+  agentId: z.string().optional(),
+  agentTitle: z.string().nullable().optional(),
   titleMark: TitleMarkSchema.optional(),
   mainPath: z.string(),
   originalBranch: z.string(),
@@ -27,8 +29,15 @@ export interface BeamHolder {
   workspaceId: string;
   workspaceName?: string;
   workspaceDir: string;
+  agentId?: string;
+  agentTitle?: string | null;
   mainPath: string;
   startedAt: string;
+}
+
+export interface HoldingAgent {
+  agentId: string;
+  agentTitle: string | null;
 }
 
 export class BeamHeldError extends Error {
@@ -147,6 +156,8 @@ function toHolder(state: BeamState): BeamHolder {
     workspaceId: state.workspaceId,
     workspaceName: state.workspaceName,
     workspaceDir: state.workspaceDir,
+    agentId: state.agentId,
+    agentTitle: state.agentTitle,
     mainPath: state.mainPath,
     startedAt: state.startedAt,
   };
@@ -357,9 +368,10 @@ export async function activate(input: {
   workspaceId: string;
   workspaceName: string;
   workspaceDir: string;
+  agent?: HoldingAgent;
   titleMark: TitleMark | undefined;
 }): Promise<{ active: true; mainPath: string }> {
-  const { workspaceId, workspaceName, workspaceDir, titleMark } = input;
+  const { workspaceId, workspaceName, workspaceDir, agent, titleMark } = input;
   const mainPath = resolveMainPath(workspaceDir);
 
   if (realpathSync(mainPath) === realpathSync(workspaceDir)) {
@@ -426,6 +438,7 @@ export async function activate(input: {
     workspaceId,
     workspaceName,
     workspaceDir,
+    ...agent,
     titleMark,
     mainPath,
     originalBranch,

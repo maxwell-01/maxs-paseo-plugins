@@ -4,11 +4,11 @@ import {
   restoreWorkspaceTitle,
   type WorkspaceTitlePort,
 } from "./beam-title.server";
-import { activate, deactivate, logBeamWarning } from "./beam.server";
+import { activate, deactivate, type HoldingAgent, logBeamWarning } from "./beam.server";
 
 export async function beamIn(
   port: WorkspaceTitlePort,
-  input: { workspaceId: string; workspaceName: string; workspaceDir: string },
+  input: { workspaceId: string; workspaceName: string; workspaceDir: string; agent?: HoldingAgent },
   signal?: AbortSignal,
 ): Promise<{ active: true; mainPath: string }> {
   const titleMark = await readWorkspaceTitle(port, input.workspaceId).catch((error: unknown) => {

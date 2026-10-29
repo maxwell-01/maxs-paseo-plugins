@@ -67,8 +67,8 @@ The hook reads `mainPath` from `~/.paseo-beam-active.json` and `workspaceDir` fr
 An agent can beam its own workspace in and out without you. Beam adds three tools to every Claude
 and OpenCode agent created after the plugin is installed or updated:
 
-- `beam_status`: shows whether a beam is active, which workspace holds it, and whether the agent's
-  own workspace holds it.
+- `beam_status`: shows whether a beam is active, which workspace and agent hold it, whether the
+  agent's own workspace holds it, and which agents are waiting for it, in order.
 - `beam_in`: beams the agent's own workspace onto the main checkout. If another workspace holds the
   beam, it waits up to `waitSeconds` (0 to 300), then beams in. If the beam is still held, it says so
   and the agent calls again. The default wait is the most allowed: 300 s. `0` checks once.
@@ -94,6 +94,11 @@ The command prints the reply and exits 1 when the tool reports an error. It find
 Waiting works like this:
 
 - Several agents can wait at once. Beam gives no guarantee about who goes first.
+- When the beam is held, `beam_in` names the agent that beamed in and tells the caller to message
+  that agent that it is waiting. Beam keeps a list of the agents that were refused, in the order
+  they first asked. The holding agent sees that list in `beam_status`, in a repeat `beam_in`, and in
+  its `beam_out` reply, which asks it to tell the first waiting agent that the beam is free. An
+  agent leaves the list when it beams in, or 30 minutes after it last asked.
 - A click on the Beam button in the app does not wait in line. It beams in at once, or fails if the
   beam is held.
 - If an agent's tool call is cancelled or its process dies, the wait stops and that agent never

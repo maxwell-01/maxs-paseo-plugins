@@ -2,13 +2,14 @@ import { beamIn as beamWorkspaceIn, beamOut as beamWorkspaceOut } from "./beam-r
 import type { WorkspaceTitleHandle } from "./beam-title.server";
 import { type BeamHolder, BeamHeldError, readHolder } from "./beam.server";
 import { releaseStaleHolder } from "./stale-holder.server";
+import { createWaitingAgents, type WaitingAgent } from "./waiting-agents.server";
 
 export const MAX_WAIT_SECONDS = 300;
 
 export interface AgentBeamPort {
   agents: {
     ref(agentId: string): {
-      refresh(): Promise<{ agent: { workspaceId?: string | null } } | null>;
+      refresh(): Promise<{ agent: { workspaceId?: string | null; title: string | null } } | null>;
     };
   };
   workspaces: {
@@ -26,16 +27,17 @@ interface CallerWorkspace {
   workspaceId: string;
   workspaceName: string;
   workspaceDir: string;
+  agentTitle: string | null;
 }
 
 export type BeamInResult =
   | { result: "beamed-in" }
-  | { result: "already-yours" }
-  | { result: "held"; holder: BeamHolder | null; waitedSeconds: number }
+  | { result: "already-yours"; waiting: WaitingAgent[] }
+  | { result: "held"; holder: BeamHolder | null; waiting: WaitingAgent[]; waitedSeconds: number }
   | { result: "aborted" };
 
 export type BeamOutResult =
-  | { result: "beamed-out" }
+  | { result: "beamed-out"; waiting: WaitingAgent[] }
   | { result: "not-yours"; holder: BeamHolder }
   | { result: "no-beam" };
 
@@ -47,7 +49,7 @@ export async function resolveCallerWorkspace(
   if (!found) {
     throw new Error(`agent ${agentId} not found`);
   }
-  const { workspaceId } = found.agent;
+  const { workspaceId, title } = found.agent;
   if (!workspaceId) {
     throw new Error(`agent ${agentId} has no workspace`);
   }
@@ -62,6 +64,7 @@ export async function resolveCallerWorkspace(
     workspaceId,
     workspaceName: workspace.name,
     workspaceDir: workspace.workspaceDirectory,
+    agentTitle: title,
   };
 }
 
@@ -82,14 +85,16 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
 }
 
 export function createAgentBeam({ pollMs }: { pollMs: number }) {
+  const waitingAgents = createWaitingAgents();
+
   async function status(port: AgentBeamPort, agentId: string | null) {
     await releaseStaleHolder(port);
     const holder = readHolder();
     if (!holder) {
-      return { active: false, callerHolds: false };
+      return { active: false, callerHolds: false, waiting: waitingAgents.list() };
     }
     const callerWorkspaceId = agentId ? (await port.agents.ref(agentId).refresh())?.agent.workspaceId : null;
-    return { active: true, holder, callerHolds: holder.workspaceId === callerWorkspaceId };
+    return { active: true, holder, callerHolds: holder.workspaceId === callerWorkspaceId, waiting: waitingAgents.list() };
   }
 
   async function beamIn(
@@ -107,10 +112,13 @@ export function createAgentBeam({ pollMs }: { pollMs: number }) {
         return { result: "aborted" };
       }
       if (readHolder()?.workspaceId === caller.workspaceId) {
-        return { result: "already-yours" };
+        waitingAgents.left(agentId);
+        return { result: "already-yours", waiting: waitingAgents.list() };
       }
       try {
-        await beamWorkspaceIn(port, caller, options.signal);
+        const { agentTitle, ...workspace } = caller;
+        await beamWorkspaceIn(port, { ...workspace, agent: { agentId, agentTitle } }, options.signal);
+        waitingAgents.left(agentId);
         return { result: "beamed-in" };
       } catch (error) {
         if (options.signal.aborted) {
@@ -119,11 +127,13 @@ export function createAgentBeam({ pollMs }: { pollMs: number }) {
         if (!(error instanceof BeamHeldError)) {
           throw error;
         }
+        waitingAgents.asked({ agentId, agentTitle: caller.agentTitle, workspaceName: caller.workspaceName });
         const remainingMs = deadline - Date.now();
         if (remainingMs <= 0) {
           return {
             result: "held",
             holder: error.holder,
+            waiting: waitingAgents.list(),
             waitedSeconds: (Date.now() - startedAt) / 1000,
           };
         }
@@ -143,7 +153,7 @@ export function createAgentBeam({ pollMs }: { pollMs: number }) {
       return { result: "not-yours", holder };
     }
     await beamWorkspaceOut(port);
-    return { result: "beamed-out" };
+    return { result: "beamed-out", waiting: waitingAgents.list() };
   }
 
   return { status, beamIn, beamOut };

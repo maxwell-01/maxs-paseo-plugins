@@ -9,6 +9,7 @@ interface FakeWorkspace {
 interface FakeAgent {
   workspaceId: string | null;
   provider: string;
+  title?: string | null;
 }
 
 export function createFakeAgentPort(input: {
@@ -22,7 +23,7 @@ export function createFakeAgentPort(input: {
       ref: (agentId: string) => ({
         refresh: async () => {
           const agent = agents.get(agentId);
-          return agent ? { agent } : null;
+          return agent ? { agent: { ...agent, title: agent.title ?? null } } : null;
         },
       }),
     },
