@@ -26,8 +26,10 @@ main checkout to match the workspace's current working tree:
 
 - **Beam in** — snapshots main's exact current state (branch, `HEAD`, index, and full working tree
   including uncommitted, staged, and untracked files), then starts a file watcher on the workspace
-  and runs an immediate sync. Each sync moves main's branch to the workspace's `HEAD` and rewrites
-  main's tracked working tree and index to a snapshot of the workspace's full working tree.
+  and runs an immediate sync. Each sync detaches main's `HEAD` at the workspace's `HEAD` and rewrites
+  main's tracked working tree and index to a snapshot of the workspace's full working tree. Main's
+  branch never moves, so anything that reads it during a beam (a new worktree based on it, a pull, a
+  diff against it) still sees your real branch, not the workspace's commits.
 - **Beam out** — stops the watcher and **restores main to exactly its pre-beam state** — branch,
   working tree, index, and untracked files all come back as if nothing ever happened.
 
@@ -145,15 +147,17 @@ touched during beam-in, sync, or beam-out.
   you beam out (which performs the restore). The snapshot survives under `refs/beam/original` even if
   the state file is lost, because that ref is a 3-commit chain: the snapshot commit's tree is main's
   full pre-beam working tree, its parent commit's tree is the pre-beam index, and its grandparent is
-  the pre-beam `HEAD`. Restore by hand with:
+  the pre-beam `HEAD`. Restore by hand with, where `<branch>` is the branch main was on:
   ```bash
   git -C <mainPath> read-tree --reset -u refs/beam/original^{tree}
-  git -C <mainPath> reset --soft refs/beam/original^^
+  git -C <mainPath> symbolic-ref HEAD refs/heads/<branch>
   git -C <mainPath> read-tree refs/beam/original^^{tree}
   git -C <mainPath> update-ref -d refs/beam/original
   ```
+  A beam started by Beam 0.4.0 or older moved the branch itself: for one of those, run
+  `git -C <mainPath> reset --soft refs/beam/original^^` in place of the `symbolic-ref` line.
   A plain `git -C <mainPath> reset --hard refs/beam/original` only gets the working-tree *contents*
-  right — it leaves the branch pointed at the synthetic `beam: pre-beam snapshot` commit instead of
+  right — it points the branch at the synthetic `beam: pre-beam snapshot` commit instead of
   your real pre-beam `HEAD`, and it collapses whatever was staged vs. unstaged into one committed
   state. Use the four commands above to reproduce the pre-beam state exactly.
 

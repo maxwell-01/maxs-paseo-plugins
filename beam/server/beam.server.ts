@@ -233,7 +233,7 @@ export function syncOnce(workspaceDir: string, mainPath: string): boolean {
   const wsHead = git(workspaceDir, "rev-parse", "HEAD");
   const snapTree = writeWorkingTreeTree(workspaceDir);
 
-  git(mainPath, "reset", "--mixed", wsHead);
+  git(mainPath, "update-ref", "--no-deref", "HEAD", wsHead);
   git(mainPath, "read-tree", "--reset", "-u", snapTree);
   git(mainPath, "clean", "-fd");
 
@@ -256,13 +256,14 @@ function commitTree(mainPath: string, tree: string, parent: string, message: str
   );
 }
 
-export function snapshotMain(mainPath: string): {
-  originalBranch: string;
-  originalHead: string;
-  originalTree: string;
-  originalIndexTree: string;
-  originalRef: string;
-} {
+type MainSnapshot = Pick<
+  BeamState,
+  "originalBranch" | "originalHead" | "originalTree" | "originalIndexTree" | "originalRef"
+>;
+
+const DETACHED_BRANCH = "HEAD";
+
+export function snapshotMain(mainPath: string): MainSnapshot {
   const originalBranch = git(mainPath, "rev-parse", "--abbrev-ref", "HEAD");
   const originalHead = git(mainPath, "rev-parse", "HEAD");
   const originalIndexTree = git(mainPath, "write-tree");
@@ -276,19 +277,22 @@ export function snapshotMain(mainPath: string): {
   return { originalBranch, originalHead, originalTree, originalIndexTree, originalRef };
 }
 
-export function restoreMain(
-  mainPath: string,
-  originalHead: string,
-  originalTree: string,
-  originalIndexTree: string,
-  originalRef?: string,
-): void {
-  git(mainPath, "read-tree", "--reset", "-u", originalTree);
-  git(mainPath, "reset", "--soft", originalHead);
-  git(mainPath, "read-tree", originalIndexTree);
-  if (originalRef) {
-    gitSucceeds(mainPath, "update-ref", "-d", originalRef);
+function restoreHead(mainPath: string, originalBranch: string, originalHead: string): void {
+  if (originalBranch === DETACHED_BRANCH) {
+    git(mainPath, "update-ref", "--no-deref", "HEAD", originalHead);
+  } else if (gitSucceeds(mainPath, "symbolic-ref", "-q", "HEAD")) {
+    // A beam started before syncs detached HEAD moved the branch itself, so move it back.
+    git(mainPath, "reset", "--soft", originalHead);
+  } else {
+    git(mainPath, "symbolic-ref", "HEAD", `refs/heads/${originalBranch}`);
   }
+}
+
+export function restoreMain(mainPath: string, snapshot: MainSnapshot): void {
+  git(mainPath, "read-tree", "--reset", "-u", snapshot.originalTree);
+  restoreHead(mainPath, snapshot.originalBranch, snapshot.originalHead);
+  git(mainPath, "read-tree", snapshot.originalIndexTree);
+  gitSucceeds(mainPath, "update-ref", "-d", snapshot.originalRef);
 }
 
 function sync(workspaceDir: string, mainPath: string): void {
@@ -475,13 +479,7 @@ export async function deactivate(): Promise<{
     const state = readState(stateFile);
     workspaceId = state.workspaceId;
     titleMark = state.titleMark;
-    restoreMain(
-      mainPath,
-      state.originalHead,
-      state.originalTree,
-      state.originalIndexTree,
-      state.originalRef,
-    );
+    restoreMain(mainPath, state);
     logBeam("info", `beam out: restored main to ${state.originalBranch}@${state.originalHead}`);
     rmSync(stateFile);
   } else {
