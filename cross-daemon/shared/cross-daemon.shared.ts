@@ -39,9 +39,20 @@ export const setPeers = defineRpc({
   output: z.object({ stored: z.number() }),
 });
 
-// Names and server IDs only: a peer's link never leaves the daemon.
+// A password for one peer, entered on this daemon and kept across syncs. Null forgets it. It is never
+// read back.
+export const setPeerPassword = defineRpc({
+  name: "cross-daemon.set-peer-password",
+  input: z.object({ serverId: z.string().min(1), password: z.string().min(1).nullable() }),
+  output: z.object({ passwordSet: z.boolean() }),
+});
+
+export const peerPasswordSource = z.enum(["announced", "set-here", "none"]);
+export type PeerPasswordSource = z.infer<typeof peerPasswordSource>;
+
+// Names, server IDs and where each password comes from: a peer's link and password never leave the daemon.
 export const listPeers = defineRpc({
   name: "cross-daemon.list-peers",
   input: z.object({}),
-  output: z.object({ peers: z.array(z.object({ serverId: z.string(), name: z.string() })) }),
+  output: z.object({ peers: z.array(z.object({ serverId: z.string(), name: z.string(), password: peerPasswordSource })) }),
 });

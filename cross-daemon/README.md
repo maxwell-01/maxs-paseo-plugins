@@ -39,6 +39,16 @@ switched-on daemons at each sync. They store it with that peer and pass it to th
 daemon. No tool or listing shows a password. **Forget** stops giving it; peers drop it at their next
 sync. Without it, calls to that daemon fail with `Password required`.
 
+### A peer's password
+
+When nobody can enter a daemon's own password on that daemon, enter it on the daemon that calls it
+instead: **This daemon → Password for** *peer name*, then **Save**. Only peers that give no password of their
+own get this row. The plugin keeps it owner-only in
+`$PASEO_HOME/plugin-data/cross-daemon/peer-passwords.json`, apart from the peer list, so a sync never
+drops it. It is used only for calls from this daemon to that peer. If the peer later gives its own
+password, that one wins, because the peer's owner keeps it current. **Forget** drops it. The
+password stays while the peer is switched off, so it works again when the peer comes back.
+
 ## Agent tools
 
 Every new Claude, Codex or OpenCode agent on a daemon with the plugin gets a `cross-daemon` MCP
