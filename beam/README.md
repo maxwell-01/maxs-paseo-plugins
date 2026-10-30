@@ -64,8 +64,8 @@ The hook reads `mainPath` from `~/.paseo-beam-active.json` and `workspaceDir` fr
 
 ## Agents
 
-An agent can beam its own workspace in and out without you. Beam adds three tools to every Claude
-and OpenCode agent created after the plugin is installed or updated:
+An agent can beam its own workspace in and out without you. Beam adds three tools to every Claude,
+Codex and OpenCode agent created after the plugin is installed or updated:
 
 - `beam_status`: shows whether a beam is active, which workspace and agent hold it, whether the
   agent's own workspace holds it, and which agents are waiting for it, in order.
@@ -75,9 +75,12 @@ and OpenCode agent created after the plugin is installed or updated:
 - `beam_out`: stops the beam and restores the main checkout. Only the workspace that holds the beam
   can do this.
 
-Codex agents do not get the tools, because Codex does not pass `PASEO_AGENT_ID` to MCP servers.
-Codex agents, agents created before the update, and agents on other providers run the same tools as a
-command instead. The command's shell does have `PASEO_AGENT_ID`:
+The tools find the calling agent through `PASEO_AGENT_ID`. Codex does not pass that variable to MCP
+servers, so Beam gives each Codex agent's tool server a random `BEAM_AGENT_TOKEN` and records which agent
+it belongs to in `${PASEO_HOME:-$HOME/.paseo}/plugin-data/beam/agent-tokens.json` when Paseo opens the agent.
+
+Agents created before the update, and agents on other providers, run the same tools as a command
+instead. The command's shell has `PASEO_AGENT_ID`:
 
 ```bash
 node "${PASEO_HOME:-$HOME/.paseo}/plugin-data/beam/tool-proxy.cjs" beam_in --wait 120
@@ -86,10 +89,9 @@ node "${PASEO_HOME:-$HOME/.paseo}/plugin-data/beam/tool-proxy.cjs" beam_out
 ```
 
 An agent that runs `beam_in --wait N` must give the shell command a timeout longer than N seconds.
-Codex's default command timeout is short, and a command that is killed stops waiting and never beams in.
+A command that is killed stops waiting and never beams in.
 
-The command prints the reply and exits 1 when the tool reports an error. It finds the agent through
-`PASEO_AGENT_ID`.
+The command prints the reply and exits 1 when the tool reports an error.
 
 Waiting works like this:
 

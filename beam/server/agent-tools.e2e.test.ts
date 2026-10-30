@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createAgentBeam } from "./agent-beam.server";
 import { createFakeAgentPort } from "./agent-port.fake";
 import { createBeamTools } from "./beam-tools.server";
+import { createAgentTokens } from "./agent-tokens.server";
 import { readHolder, stopAllBeams } from "./beam.server";
 import { runCli, startProxy } from "./proxy-process.test-support";
 import { installToolProxy } from "./tool-proxy.server";
@@ -21,6 +22,7 @@ describe("beam tools through the real socket and proxy", () => {
   let root: string;
   let mainRepo: string;
   let proxyPath: string;
+  let tokens: ReturnType<typeof createAgentTokens>;
   let realHome: string | undefined;
   const cleanups: (() => void)[] = [];
 
@@ -57,7 +59,8 @@ describe("beam tools through the real socket and proxy", () => {
     const tools = createBeamTools({ agentBeam: createAgentBeam({ pollMs: POLL_MS }), paseo: () => world.port });
     const socketPath = join(root, "state", "tools.sock");
     proxyPath = installToolProxy(join(root, "state"), { socketPath, tools: tools.definitions, pluginTimeoutMs: 40_000 });
-    cleanups.push(await serveTools(socketPath, tools));
+    tokens = createAgentTokens(join(root, "state", "agent-tokens.json"));
+    cleanups.push(await serveTools(socketPath, tools, tokens.agentIdFor));
   });
 
   afterEach(() => {
@@ -68,8 +71,9 @@ describe("beam tools through the real socket and proxy", () => {
   });
 
   const mainOwner = () => readFileSync(join(mainRepo, "owner.txt"), "utf8");
-  const agent = (agentId: string) => {
-    const proxy = startProxy(proxyPath, agentId);
+  const agent = (agentId: string) => proxyAs({ PASEO_AGENT_ID: agentId });
+  const proxyAs = (callerEnv: Record<string, string>) => {
+    const proxy = startProxy(proxyPath, callerEnv);
     cleanups.push(() => proxy.child.kill());
     const call = (name: string, args: object = {}) => proxy.start("tools/call", { name, arguments: args });
     return { ...proxy, call };
@@ -95,6 +99,19 @@ describe("beam tools through the real socket and proxy", () => {
     expect(textOf(await bIn)).toContain("Beamed in");
     expect(mainOwner()).toBe("ws2\n");
     expect(readHolder()?.workspaceId).toBe("ws-2");
+  });
+
+  it("knows a Codex agent by its token, as Codex gives its MCP servers no PASEO_AGENT_ID", async () => {
+    tokens.bind("token-b", "agent-b");
+    const a = agent("agent-a");
+    const codex = proxyAs({ BEAM_AGENT_TOKEN: "token-b" });
+
+    expect(textOf(await codex.call("beam_in").reply)).toContain("Beamed in");
+    expect(textOf(await a.call("beam_in", { waitSeconds: 0 }).reply)).toContain('held by agent "Eval worker" (agent-b)');
+    expect(JSON.parse(textOf(await codex.call("beam_status").reply))).toMatchObject({
+      youHoldIt: true,
+      waiting: [{ agentId: "agent-a", agentTitle: "Browser QA" }],
+    });
   });
 
   it("never beams in agent B when its proxy dies while it waits", async () => {

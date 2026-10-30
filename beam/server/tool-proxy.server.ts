@@ -1,9 +1,9 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { writeFileAtomically } from "./atomic-file.server";
 import type { ToolDefinition } from "./tools.server";
 
 const PROXY_FILE = "tool-proxy.cjs";
-const OWNER_ONLY_DIR = 0o700;
 
 // The MCP server an agent's provider launches, and also a command (`node tool-proxy.cjs <tool> [--wait N]`)
 // for agents without it. It lists its tools itself and forwards each call to the plugin over a local
@@ -14,6 +14,7 @@ function toolProxyMain(settings: { socketPath: string; tools: unknown[]; pluginT
   const net: typeof import("node:net") = require("node:net");
   const readline: typeof import("node:readline") = require("node:readline");
   const callerAgentId = process.env.PASEO_AGENT_ID ?? null;
+  const callerToken = process.env.BEAM_AGENT_TOKEN ?? null;
   const pluginTimeoutMs = settings.pluginTimeoutMs;
   const pendingCalls = new Map<unknown, import("node:net").Socket>();
 
@@ -45,7 +46,7 @@ function toolProxyMain(settings: { socketPath: string; tools: unknown[]; pluginT
     });
 
   const callPlugin = async (name: unknown, args: unknown, requestId: unknown) => {
-    const answer = await askPlugin({ type: "call", name, arguments: args ?? {}, callerAgentId }, requestId);
+    const answer = await askPlugin({ type: "call", name, arguments: args ?? {}, callerAgentId, callerToken }, requestId);
     return {
       text: typeof answer.text === "string" ? answer.text : String(answer.error ?? "No reply"),
       isError: answer.isError === true || answer.error !== undefined,
@@ -124,9 +125,6 @@ export function installToolProxy(stateDir: string, settings: { socketPath: strin
   const proxyPath = join(stateDir, PROXY_FILE);
   const source = `(${toolProxyMain.toString()})(${JSON.stringify(settings)});\n`;
   if (existsSync(proxyPath) && readFileSync(proxyPath, "utf8") === source) return proxyPath;
-  mkdirSync(stateDir, { recursive: true, mode: OWNER_ONLY_DIR });
-  const staging = `${proxyPath}.${process.pid}.tmp`;
-  writeFileSync(staging, source);
-  renameSync(staging, proxyPath);
+  writeFileAtomically(proxyPath, source);
   return proxyPath;
 }

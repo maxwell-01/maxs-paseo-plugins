@@ -1,6 +1,7 @@
 import type { PluginHookContext, PluginServerContext } from "@getpaseo/plugin/server";
 import { createAgentBeam } from "./server/agent-beam.server";
 import { withBeamTools } from "./server/agent-injection.server";
+import { claimAgentToken } from "./server/agent-tokens.server";
 import { startAgentTools } from "./server/agent-tools-server.server";
 import { beamIn, beamOut } from "./server/beam-rpc.server";
 import { getBeamLog, status, stopAllBeams } from "./server/beam.server";
@@ -53,7 +54,12 @@ export default function contribute(server: PluginServerContext) {
     remember(paseo);
     const tools = await agentTools;
     if (!tools) return request;
-    return { ...request, config: withBeamTools(request.config, tools.launch, tools.toolNames) };
+    return withBeamTools(request, tools.launch, tools.toolNames);
+  });
+  server.before("agent.session_open", async ({ request }) => {
+    const tools = await agentTools;
+    if (!tools) return request;
+    return { ...request, env: claimAgentToken(request, tools.tokens) };
   });
 
   return async () => {

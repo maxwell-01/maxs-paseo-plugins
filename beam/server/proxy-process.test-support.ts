@@ -1,8 +1,11 @@
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 
-export function startProxy(proxyPath: string, agentId: string) {
-  const child = spawn(process.execPath, [proxyPath], { env: { ...process.env, PASEO_AGENT_ID: agentId } });
+// Only the caller's identity, so the identity of the agent running these tests cannot leak in.
+const envWith = (callerEnv: Record<string, string>) => ({ PATH: process.env.PATH ?? "", ...callerEnv });
+
+export function startProxy(proxyPath: string, callerEnv: Record<string, string>) {
+  const child = spawn(process.execPath, [proxyPath], { env: envWith(callerEnv) });
   const replies = createInterface({ input: child.stdout });
   const pending = new Map<number, (reply: any) => void>();
   replies.on("line", (line) => {
@@ -29,7 +32,7 @@ export function startProxy(proxyPath: string, agentId: string) {
 }
 
 export function runCli(proxyPath: string, args: string[], agentId = "agent-cli") {
-  const child = spawn(process.execPath, [proxyPath, ...args], { env: { ...process.env, PASEO_AGENT_ID: agentId } });
+  const child = spawn(process.execPath, [proxyPath, ...args], { env: envWith({ PASEO_AGENT_ID: agentId }) });
   let stdout = "";
   let stderr = "";
   child.stdout.on("data", (chunk) => (stdout += chunk));
