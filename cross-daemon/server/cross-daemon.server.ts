@@ -1,12 +1,22 @@
 import { join } from "node:path";
 import type { PluginServerContext } from "@getpaseo/plugin/server";
-import { crossDaemonSettings, describeDaemon, listPeers, type Peer, setOwnPassword, setPeers } from "../shared/cross-daemon.shared";
+import {
+  crossDaemonSettings,
+  describeDaemon,
+  listPeers,
+  type Peer,
+  type PeerPasswordSource,
+  setOwnPassword,
+  setPeerPassword,
+  setPeers,
+} from "../shared/cross-daemon.shared";
 import { withCrossDaemonTools } from "./agent-injection.server";
 import { createAgentLifecycle } from "./agent-lifecycle.server";
 import type { PaseoCli } from "./paseo-cli.server";
 import { createMessenger, startDeliveryWorker } from "./messenger.server";
 import { createMessageQueue } from "./message-queue.server";
 import { createOwnPasswordStore } from "./own-password-store.server";
+import { createPeerPasswordStore, withPeerPasswords } from "./peer-password-store.server";
 import { createPeerStore } from "./peer-store.server";
 import { createStartedAgents } from "./started-agents.server";
 import { createWatchList } from "./watch-list.server";
@@ -31,7 +41,8 @@ function startToolServer(
 ) {
   const queue = createMessageQueue(stateDir);
   const watches = createWatchList(stateDir);
-  const readPeers = () => peers.read();
+  const passwordsSetHere = createPeerPasswordStore(stateDir);
+  const readPeers = () => withPeerPasswords(peers.read(), passwordsSetHere.read());
   const messenger = createMessenger({ queue, watches, readPeers, cli });
   const lifecycle = createAgentLifecycle({ cli, watches, startedAgents: createStartedAgents(stateDir) });
   const tools = createTools({ readPeers, cli, messenger, lifecycle, ownDaemon });
@@ -91,9 +102,19 @@ export function registerCrossDaemon(server: PluginServerContext, { readOwnPeer, 
     return { stored: next.length };
   });
 
-  server.handle(listPeers, async () => ({
-    peers: (await peerStore).read().map(({ serverId, name }) => ({ serverId, name })),
-  }));
+  server.handle(setPeerPassword, async ({ serverId, password }) => {
+    createPeerPasswordStore(await stateDir).write(serverId, password);
+    return { passwordSet: password !== null };
+  });
+
+  server.handle(listPeers, async () => {
+    const passwordsSetHere = createPeerPasswordStore(await stateDir).read();
+    const passwordSource = (peer: Peer): PeerPasswordSource => {
+      if (peer.password) return "announced";
+      return passwordsSetHere[peer.serverId] ? "set-here" : "none";
+    };
+    return { peers: (await peerStore).read().map((peer) => ({ serverId: peer.serverId, name: peer.name, password: passwordSource(peer) })) };
+  });
 
   clearPeersUnlessSwitchedOn().catch((error: unknown) => console.error("cross-daemon: could not clear peers at start", error));
   const unsubscribe = settings.subscribe(clearPeersUnlessSwitchedOn);

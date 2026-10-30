@@ -5,6 +5,7 @@ import { ScrollView, Text } from "react-native";
 import { crossDaemonSettings, listPeers } from "../shared/cross-daemon.shared";
 import { DaemonsSection } from "./daemons-section.client";
 import { OwnPasswordRows } from "./own-password-rows.client";
+import { PeerPasswordRows } from "./peer-password-rows.client";
 import { requestPeerSync } from "./sync-scheduler.client";
 
 const PEERS_KEY = ["cross-daemon", "peers"];
@@ -80,6 +81,7 @@ function ThisDaemonSection({ theme }: Pick<PluginSurfaceProps, "theme">) {
           error={peers.error?.message ?? null}
         />
         <OwnPasswordRows />
+        <PeerPasswordRows peers={peers.data?.peers ?? []} onSaved={() => void peers.refetch()} />
       </SettingsCard>
     </SettingsSection>
   );

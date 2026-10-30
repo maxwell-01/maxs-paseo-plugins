@@ -1,4 +1,5 @@
 import { readFileSync, statSync, writeFileSync, mkdirSync } from "node:fs";
+import { createConnection } from "node:net";
 import { join } from "node:path";
 import type { PluginServerContext, PluginSettingsState } from "@getpaseo/plugin/server";
 import type { PaseoApi } from "@getpaseo/client";
@@ -38,8 +39,15 @@ function startPlugin(initial: State, stored: Peer[] = [], stateDirOverride?: Pro
     on: () => () => {},
     before: (name: string, hook: (input: { request: unknown }) => unknown) => hooks.set(name, hook),
   } as unknown as PluginServerContext;
+  const reachedPeers: Peer[] = [];
   const dispose = registerCrossDaemon(server, { readOwnPeer: async (relayOn: boolean) => (relayOn ? tower : null), stateDir: stateDirOverride ?? Promise.resolve(stateDir),
-    cli: { run: async () => "[]", runLocal: async () => "[]" },
+    cli: {
+      run: async (peer: Peer) => {
+        reachedPeers.push(peer);
+        return "[]";
+      },
+      runLocal: async () => "[]",
+    },
     ownDaemon: async () => ({ name: "tower", serverId: "srv_tower" }),
   });
   stops.push(async () => {
@@ -54,8 +62,25 @@ function startPlugin(initial: State, stored: Peer[] = [], stateDirOverride?: Pro
     },
     settle: () => new Promise((resolve) => setTimeout(resolve, 10)),
     createAgent: async (config: object) => hooks.get("agent.create")!({ request: { config } }),
+    passwordUsedFor: async (daemon: string) => {
+      await callTool(join(await (stateDirOverride ?? Promise.resolve(stateDir)), "tools.sock"), "list_workspaces", { daemon });
+      return reachedPeers.at(-1)?.password;
+    },
     stateDir,
   };
+}
+
+async function callTool(socketPath: string, name: string, args: object): Promise<unknown> {
+  const reply = await new Promise<string>((resolve, reject) => {
+    let body = "";
+    const socket = createConnection(socketPath);
+    socket.setEncoding("utf8");
+    socket.on("data", (chunk) => (body += chunk));
+    socket.on("end", () => resolve(body));
+    socket.on("error", reject);
+    socket.end(JSON.stringify({ type: "call", name, arguments: args, callerAgentId: null }));
+  });
+  return JSON.parse(reply);
 }
 
 const stops: (() => Promise<void>)[] = [];
@@ -125,7 +150,7 @@ describe("cross-daemon switch", () => {
 
   it("lists its peers by name and server ID, never by link", async () => {
     const plugin = startPlugin(on, [mac]);
-    await expect(plugin.call("cross-daemon.list-peers")).resolves.toEqual({ peers: [{ serverId: "srv_mac", name: "mac" }] });
+    await expect(plugin.call("cross-daemon.list-peers")).resolves.toEqual({ peers: [{ serverId: "srv_mac", name: "mac", password: "none" }] });
   });
 
   it("still reports its server ID when its relay is off, so the app can match it to a host", async () => {
@@ -178,7 +203,58 @@ describe("this daemon's password", () => {
     const protectedMac = { ...mac, password: "mac-password" };
     await plugin.call("cross-daemon.set-peers", { peers: [protectedMac], answeredServerIds: ["srv_mac"] });
     expect(plugin.storedPeers()).toEqual([protectedMac]);
-    await expect(plugin.call("cross-daemon.list-peers")).resolves.toEqual({ peers: [{ serverId: "srv_mac", name: "mac" }] });
+    await expect(plugin.call("cross-daemon.list-peers")).resolves.toEqual({ peers: [{ serverId: "srv_mac", name: "mac", password: "announced" }] });
+  });
+});
+
+describe("a peer's password set on this daemon", () => {
+  it("survives a sync that brings that peer without a password", async () => {
+    const plugin = startPlugin(on, [mac]);
+    await plugin.settle();
+    await expect(plugin.call("cross-daemon.set-peer-password", { serverId: "srv_mac", password: "typed-mac-password" })).resolves.toEqual({
+      passwordSet: true,
+    });
+    await plugin.call("cross-daemon.set-peers", { peers: [mac], answeredServerIds: ["srv_mac"] });
+    expect(await plugin.passwordUsedFor("mac")).toBe("typed-mac-password");
+  });
+
+  it("gives way to the password the peer announces itself, which its owner keeps current", async () => {
+    const plugin = startPlugin(on, [mac]);
+    await plugin.settle();
+    await plugin.call("cross-daemon.set-peer-password", { serverId: "srv_mac", password: "typed-mac-password" });
+    await plugin.call("cross-daemon.set-peers", { peers: [{ ...mac, password: "announced-mac-password" }], answeredServerIds: ["srv_mac"] });
+    expect(await plugin.passwordUsedFor("mac")).toBe("announced-mac-password");
+  });
+
+  it("is kept out of peers.json, across a restart, in an owner-only file", async () => {
+    const plugin = startPlugin(on, [mac]);
+    await plugin.settle();
+    await plugin.call("cross-daemon.set-peer-password", { serverId: "srv_mac", password: "typed-mac-password" });
+    expect(plugin.storedPeers()).toEqual([mac]);
+    const restarted = startPlugin(on, [mac], Promise.resolve(plugin.stateDir));
+    await restarted.settle();
+    expect(await restarted.passwordUsedFor("mac")).toBe("typed-mac-password");
+    expect(statSync(join(plugin.stateDir, "peer-passwords.json")).mode & 0o777).toBe(0o600);
+  });
+
+  it("is forgotten when cleared", async () => {
+    const plugin = startPlugin(on, [mac]);
+    await plugin.settle();
+    await plugin.call("cross-daemon.set-peer-password", { serverId: "srv_mac", password: "typed-mac-password" });
+    await expect(plugin.call("cross-daemon.set-peer-password", { serverId: "srv_mac", password: null })).resolves.toEqual({ passwordSet: false });
+    expect(await plugin.passwordUsedFor("mac")).toBeUndefined();
+  });
+
+  it("is listed only as where the peer's password comes from, never as the password", async () => {
+    const plugin = startPlugin(on, [mac, { ...tower, serverId: "srv_brs", name: "brs", password: "announced" }]);
+    await plugin.settle();
+    await plugin.call("cross-daemon.set-peer-password", { serverId: "srv_mac", password: "typed-mac-password" });
+    await expect(plugin.call("cross-daemon.list-peers")).resolves.toEqual({
+      peers: [
+        { serverId: "srv_mac", name: "mac", password: "set-here" },
+        { serverId: "srv_brs", name: "brs", password: "announced" },
+      ],
+    });
   });
 });
 
