@@ -16,6 +16,8 @@ import { planReply } from "./send-files.server";
 import { sendReply } from "./send-reply.server";
 import { runPoller } from "./poller.server";
 import { createTelegramApi, redactToken, type TelegramApi, type TelegramMessage } from "./telegram-api.server";
+import { type TranscribeVoice, voiceTools } from "./transcriber.server";
+import { voiceNoteText } from "./voice-note.server";
 
 type Settings = PluginSettings<typeof bridgeSettings.schema>;
 type SettingsState = PluginSettingsState<typeof bridgeSettings.schema>;
@@ -40,6 +42,7 @@ interface BridgeOptions {
   home: string;
   paseoHome: string;
   apiUrl: string;
+  transcribe: TranscribeVoice;
   log(line: string): void;
 }
 
@@ -47,7 +50,7 @@ const stopped = async () => {};
 // Since Paseo 0.13 the turn_ended event carries no timeline. This many recent items reach back past a long turn.
 const TIMELINE_TAIL = 200;
 
-export function startBridge({ settings, paseo, dataDir, home, paseoHome, apiUrl, log }: BridgeOptions) {
+export function startBridge({ settings, paseo, dataDir, home, paseoHome, apiUrl, transcribe, log }: BridgeOptions) {
   const offsets = createOffsetStore(join(dataDir, "state.json"));
   const filesDir = join(dataDir, "files");
   const sendPolicy = { home, paseoHome, bridgeFilesDir: filesDir };
@@ -78,11 +81,18 @@ export function startBridge({ settings, paseo, dataDir, home, paseoHome, apiUrl,
     const redactedLog = (line: string) => log(redactToken(line, botToken));
     const logIgnored = createIgnoredSenderLog(redactedLog);
     const controller = new AbortController();
+    const tools = voiceTools(values, home);
 
-    async function deliver(messenger: AgentMessenger, message: TelegramMessage) {
-      if (!isAllowed(message, values)) return logIgnored(message);
-      if (!hasContentForAgent(message)) {
-        return isUnsupportedContent(message) ? api.sendMessage(message.chat.id, UNSUPPORTED_REPLY, message.message_id) : undefined;
+    async function deliver(messenger: AgentMessenger, received: TelegramMessage) {
+      if (!isAllowed(received, values)) return logIgnored(received);
+      if (!hasContentForAgent(received)) {
+        return isUnsupportedContent(received) ? api.sendMessage(received.chat.id, UNSUPPORTED_REPLY, received.message_id) : undefined;
+      }
+      let message = received;
+      if (received.voice) {
+        const voiceNote = await voiceNoteText(api, received.voice, transcribe, tools, controller.signal);
+        if (!voiceNote.ok) return api.sendMessage(received.chat.id, `Could not transcribe the voice note: ${voiceNote.reason}`, received.message_id);
+        message = { ...received, text: voiceNote.text };
       }
       const { who, text } = historyEntryFor(message);
       remember(message.chat.id, who, text, { token: botToken, log: redactedLog });

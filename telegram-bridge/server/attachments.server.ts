@@ -16,7 +16,7 @@ type Download = { ok: true; bytes: Buffer } | { ok: false; note: string };
 
 const safeFileName = (name: string) => name.replace(/[^\w.-]/g, "_").replace(/^\.+/, "") || "file";
 
-async function downloadWithinLimit(api: Pick<TelegramApi, "download">, label: string, fileId: string, size: number | undefined, signal: AbortSignal): Promise<Download> {
+export async function downloadWithinLimit(api: Pick<TelegramApi, "download">, label: string, fileId: string, size: number | undefined, signal: AbortSignal): Promise<Download> {
   if (size !== undefined && size > BOT_DOWNLOAD_LIMIT_BYTES) return { ok: false, note: `${label} is over Telegram's 20 MB bot download limit, so it was not fetched.` };
   try {
     return { ok: true, bytes: await api.download(fileId, signal) };

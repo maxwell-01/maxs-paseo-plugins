@@ -2,7 +2,8 @@
 
 A [Paseo](https://paseo.sh) plugin that lets you talk to one Paseo agent from a Telegram chat. The
 agent keeps running in Paseo. Messages you send in the chat reach the agent's existing conversation,
-and its replies come back to the chat. Photos and files work both ways. Requires **Paseo 0.11.1 or
+and its replies come back to the chat. Photos and files work both ways, and voice notes reach the
+agent as text, transcribed on the daemon's host. Requires **Paseo 0.11.1 or
 newer**.
 
 It uses Telegram's Bot API over long polling, so it needs no public URL and no webhook.
@@ -57,8 +58,12 @@ The bridge restarts with the new values on every save.
   to read that folder; an agent that asks before each read waits for your approval in the app.
 - Telegram lets a bot download files up to 20 MB. A bigger file is not fetched, and the prompt says
   so.
-- Stickers, voice notes, videos and the like are not passed on. The bot answers "Only text, photos
-  and files reach the agent." Service messages, such as a pin or a member joining, get no answer.
+- A **voice note** is transcribed on the daemon's host (see [Voice notes](#voice-notes)), and the
+  agent gets `[voice note, 0:42] <transcript>` as the text. If it cannot be transcribed, the bot
+  says why in the chat and the agent gets nothing.
+- Stickers, music files, videos and the like are not passed on. The bot answers "Only text, photos,
+  files and voice notes reach the agent." Service messages, such as a pin or a member joining, get
+  no answer.
 
 ## What comes back
 
@@ -106,6 +111,35 @@ daemon's user only. The agent reads it when it needs context, for example before
 - Only the newest 300 messages per chat are kept. The bot token is replaced by `<bot token>`.
 - Like the files folder, it is inside `$PASEO_HOME`, so a reply can never send it to a chat.
 
+## Voice notes
+
+The bridge converts a voice note with [ffmpeg](https://ffmpeg.org) and transcribes it with
+[whisper.cpp](https://github.com/ggml-org/whisper.cpp), on the CPU of the daemon's host. No audio
+leaves the host. Set the three paths in the settings; `~/` is the daemon user's home. The defaults:
+
+| Setting | Default |
+| --- | --- |
+| ffmpeg path | `~/.local/bin/ffmpeg` |
+| whisper-cli path | `~/.local/bin/whisper-cli` |
+| Whisper model path | `~/.local/share/whisper/ggml-small.en.bin` |
+
+To install them without root on Linux x64:
+
+1. Unpack `whisper-bin-ubuntu-x64.tar.gz` from a
+   [whisper.cpp release](https://github.com/ggml-org/whisper.cpp/releases) and link its
+   `whisper-cli` to `~/.local/bin/whisper-cli`. It needs `libgomp.so.1` (Debian package
+   `libgomp1`); without root, copy that library next to `whisper-cli`.
+2. Unpack a static ffmpeg, such as a `linux64-gpl` build from
+   [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds/releases), and link its `ffmpeg` to
+   `~/.local/bin/ffmpeg`.
+3. Download a model from [ggerganov/whisper.cpp on Hugging Face](https://huggingface.co/ggerganov/whisper.cpp/tree/main)
+   to `~/.local/share/whisper/`. `ggml-small.en.bin` (488 MB) transcribes a minute of speech in
+   about 23 seconds on a 6-core Ryzen 5 2600X; `ggml-base.en.bin` (148 MB) takes about 8 seconds
+   but makes more mistakes.
+
+The bridge handles one message at a time, so later messages wait while a long voice note is
+transcribed. A transcription is stopped after 30 minutes.
+
 ## Limits
 
 - One bot token, one agent. Only one program can poll a bot token at a time. If two daemons use
@@ -116,7 +150,7 @@ daemon's user only. The agent reads it when it needs context, for example before
   app.
 - If the daemon stops while a message is being delivered, that message is dropped, never delivered
   twice.
-- No message edits or deletions, and no voice notes.
+- No message edits or deletions, and no voice replies.
 - Files the chat sends are kept in the files folder until you delete them.
 - The token is kept in the host's plugin settings file, readable by anyone who can manage that
   daemon.

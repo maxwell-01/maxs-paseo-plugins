@@ -12,6 +12,7 @@ const userSchema = z.object({ id: z.number(), first_name: z.string(), username: 
 const chatSchema = z.object({ id: z.number(), type: z.string(), title: z.string().optional() });
 const photoSizeSchema = z.object({ file_id: z.string(), file_size: z.number().optional() });
 const documentSchema = z.object({ file_id: z.string(), file_name: z.string().optional(), mime_type: z.string().optional(), file_size: z.number().optional() });
+const voiceSchema = z.object({ file_id: z.string(), duration: z.number(), file_size: z.number().optional() });
 const fileSchema = z.object({ file_path: z.string().optional() });
 export const messageSchema = z.object({
   message_id: z.number(),
@@ -21,6 +22,7 @@ export const messageSchema = z.object({
   caption: z.string().optional(),
   photo: z.array(photoSizeSchema).optional(),
   document: documentSchema.optional(),
+  voice: voiceSchema.optional(),
 }).loose();
 export type TelegramMessage = z.output<typeof messageSchema>;
 

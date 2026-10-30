@@ -53,7 +53,8 @@ describe("inbound formatting", () => {
   it("tells content for the agent from kinds it cannot take and from service messages", () => {
     expect(hasContentForAgent(message({ photo }))).toBe(true);
     expect(hasContentForAgent(message({ sticker: { file_id: "s" } }))).toBe(false);
-    expect(isUnsupportedContent(message({ voice: { file_id: "v" } }))).toBe(true);
+    expect(hasContentForAgent(message({ voice: { file_id: "v", duration: 3 } }))).toBe(true);
+    expect(isUnsupportedContent(message({ audio: { file_id: "a" } }))).toBe(true);
     expect(isUnsupportedContent(message({ pinned_message: { message_id: 1 } }))).toBe(false);
   });
 

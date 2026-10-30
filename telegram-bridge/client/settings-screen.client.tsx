@@ -10,6 +10,9 @@ interface Fields {
   agentId: string;
   allowedUserIds: string;
   allowedChatIds: string;
+  ffmpegPath: string;
+  whisperCliPath: string;
+  whisperModelPath: string;
 }
 
 const idListError = (text: string) => (isIdList(text) ? undefined : "Ids are whole numbers, separated by commas.");
@@ -39,6 +42,9 @@ export function BridgeSettingsScreen({ theme, layout }: PluginSurfaceProps) {
     agentId: values.agentId,
     allowedUserIds: values.allowedUserIds.join(", "),
     allowedChatIds: values.allowedChatIds.join(", "),
+    ffmpegPath: values.ffmpegPath,
+    whisperCliPath: values.whisperCliPath,
+    whisperModelPath: values.whisperModelPath,
   };
   const shown = draft?.fields ?? saved;
   const edit = (key: keyof Fields) => (text: string) =>
@@ -53,6 +59,9 @@ export function BridgeSettingsScreen({ theme, layout }: PluginSurfaceProps) {
       agentId: fields.agentId.trim(),
       allowedUserIds: parseIds(fields.allowedUserIds),
       allowedChatIds: parseIds(fields.allowedChatIds),
+      ffmpegPath: fields.ffmpegPath.trim(),
+      whisperCliPath: fields.whisperCliPath.trim(),
+      whisperModelPath: fields.whisperModelPath.trim(),
     };
     void settings.save(next, draft.revision).then((isSaved) => {
       if (isSaved) setDraft(null);
@@ -78,6 +87,9 @@ export function BridgeSettingsScreen({ theme, layout }: PluginSurfaceProps) {
             initialValue={shown.allowedChatIds}
             onChangeText={edit("allowedChatIds")}
           />
+          <SettingsInput label="ffmpeg path" hint="Converts voice notes for whisper.cpp. ~/ is the daemon user's home." initialValue={shown.ffmpegPath} onChangeText={edit("ffmpegPath")} />
+          <SettingsInput label="whisper-cli path" hint="whisper.cpp, which turns voice notes into text on this host." initialValue={shown.whisperCliPath} onChangeText={edit("whisperCliPath")} />
+          <SettingsInput label="Whisper model path" hint="A ggml model file for whisper.cpp." initialValue={shown.whisperModelPath} onChangeText={edit("whisperModelPath")} />
           <SettingsAction
             label={settings.saveError ?? "The bridge restarts with the new settings when you save."}
             actionLabel={settings.saving ? "Saving…" : "Save"}
