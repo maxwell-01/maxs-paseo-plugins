@@ -10,7 +10,7 @@ const DESCRIPTION_KEY = ["cross-daemon", "describe"];
 function describePassword(passwordSet: boolean | undefined, passwordUnreadable: boolean): string {
   if (passwordSet === undefined) return "Checking…";
   if (passwordSet) return "Set. Switched-on daemons use it to reach this one.";
-  if (passwordUnreadable) return "Can no longer be read: Paseo's daemon key changed after it was saved. Enter it again.";
+  if (passwordUnreadable) return "Can no longer be read: it was sealed under an earlier Paseo daemon key, or is damaged. Enter it again.";
   return "Not set. Enter it if this daemon has a password, or other daemons cannot reach it.";
 }
 

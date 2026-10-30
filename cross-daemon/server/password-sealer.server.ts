@@ -6,13 +6,13 @@ export type SealedPassword = z.infer<typeof sealedPasswordSchema>;
 
 export interface PasswordSealer {
   seal(password: string): SealedPassword;
-  // Null when the password was sealed under another daemon key, for example after Paseo made a new one.
+  // Null when the password was sealed under another daemon key, for example after Paseo made a new
+  // one, or is damaged. Either way the remedy is to enter it again.
   open(sealed: SealedPassword): string | null;
 }
 
 const CIPHER = "aes-256-gcm";
 const KEY_PURPOSE = "paseo-cross-daemon passwords v1";
-const SEALED_UNDER_ANOTHER_KEY = "Unsupported state or unable to authenticate data";
 
 export function createPasswordSealer(daemonSecretKey: Uint8Array): PasswordSealer {
   const key = Buffer.from(hkdfSync("sha256", daemonSecretKey, new Uint8Array(0), KEY_PURPOSE, 32));
@@ -23,14 +23,14 @@ export function createPasswordSealer(daemonSecretKey: Uint8Array): PasswordSeale
       const data = Buffer.concat([cipher.update(password, "utf8"), cipher.final()]);
       return { iv: iv.toString("base64"), tag: cipher.getAuthTag().toString("base64"), data: data.toString("base64") };
     },
+    // Node names no error code for a failed check, so every decipher failure counts as unreadable.
     open({ iv, tag, data }) {
-      const decipher = createDecipheriv(CIPHER, key, Buffer.from(iv, "base64"));
-      decipher.setAuthTag(Buffer.from(tag, "base64"));
       try {
+        const decipher = createDecipheriv(CIPHER, key, Buffer.from(iv, "base64"));
+        decipher.setAuthTag(Buffer.from(tag, "base64"));
         return Buffer.concat([decipher.update(Buffer.from(data, "base64")), decipher.final()]).toString("utf8");
-      } catch (error) {
-        if (error instanceof Error && error.message === SEALED_UNDER_ANOTHER_KEY) return null;
-        throw error;
+      } catch {
+        return null;
       }
     },
   };

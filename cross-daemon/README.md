@@ -60,8 +60,9 @@ At its first start, version 0.10.0 seals the plain files that earlier versions w
 them. Nothing needs to be entered again.
 
 If Paseo makes a new daemon key, for example after its keypair file is lost, the passwords sealed
-under the old key can no longer be read. The plugin keeps running and does not use them. It logs,
-without the password, each one that must be entered again, and the settings say the same:
+under the old key can no longer be read, nor can a damaged one. The plugin keeps running and does
+not use them. It logs, without the password, each one that must be entered again, and the settings
+say the same:
 
 - This daemon's own password: **This daemon → This daemon's password**.
 - A password entered here for a peer: **This daemon → Password for** *peer name*.

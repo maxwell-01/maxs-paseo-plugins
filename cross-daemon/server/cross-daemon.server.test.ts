@@ -266,7 +266,7 @@ describe("a peer's password set on this daemon", () => {
 
 function filesIn(dir: string): string {
   return readdirSync(dir)
-    .filter((name) => name.endsWith(".json"))
+    .filter((name) => statSync(join(dir, name)).isFile())
     .map((name) => readFileSync(join(dir, name), "utf8"))
     .join("\n");
 }
@@ -314,7 +314,7 @@ describe("passwords at rest", () => {
     const logged = errors.mock.calls.flat().join("\n");
     expect(logged).toContain("this daemon's own password");
     expect(logged).toContain("Password for mac");
-    expect(logged).toContain("brs");
+    expect(logged).toContain("brs gives it again at the next sync");
     for (const password of ["fake-tower-password", "fake-typed-mac-password", "fake-brs-password"]) expect(logged).not.toContain(password);
     await expect(restarted.call("cross-daemon.describe")).resolves.toEqual({
       serverId: "srv_tower",
@@ -333,6 +333,40 @@ describe("passwords at rest", () => {
 
     await restarted.call("cross-daemon.set-peer-password", { serverId: "srv_mac", password: "fake-new-mac-password" });
     expect(await restarted.passwordUsedFor("mac")).toBe("fake-new-mac-password");
+  });
+
+  it("gets a peer's own password back at the next sync after a key change", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const plugin = startPlugin(on);
+    await storeAllThreePasswords(plugin);
+    const restarted = startPlugin(on, [], Promise.resolve(plugin.stateDir), true, randomBytes(32));
+    await restarted.settle();
+    await restarted.call("cross-daemon.set-peers", { peers: [mac, { ...brs, password: "fake-brs-password" }], answeredServerIds: ["srv_mac", "srv_brs"] });
+    expect(await restarted.passwordUsedFor("brs")).toBe("fake-brs-password");
+  });
+
+  it("keeps one peer's unreadable password while another's is set, and forgets it on request", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const plugin = startPlugin(on);
+    await storeAllThreePasswords(plugin);
+    const restarted = startPlugin(on, [], Promise.resolve(plugin.stateDir), true, randomBytes(32));
+    await restarted.settle();
+    await restarted.call("cross-daemon.set-peer-password", { serverId: "srv_brs", password: "fake-typed-brs-password" });
+    await expect(restarted.call("cross-daemon.list-peers")).resolves.toMatchObject({ peers: [{ serverId: "srv_mac", password: "unreadable" }, {}] });
+    await restarted.call("cross-daemon.set-peer-password", { serverId: "srv_mac", password: null });
+    await expect(restarted.call("cross-daemon.list-peers")).resolves.toMatchObject({ peers: [{ serverId: "srv_mac", password: "none" }, {}] });
+  });
+
+  it("reports a damaged sealed password as unreadable instead of failing", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    const stateDir = join(makeTempDir("cd-"), "cross-daemon");
+    mkdirSync(stateDir, { recursive: true });
+    writeFileSync(join(stateDir, "peers.json"), JSON.stringify([mac]));
+    writeFileSync(join(stateDir, "peer-passwords.json"), JSON.stringify({ srv_mac: { iv: "AAA=", tag: "AAA=", data: "AAA=" } }));
+    const plugin = startPlugin(on, [], Promise.resolve(stateDir));
+    await plugin.settle();
+    expect(errors.mock.calls.flat().join("\n")).toContain("Password for mac");
+    await expect(plugin.call("cross-daemon.list-peers")).resolves.toEqual({ peers: [{ serverId: "srv_mac", name: "mac", password: "unreadable" }] });
   });
 });
 

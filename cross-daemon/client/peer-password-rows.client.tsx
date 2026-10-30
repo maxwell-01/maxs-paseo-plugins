@@ -12,7 +12,7 @@ interface PeerPasswordTarget {
 
 function describePeerPassword(name: string, source: PeerPasswordSource): string {
   if (source === "set-here") return `Set on this daemon. Kept until you forget it, even if ${name} does not give one.`;
-  if (source === "unreadable") return `Can no longer be read: Paseo's daemon key changed after it was saved. Enter the password for ${name} again.`;
+  if (source === "unreadable") return `Can no longer be read: it was sealed under an earlier Paseo daemon key, or is damaged. Enter the password for ${name} again.`;
   return `Not set. Enter it if ${name} has a password and does not give it, or calls to it fail with "Password required".`;
 }
 
