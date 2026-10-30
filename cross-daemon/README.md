@@ -46,7 +46,8 @@ instead: **This daemon → Password for** *peer name*, then **Save**. Only peers
 own get this row. The plugin keeps it owner-only in
 `$PASEO_HOME/plugin-data/cross-daemon/peer-passwords.json`, apart from the peer list, so a sync never
 drops it. It is used only for calls from this daemon to that peer. If the peer later gives its own
-password, that one wins, because the peer's owner keeps it current. **Forget** drops it.
+password, that one wins, because the peer's owner keeps it current. **Forget** drops it. The
+password stays while the peer is switched off, so it works again when the peer comes back.
 
 ## Agent tools
 

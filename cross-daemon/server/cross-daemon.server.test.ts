@@ -215,6 +215,7 @@ describe("a peer's password set on this daemon", () => {
       passwordSet: true,
     });
     await plugin.call("cross-daemon.set-peers", { peers: [mac], answeredServerIds: ["srv_mac"] });
+    expect(plugin.storedPeers()).toEqual([mac]);
     expect(await plugin.passwordUsedFor("mac")).toBe("typed-mac-password");
   });
 
