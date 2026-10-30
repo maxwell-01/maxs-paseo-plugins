@@ -19,6 +19,15 @@ function git(cwd: string, ...args: string[]): string {
   return execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
 }
 
+function isDetached(repo: string): boolean {
+  try {
+    execFileSync("git", ["symbolic-ref", "-q", "HEAD"], { cwd: repo, stdio: "ignore" });
+    return false;
+  } catch {
+    return true;
+  }
+}
+
 function tryGit(cwd: string, ...args: string[]): void {
   try {
     execFileSync("git", args, { cwd, encoding: "utf8", stdio: "ignore" });
@@ -96,7 +105,7 @@ describe("syncOnce", () => {
     expect(existsSync(join(mainRepo, "ignored-ws.txt"))).toBe(false);
   });
 
-  it("moves main's branch to the workspace HEAD", () => {
+  it("detaches main's HEAD at the workspace HEAD and leaves main's branch where it was", () => {
     writeFileSync(join(wsDir, "tracked.txt"), "committed change\n");
     git(wsDir, "commit", "-am", "advance feature");
     const wsHead = git(wsDir, "rev-parse", "HEAD");
@@ -105,6 +114,8 @@ describe("syncOnce", () => {
 
     expect(syncOnce(wsDir, mainRepo)).toBe(true);
     expect(git(mainRepo, "rev-parse", "HEAD")).toBe(wsHead);
+    expect(git(mainRepo, "rev-parse", "refs/heads/main")).toBe(mainHeadBefore);
+    expect(isDetached(mainRepo)).toBe(true);
   });
 
   it("skips and leaves main untouched when the workspace is mid-merge", () => {
@@ -203,8 +214,11 @@ describe("snapshotMain + restoreMain", () => {
     expect(syncOnce(wsDir, mainRepo)).toBe(true);
     expect(existsSync(join(mainRepo, "marker.txt"))).toBe(true);
 
-    restoreMain(mainRepo, snap.originalHead, snap.originalTree, snap.originalIndexTree, snap.originalRef);
+    expect(git(mainRepo, "rev-parse", "refs/heads/main")).toBe(headBefore);
 
+    restoreMain(mainRepo, snap);
+
+    expect(git(mainRepo, "symbolic-ref", "HEAD")).toBe("refs/heads/main");
     expect(git(mainRepo, "rev-parse", "HEAD")).toBe(headBefore);
     expect(git(mainRepo, "status", "--porcelain")).toBe(statusBefore);
     expect(readFileSync(join(mainRepo, "tracked.txt"), "utf8")).toBe(trackedBefore);
@@ -213,6 +227,73 @@ describe("snapshotMain + restoreMain", () => {
     expect(readFileSync(join(mainRepo, "committed.txt"), "utf8")).toBe(committedBefore);
     expect(existsSync(join(mainRepo, "marker.txt"))).toBe(false);
     expect(refExists(mainRepo, snap.originalRef)).toBe(false);
+  });
+
+  it("puts main's branch back for a beam started by a version that moved it", () => {
+    writeFileSync(join(mainRepo, "untracked.txt"), "untracked content\n");
+    const headBefore = git(mainRepo, "rev-parse", "HEAD");
+    const snap = snapshotMain(mainRepo);
+
+    writeFileSync(join(wsDir, "tracked.txt"), "workspace content\n");
+    git(wsDir, "commit", "-am", "workspace change");
+    git(mainRepo, "reset", "--mixed", git(wsDir, "rev-parse", "HEAD"));
+    git(mainRepo, "read-tree", "--reset", "-u", "HEAD");
+    git(mainRepo, "clean", "-fd");
+    const { originalCheckedOutRef: _, ...legacySnap } = snap;
+
+    restoreMain(mainRepo, legacySnap);
+
+    expect(git(mainRepo, "symbolic-ref", "HEAD")).toBe("refs/heads/main");
+    expect(git(mainRepo, "rev-parse", "refs/heads/main")).toBe(headBefore);
+    expect(git(mainRepo, "status", "--porcelain")).toBe("?? untracked.txt");
+  });
+
+  it("checks main out again when a tag shares the branch's name", () => {
+    const headBefore = git(mainRepo, "rev-parse", "HEAD");
+    git(mainRepo, "tag", "main");
+    const snap = snapshotMain(mainRepo);
+
+    writeFileSync(join(wsDir, "tracked.txt"), "workspace content\n");
+    git(wsDir, "commit", "-am", "workspace change");
+    expect(syncOnce(wsDir, mainRepo)).toBe(true);
+
+    restoreMain(mainRepo, snap);
+
+    expect(git(mainRepo, "symbolic-ref", "HEAD")).toBe("refs/heads/main");
+    expect(git(mainRepo, "rev-parse", "HEAD")).toBe(headBefore);
+  });
+
+  it("does not move a branch someone checked out in main during the beam", () => {
+    const headBefore = git(mainRepo, "rev-parse", "HEAD");
+    const snap = snapshotMain(mainRepo);
+
+    writeFileSync(join(wsDir, "tracked.txt"), "workspace content\n");
+    git(wsDir, "commit", "-am", "workspace change");
+    const wsHead = git(wsDir, "rev-parse", "HEAD");
+    expect(syncOnce(wsDir, mainRepo)).toBe(true);
+    git(mainRepo, "checkout", "-q", "-b", "hotfix");
+
+    restoreMain(mainRepo, snap);
+
+    expect(git(mainRepo, "symbolic-ref", "HEAD")).toBe("refs/heads/main");
+    expect(git(mainRepo, "rev-parse", "HEAD")).toBe(headBefore);
+    expect(git(mainRepo, "rev-parse", "refs/heads/hotfix")).toBe(wsHead);
+  });
+
+  it("leaves main detached at its original commit when it was detached before the beam", () => {
+    const headBefore = git(mainRepo, "rev-parse", "HEAD");
+    git(mainRepo, "checkout", "-q", "--detach");
+    const snap = snapshotMain(mainRepo);
+
+    writeFileSync(join(wsDir, "tracked.txt"), "workspace content\n");
+    git(wsDir, "commit", "-am", "workspace change");
+    expect(syncOnce(wsDir, mainRepo)).toBe(true);
+
+    restoreMain(mainRepo, snap);
+
+    expect(isDetached(mainRepo)).toBe(true);
+    expect(git(mainRepo, "rev-parse", "HEAD")).toBe(headBefore);
+    expect(git(mainRepo, "rev-parse", "refs/heads/main")).toBe(headBefore);
   });
 });
 
@@ -260,6 +341,26 @@ describe("activate + deactivate", () => {
       workspaceId: "ws-1",
       titleMark: { originalTitle: null, markedTitle: "⚡ cruel-dolphin" },
     });
+  });
+
+  it("keeps main's branch at its commit while beaming and checks it out again at beam-out", async () => {
+    const headBefore = git(mainRepo, "rev-parse", "HEAD");
+    writeFileSync(join(wsDir, "tracked.txt"), "workspace content\n");
+    git(wsDir, "commit", "-am", "workspace change");
+
+    await activate({
+      workspaceId: "ws-1",
+      workspaceName: "cruel-dolphin",
+      workspaceDir: wsDir,
+      titleMark: undefined,
+    });
+    expect(readFileSync(join(mainRepo, "tracked.txt"), "utf8")).toBe("workspace content\n");
+    expect(git(mainRepo, "rev-parse", "refs/heads/main")).toBe(headBefore);
+
+    await deactivate();
+    expect(git(mainRepo, "symbolic-ref", "HEAD")).toBe("refs/heads/main");
+    expect(git(mainRepo, "rev-parse", "HEAD")).toBe(headBefore);
+    expect(readFileSync(join(mainRepo, "tracked.txt"), "utf8")).toBe("original\n");
   });
 
   it("reports no recorded title for a beam started before titles were tracked", async () => {

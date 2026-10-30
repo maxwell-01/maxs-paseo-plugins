@@ -17,6 +17,7 @@ const BeamStateSchema = z.object({
   titleMark: TitleMarkSchema.optional(),
   mainPath: z.string(),
   originalBranch: z.string(),
+  originalCheckedOutRef: z.string().optional(),
   originalHead: z.string(),
   originalTree: z.string(),
   originalIndexTree: z.string(),
@@ -233,7 +234,7 @@ export function syncOnce(workspaceDir: string, mainPath: string): boolean {
   const wsHead = git(workspaceDir, "rev-parse", "HEAD");
   const snapTree = writeWorkingTreeTree(workspaceDir);
 
-  git(mainPath, "reset", "--mixed", wsHead);
+  git(mainPath, "update-ref", "--no-deref", "HEAD", wsHead);
   git(mainPath, "read-tree", "--reset", "-u", snapTree);
   git(mainPath, "clean", "-fd");
 
@@ -256,14 +257,21 @@ function commitTree(mainPath: string, tree: string, parent: string, message: str
   );
 }
 
-export function snapshotMain(mainPath: string): {
-  originalBranch: string;
-  originalHead: string;
-  originalTree: string;
-  originalIndexTree: string;
-  originalRef: string;
-} {
+type MainSnapshot = Pick<
+  BeamState,
+  | "originalBranch"
+  | "originalCheckedOutRef"
+  | "originalHead"
+  | "originalTree"
+  | "originalIndexTree"
+  | "originalRef"
+>;
+
+const DETACHED_HEAD = "HEAD";
+
+export function snapshotMain(mainPath: string): MainSnapshot {
   const originalBranch = git(mainPath, "rev-parse", "--abbrev-ref", "HEAD");
+  const originalCheckedOutRef = git(mainPath, "rev-parse", "--symbolic-full-name", "HEAD");
   const originalHead = git(mainPath, "rev-parse", "HEAD");
   const originalIndexTree = git(mainPath, "write-tree");
   const originalTree = writeWorkingTreeTree(mainPath);
@@ -273,22 +281,36 @@ export function snapshotMain(mainPath: string): {
   const originalRef = "refs/beam/original";
   git(mainPath, "update-ref", originalRef, worktreeCommit);
 
-  return { originalBranch, originalHead, originalTree, originalIndexTree, originalRef };
+  return {
+    originalBranch,
+    originalCheckedOutRef,
+    originalHead,
+    originalTree,
+    originalIndexTree,
+    originalRef,
+  };
 }
 
-export function restoreMain(
-  mainPath: string,
-  originalHead: string,
-  originalTree: string,
-  originalIndexTree: string,
-  originalRef?: string,
-): void {
-  git(mainPath, "read-tree", "--reset", "-u", originalTree);
+function moveBackBranchMovedByOlderBeam(mainPath: string, originalHead: string): void {
   git(mainPath, "reset", "--soft", originalHead);
-  git(mainPath, "read-tree", originalIndexTree);
-  if (originalRef) {
-    gitSucceeds(mainPath, "update-ref", "-d", originalRef);
+}
+
+function restoreHead(mainPath: string, snapshot: MainSnapshot): void {
+  const { originalCheckedOutRef, originalHead } = snapshot;
+  if (originalCheckedOutRef === undefined) {
+    moveBackBranchMovedByOlderBeam(mainPath, originalHead);
+  } else if (originalCheckedOutRef === DETACHED_HEAD) {
+    git(mainPath, "update-ref", "--no-deref", "HEAD", originalHead);
+  } else {
+    git(mainPath, "symbolic-ref", "HEAD", originalCheckedOutRef);
   }
+}
+
+export function restoreMain(mainPath: string, snapshot: MainSnapshot): void {
+  git(mainPath, "read-tree", "--reset", "-u", snapshot.originalTree);
+  restoreHead(mainPath, snapshot);
+  git(mainPath, "read-tree", snapshot.originalIndexTree);
+  gitSucceeds(mainPath, "update-ref", "-d", snapshot.originalRef);
 }
 
 function sync(workspaceDir: string, mainPath: string): void {
@@ -400,8 +422,7 @@ export async function activate(input: {
     }
   }
 
-  const { originalBranch, originalHead, originalTree, originalIndexTree, originalRef } =
-    snapshotMain(mainPath);
+  const snapshot = snapshotMain(mainPath);
 
   const watcher = watch(workspaceDir, {
     ignored: (path: string) => shouldIgnorePath(path),
@@ -441,11 +462,7 @@ export async function activate(input: {
     ...agent,
     titleMark,
     mainPath,
-    originalBranch,
-    originalHead,
-    originalTree,
-    originalIndexTree,
-    originalRef,
+    ...snapshot,
     startedAt: new Date().toISOString(),
   };
   writeFileSync(stateFile, JSON.stringify(state, null, 2));
@@ -475,13 +492,7 @@ export async function deactivate(): Promise<{
     const state = readState(stateFile);
     workspaceId = state.workspaceId;
     titleMark = state.titleMark;
-    restoreMain(
-      mainPath,
-      state.originalHead,
-      state.originalTree,
-      state.originalIndexTree,
-      state.originalRef,
-    );
+    restoreMain(mainPath, state);
     logBeam("info", `beam out: restored main to ${state.originalBranch}@${state.originalHead}`);
     rmSync(stateFile);
   } else {
