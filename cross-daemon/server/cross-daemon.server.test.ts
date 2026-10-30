@@ -1,4 +1,5 @@
-import { readFileSync, statSync, writeFileSync, mkdirSync } from "node:fs";
+import { randomBytes } from "node:crypto";
+import { readdirSync, readFileSync, statSync, writeFileSync, mkdirSync } from "node:fs";
 import { createConnection } from "node:net";
 import { join } from "node:path";
 import type { PluginServerContext, PluginSettingsState } from "@getpaseo/plugin/server";
@@ -10,13 +11,15 @@ import { makeTempDir } from "./temp-dir.test-support";
 
 const tower: Peer = { serverId: "srv_tower", name: "tower", link: "https://app.paseo.sh/#offer=dG93ZXI" };
 const mac: Peer = { serverId: "srv_mac", name: "mac", link: "https://app.paseo.sh/#offer=bWFj" };
+const brs: Peer = { serverId: "srv_brs", name: "brs", link: "https://app.paseo.sh/#offer=YnJz" };
+const testDaemonKey = randomBytes(32);
 
 type State = PluginSettingsState<any>;
 const on: State = { status: "ready", revision: "r1", values: { enabled: true } };
 const off: State = { status: "ready", revision: "r2", values: { enabled: false } };
 const invalid: State = { status: "invalid", revision: "r3", error: "schema version 9 is newer" };
 
-function startPlugin(initial: State, stored: Peer[] = [], stateDirOverride?: Promise<string>, relayEnabled = true) {
+function startPlugin(initial: State, stored: Peer[] = [], stateDirOverride?: Promise<string>, relayEnabled = true, daemonSecretKey: Uint8Array = testDaemonKey) {
   const stateDir = join(makeTempDir("cd-"), "cross-daemon");
   mkdirSync(stateDir, { recursive: true });
   writeFileSync(join(stateDir, "peers.json"), JSON.stringify(stored));
@@ -41,6 +44,7 @@ function startPlugin(initial: State, stored: Peer[] = [], stateDirOverride?: Pro
   } as unknown as PluginServerContext;
   const reachedPeers: Peer[] = [];
   const dispose = registerCrossDaemon(server, { readOwnPeer: async (relayOn: boolean) => (relayOn ? tower : null), stateDir: stateDirOverride ?? Promise.resolve(stateDir),
+    daemonSecretKey: Promise.resolve(daemonSecretKey),
     cli: {
       run: async (peer: Peer) => {
         reachedPeers.push(peer);
@@ -202,7 +206,8 @@ describe("this daemon's password", () => {
     const plugin = startPlugin(on);
     const protectedMac = { ...mac, password: "mac-password" };
     await plugin.call("cross-daemon.set-peers", { peers: [protectedMac], answeredServerIds: ["srv_mac"] });
-    expect(plugin.storedPeers()).toEqual([protectedMac]);
+    expect(plugin.storedPeers()).toEqual([{ ...mac, sealedPassword: expect.any(Object) }]);
+    expect(await plugin.passwordUsedFor("mac")).toBe("mac-password");
     await expect(plugin.call("cross-daemon.list-peers")).resolves.toEqual({ peers: [{ serverId: "srv_mac", name: "mac", password: "announced" }] });
   });
 });
@@ -256,6 +261,78 @@ describe("a peer's password set on this daemon", () => {
         { serverId: "srv_brs", name: "brs", password: "announced" },
       ],
     });
+  });
+});
+
+function filesIn(dir: string): string {
+  return readdirSync(dir)
+    .filter((name) => name.endsWith(".json"))
+    .map((name) => readFileSync(join(dir, name), "utf8"))
+    .join("\n");
+}
+
+async function storeAllThreePasswords(plugin: ReturnType<typeof startPlugin>) {
+  await plugin.settle();
+  await plugin.call("cross-daemon.set-own-password", { password: "fake-tower-password" });
+  await plugin.call("cross-daemon.set-peer-password", { serverId: "srv_mac", password: "fake-typed-mac-password" });
+  await plugin.call("cross-daemon.set-peers", { peers: [mac, { ...brs, password: "fake-brs-password" }], answeredServerIds: ["srv_mac", "srv_brs"] });
+}
+
+describe("passwords at rest", () => {
+  it("seals every password it keeps, so none is on disk in plain text", async () => {
+    const plugin = startPlugin(on);
+    await storeAllThreePasswords(plugin);
+    const onDisk = filesIn(plugin.stateDir);
+    for (const password of ["fake-tower-password", "fake-typed-mac-password", "fake-brs-password"]) expect(onDisk).not.toContain(password);
+    await expect(plugin.call("cross-daemon.describe")).resolves.toMatchObject({ member: { password: "fake-tower-password" } });
+    expect(await plugin.passwordUsedFor("mac")).toBe("fake-typed-mac-password");
+    expect(await plugin.passwordUsedFor("brs")).toBe("fake-brs-password");
+  });
+
+  it("seals the plain password files an older version left, when it starts", async () => {
+    const stateDir = join(makeTempDir("cd-"), "cross-daemon");
+    mkdirSync(stateDir, { recursive: true });
+    writeFileSync(join(stateDir, "own-password.json"), JSON.stringify("fake-tower-password"));
+    writeFileSync(join(stateDir, "peer-passwords.json"), JSON.stringify({ srv_mac: "fake-typed-mac-password" }));
+    writeFileSync(join(stateDir, "peers.json"), JSON.stringify([mac, { ...brs, password: "fake-brs-password" }]));
+    const plugin = startPlugin(on, [], Promise.resolve(stateDir));
+    await plugin.settle();
+    const onDisk = filesIn(stateDir);
+    for (const password of ["fake-tower-password", "fake-typed-mac-password", "fake-brs-password"]) expect(onDisk).not.toContain(password);
+    await expect(plugin.call("cross-daemon.describe")).resolves.toMatchObject({ passwordSet: true, member: { password: "fake-tower-password" } });
+    expect(await plugin.passwordUsedFor("mac")).toBe("fake-typed-mac-password");
+    expect(await plugin.passwordUsedFor("brs")).toBe("fake-brs-password");
+  });
+
+  it("names each password it can no longer open after Paseo makes a new daemon key, without showing it", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    const plugin = startPlugin(on);
+    await storeAllThreePasswords(plugin);
+    const restarted = startPlugin(on, [], Promise.resolve(plugin.stateDir), true, randomBytes(32));
+    await restarted.settle();
+
+    const logged = errors.mock.calls.flat().join("\n");
+    expect(logged).toContain("this daemon's own password");
+    expect(logged).toContain("Password for mac");
+    expect(logged).toContain("brs");
+    for (const password of ["fake-tower-password", "fake-typed-mac-password", "fake-brs-password"]) expect(logged).not.toContain(password);
+    await expect(restarted.call("cross-daemon.describe")).resolves.toEqual({
+      serverId: "srv_tower",
+      switchedOn: true,
+      passwordSet: false,
+      passwordUnreadable: true,
+      member: tower,
+    });
+    await expect(restarted.call("cross-daemon.list-peers")).resolves.toEqual({
+      peers: [
+        { serverId: "srv_mac", name: "mac", password: "unreadable" },
+        { serverId: "srv_brs", name: "brs", password: "none" },
+      ],
+    });
+    expect(await restarted.passwordUsedFor("mac")).toBeUndefined();
+
+    await restarted.call("cross-daemon.set-peer-password", { serverId: "srv_mac", password: "fake-new-mac-password" });
+    expect(await restarted.passwordUsedFor("mac")).toBe("fake-new-mac-password");
   });
 });
 

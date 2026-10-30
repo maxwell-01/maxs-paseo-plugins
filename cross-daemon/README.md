@@ -32,9 +32,9 @@ agents: they run as the same user. The cross-daemon tools never print a link.
 
 A daemon with a password refuses a pairing link on its own. Paseo keeps only a hash of that
 password, and the app does not show plugins the passwords it holds, so enter the password once in
-that daemon's own **This daemon → This daemon's password**. The plugin keeps it owner-only in
+that daemon's own **This daemon → This daemon's password**. The plugin keeps it sealed in
 `$PASEO_HOME/plugin-data/cross-daemon/own-password.json` and gives it, with the link, to the other
-switched-on daemons at each sync. They store it with that peer and pass it to the CLI as
+switched-on daemons at each sync. They store it sealed with that peer and pass it to the CLI as
 `PASEO_PASSWORD` only for calls to that daemon, never on the command line and never to another
 daemon. No tool or listing shows a password. **Forget** stops giving it; peers drop it at their next
 sync. Without it, calls to that daemon fail with `Password required`.
@@ -43,11 +43,29 @@ sync. Without it, calls to that daemon fail with `Password required`.
 
 When nobody can enter a daemon's own password on that daemon, enter it on the daemon that calls it
 instead: **This daemon → Password for** *peer name*, then **Save**. Only peers that give no password of their
-own get this row. The plugin keeps it owner-only in
+own get this row. The plugin keeps it sealed in
 `$PASEO_HOME/plugin-data/cross-daemon/peer-passwords.json`, apart from the peer list, so a sync never
 drops it. It is used only for calls from this daemon to that peer. If the peer later gives its own
 password, that one wins, because the peer's owner keeps it current. **Forget** drops it. The
 password stays while the peer is switched off, so it works again when the peer comes back.
+
+### How passwords are stored
+
+No password is stored in plain text. Each one is sealed with AES-256-GCM under a key derived from
+the daemon key Paseo keeps in `$PASEO_HOME/daemon-keypair.json`, so a copy of the plugin's folder on
+its own reveals no password. Anyone who can read `$PASEO_HOME`, including the daemon's own agents,
+which run as the same user, can still open them. The files are owner-only.
+
+At its first start, version 0.10.0 seals the plain files that earlier versions wrote and replaces
+them. Nothing needs to be entered again.
+
+If Paseo makes a new daemon key, for example after its keypair file is lost, the passwords sealed
+under the old key can no longer be read. The plugin keeps running and does not use them. It logs,
+without the password, each one that must be entered again, and the settings say the same:
+
+- This daemon's own password: **This daemon → This daemon's password**.
+- A password entered here for a peer: **This daemon → Password for** *peer name*.
+- A password a peer gives itself comes back at that peer's next sync.
 
 ## Agent tools
 

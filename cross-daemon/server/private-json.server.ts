@@ -6,7 +6,7 @@ import type { z } from "zod";
 export const OWNER_ONLY_FILE = 0o600;
 export const OWNER_ONLY_DIR = 0o700;
 
-function parseJsonOrUndefined(text: string): unknown {
+export function parseJsonOrUndefined(text: string): unknown {
   try {
     return JSON.parse(text);
   } catch (error) {
