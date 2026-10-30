@@ -393,6 +393,16 @@ describe("bridge, voice notes", () => {
     expect(history(GROUP)).toBe("Max in Crew: [voice note, 0:42] Is the deploy done?\n");
   });
 
+  it("keeps a voice note's caption after its transcript", async () => {
+    const agents = fakeAgents();
+    bot.serveFile("voice", Buffer.from("ogg bytes"));
+    bot.reply("getUpdates", { json: { ok: true, result: [update(5, { voice: { file_id: "voice", duration: 7 }, caption: "in the beam repo" })] } });
+    const { stop } = start(undefined, Promise.resolve(agents.messenger));
+    await until(() => agents.sent.length === 1);
+    await stop();
+    expect(agents.sent[0].text.split("\n").slice(0, 2)).toEqual(["[Telegram, Max, in Crew]: [voice note, 0:07] Is the deploy done?", "in the beam repo"]);
+  });
+
   it("tells the chat, and not the agent, when the voice note cannot be transcribed", async () => {
     const agents = fakeAgents();
     bot.serveFile("voice", Buffer.from("mumble"));

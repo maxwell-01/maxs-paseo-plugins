@@ -81,7 +81,7 @@ export function startBridge({ settings, paseo, dataDir, home, paseoHome, apiUrl,
     const redactedLog = (line: string) => log(redactToken(line, botToken));
     const logIgnored = createIgnoredSenderLog(redactedLog);
     const controller = new AbortController();
-    const tools = voiceTools(values, home);
+    const voiceToolPaths = voiceTools(values, home);
 
     async function deliver(messenger: AgentMessenger, received: TelegramMessage) {
       if (!isAllowed(received, values)) return logIgnored(received);
@@ -90,9 +90,9 @@ export function startBridge({ settings, paseo, dataDir, home, paseoHome, apiUrl,
       }
       let message = received;
       if (received.voice) {
-        const voiceNote = await voiceNoteText(api, received.voice, transcribe, tools, controller.signal);
+        const voiceNote = await voiceNoteText(api, received.voice, transcribe, voiceToolPaths, controller.signal);
         if (!voiceNote.ok) return api.sendMessage(received.chat.id, `Could not transcribe the voice note: ${voiceNote.reason}`, received.message_id);
-        message = { ...received, text: voiceNote.text };
+        message = { ...received, text: received.caption === undefined ? voiceNote.text : `${voiceNote.text}\n${received.caption}` };
       }
       const { who, text } = historyEntryFor(message);
       remember(message.chat.id, who, text, { token: botToken, log: redactedLog });

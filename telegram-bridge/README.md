@@ -59,7 +59,7 @@ The bridge restarts with the new values on every save.
 - Telegram lets a bot download files up to 20 MB. A bigger file is not fetched, and the prompt says
   so.
 - A **voice note** is transcribed on the daemon's host (see [Voice notes](#voice-notes)), and the
-  agent gets `[voice note, 0:42] <transcript>` as the text. If it cannot be transcribed, the bot
+  agent gets `[voice note, 0:42] <transcript>` as the text, with any caption on the next line. If it cannot be transcribed, the bot
   says why in the chat and the agent gets nothing.
 - Stickers, music files, videos and the like are not passed on. The bot answers "Only text, photos,
   files and voice notes reach the agent." Service messages, such as a pin or a member joining, get
@@ -133,9 +133,9 @@ To install them without root on Linux x64:
    [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds/releases), and link its `ffmpeg` to
    `~/.local/bin/ffmpeg`.
 3. Download a model from [ggerganov/whisper.cpp on Hugging Face](https://huggingface.co/ggerganov/whisper.cpp/tree/main)
-   to `~/.local/share/whisper/`. `ggml-small.en.bin` (488 MB) transcribes a minute of speech in
-   about 23 seconds on a 6-core Ryzen 5 2600X; `ggml-base.en.bin` (148 MB) takes about 8 seconds
-   but makes more mistakes.
+   to `~/.local/share/whisper/`. `ggml-small.en.bin` (488 MB) turns a minute of speech into text in
+   about 30 seconds on a 6-core Ryzen 5 2600X; `ggml-base.en.bin` (148 MB) is about three times
+   faster but makes more mistakes.
 
 The bridge handles one message at a time, so later messages wait while a long voice note is
 transcribed. A transcription is stopped after 30 minutes.

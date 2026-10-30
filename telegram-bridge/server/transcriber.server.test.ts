@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { bridgeSettings } from "../shared/settings.shared";
-import { transcribeVoice, type VoiceTools, voiceTools } from "./transcriber.server";
+import { transcribeVoice, transcribeVoiceWithin, type VoiceTools, voiceTools } from "./transcriber.server";
 import { makeTempDir } from "./temp-dir.test-support";
 
 const never = new AbortController().signal;
@@ -15,8 +15,8 @@ function fakeTools(whisperScript: string): VoiceTools {
     writeFileSync(path, `#!/bin/sh\n${body}\n`, { mode: 0o755 });
     return path;
   };
-  // The fake ffmpeg copies its input (after -i) to its output (the last argument).
-  const ffmpegPath = script("ffmpeg", 'in=""; while [ $# -gt 1 ]; do [ "$1" = "-i" ] && in="$2"; shift; done; cp "$in" "$1"');
+  const copyInputToLastArgument = 'in=""; while [ $# -gt 1 ]; do [ "$1" = "-i" ] && in="$2"; shift; done; cp "$in" "$1"';
+  const ffmpegPath = script("ffmpeg", copyInputToLastArgument);
   return { ffmpegPath, whisperCliPath: script("whisper-cli", whisperScript), whisperModelPath: join(dir, "model.bin") };
 }
 
@@ -42,7 +42,11 @@ describe("transcribing a voice note", () => {
 
   it("fails plainly when a tool is not installed", async () => {
     const tools = { ...fakeTools("true"), ffmpegPath: "/nowhere/ffmpeg" };
-    await expect(transcribeVoice(Buffer.from("x"), tools, never)).rejects.toThrow("/nowhere/ffmpeg");
+    await expect(transcribeVoice(Buffer.from("x"), tools, never)).rejects.toThrow("ffmpeg is not installed at /nowhere/ffmpeg");
+  });
+
+  it("says plainly when a transcription takes too long", async () => {
+    await expect(transcribeVoiceWithin(100)(Buffer.from("x"), fakeTools("sleep 5"), never)).rejects.toThrow("the transcription took too long and was stopped");
   });
 
   const installed = voiceTools(bridgeSettings.schema.parse({}), homedir());
