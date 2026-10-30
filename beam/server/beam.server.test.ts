@@ -239,12 +239,45 @@ describe("snapshotMain + restoreMain", () => {
     git(mainRepo, "reset", "--mixed", git(wsDir, "rev-parse", "HEAD"));
     git(mainRepo, "read-tree", "--reset", "-u", "HEAD");
     git(mainRepo, "clean", "-fd");
+    const { originalCheckedOutRef: _, ...legacySnap } = snap;
 
-    restoreMain(mainRepo, snap);
+    restoreMain(mainRepo, legacySnap);
 
     expect(git(mainRepo, "symbolic-ref", "HEAD")).toBe("refs/heads/main");
     expect(git(mainRepo, "rev-parse", "refs/heads/main")).toBe(headBefore);
     expect(git(mainRepo, "status", "--porcelain")).toBe("?? untracked.txt");
+  });
+
+  it("checks main out again when a tag shares the branch's name", () => {
+    const headBefore = git(mainRepo, "rev-parse", "HEAD");
+    git(mainRepo, "tag", "main");
+    const snap = snapshotMain(mainRepo);
+
+    writeFileSync(join(wsDir, "tracked.txt"), "workspace content\n");
+    git(wsDir, "commit", "-am", "workspace change");
+    expect(syncOnce(wsDir, mainRepo)).toBe(true);
+
+    restoreMain(mainRepo, snap);
+
+    expect(git(mainRepo, "symbolic-ref", "HEAD")).toBe("refs/heads/main");
+    expect(git(mainRepo, "rev-parse", "HEAD")).toBe(headBefore);
+  });
+
+  it("does not move a branch someone checked out in main during the beam", () => {
+    const headBefore = git(mainRepo, "rev-parse", "HEAD");
+    const snap = snapshotMain(mainRepo);
+
+    writeFileSync(join(wsDir, "tracked.txt"), "workspace content\n");
+    git(wsDir, "commit", "-am", "workspace change");
+    const wsHead = git(wsDir, "rev-parse", "HEAD");
+    expect(syncOnce(wsDir, mainRepo)).toBe(true);
+    git(mainRepo, "checkout", "-q", "-b", "hotfix");
+
+    restoreMain(mainRepo, snap);
+
+    expect(git(mainRepo, "symbolic-ref", "HEAD")).toBe("refs/heads/main");
+    expect(git(mainRepo, "rev-parse", "HEAD")).toBe(headBefore);
+    expect(git(mainRepo, "rev-parse", "refs/heads/hotfix")).toBe(wsHead);
   });
 
   it("leaves main detached at its original commit when it was detached before the beam", () => {

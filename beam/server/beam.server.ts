@@ -17,6 +17,7 @@ const BeamStateSchema = z.object({
   titleMark: TitleMarkSchema.optional(),
   mainPath: z.string(),
   originalBranch: z.string(),
+  originalCheckedOutRef: z.string().optional(),
   originalHead: z.string(),
   originalTree: z.string(),
   originalIndexTree: z.string(),
@@ -258,13 +259,19 @@ function commitTree(mainPath: string, tree: string, parent: string, message: str
 
 type MainSnapshot = Pick<
   BeamState,
-  "originalBranch" | "originalHead" | "originalTree" | "originalIndexTree" | "originalRef"
+  | "originalBranch"
+  | "originalCheckedOutRef"
+  | "originalHead"
+  | "originalTree"
+  | "originalIndexTree"
+  | "originalRef"
 >;
 
-const DETACHED_BRANCH = "HEAD";
+const DETACHED_HEAD = "HEAD";
 
 export function snapshotMain(mainPath: string): MainSnapshot {
   const originalBranch = git(mainPath, "rev-parse", "--abbrev-ref", "HEAD");
+  const originalCheckedOutRef = git(mainPath, "rev-parse", "--symbolic-full-name", "HEAD");
   const originalHead = git(mainPath, "rev-parse", "HEAD");
   const originalIndexTree = git(mainPath, "write-tree");
   const originalTree = writeWorkingTreeTree(mainPath);
@@ -274,23 +281,34 @@ export function snapshotMain(mainPath: string): MainSnapshot {
   const originalRef = "refs/beam/original";
   git(mainPath, "update-ref", originalRef, worktreeCommit);
 
-  return { originalBranch, originalHead, originalTree, originalIndexTree, originalRef };
+  return {
+    originalBranch,
+    originalCheckedOutRef,
+    originalHead,
+    originalTree,
+    originalIndexTree,
+    originalRef,
+  };
 }
 
-function restoreHead(mainPath: string, originalBranch: string, originalHead: string): void {
-  if (originalBranch === DETACHED_BRANCH) {
+function moveBackBranchMovedByOlderBeam(mainPath: string, originalHead: string): void {
+  git(mainPath, "reset", "--soft", originalHead);
+}
+
+function restoreHead(mainPath: string, snapshot: MainSnapshot): void {
+  const { originalCheckedOutRef, originalHead } = snapshot;
+  if (originalCheckedOutRef === undefined) {
+    moveBackBranchMovedByOlderBeam(mainPath, originalHead);
+  } else if (originalCheckedOutRef === DETACHED_HEAD) {
     git(mainPath, "update-ref", "--no-deref", "HEAD", originalHead);
-  } else if (gitSucceeds(mainPath, "symbolic-ref", "-q", "HEAD")) {
-    // A beam started before syncs detached HEAD moved the branch itself, so move it back.
-    git(mainPath, "reset", "--soft", originalHead);
   } else {
-    git(mainPath, "symbolic-ref", "HEAD", `refs/heads/${originalBranch}`);
+    git(mainPath, "symbolic-ref", "HEAD", originalCheckedOutRef);
   }
 }
 
 export function restoreMain(mainPath: string, snapshot: MainSnapshot): void {
   git(mainPath, "read-tree", "--reset", "-u", snapshot.originalTree);
-  restoreHead(mainPath, snapshot.originalBranch, snapshot.originalHead);
+  restoreHead(mainPath, snapshot);
   git(mainPath, "read-tree", snapshot.originalIndexTree);
   gitSucceeds(mainPath, "update-ref", "-d", snapshot.originalRef);
 }
@@ -404,8 +422,7 @@ export async function activate(input: {
     }
   }
 
-  const { originalBranch, originalHead, originalTree, originalIndexTree, originalRef } =
-    snapshotMain(mainPath);
+  const snapshot = snapshotMain(mainPath);
 
   const watcher = watch(workspaceDir, {
     ignored: (path: string) => shouldIgnorePath(path),
@@ -445,11 +462,7 @@ export async function activate(input: {
     ...agent,
     titleMark,
     mainPath,
-    originalBranch,
-    originalHead,
-    originalTree,
-    originalIndexTree,
-    originalRef,
+    ...snapshot,
     startedAt: new Date().toISOString(),
   };
   writeFileSync(stateFile, JSON.stringify(state, null, 2));

@@ -28,8 +28,8 @@ main checkout to match the workspace's current working tree:
   including uncommitted, staged, and untracked files), then starts a file watcher on the workspace
   and runs an immediate sync. Each sync detaches main's `HEAD` at the workspace's `HEAD` and rewrites
   main's tracked working tree and index to a snapshot of the workspace's full working tree. Main's
-  branch never moves, so anything that reads it during a beam (a new worktree based on it, a pull, a
-  diff against it) still sees your real branch, not the workspace's commits.
+  branch never moves, so anything that reads it during a beam (a new worktree based on it, a diff
+  against it) still sees your real branch, not the workspace's commits.
 - **Beam out** — stops the watcher and **restores main to exactly its pre-beam state** — branch,
   working tree, index, and untracked files all come back as if nothing ever happened.
 
@@ -127,9 +127,9 @@ Then open a workspace and either click the **Beam** (⚡) button in the workspac
 Beam is **reversible**. Beaming in is safe even when main has uncommitted, staged, or untracked
 work: before the first sync, Beam captures main's complete state as a git object snapshot stored
 under `refs/beam/original` (a real commit chain in the object store — **not** `git stash`, which is
-left untouched). Beaming out restores main's branch pointer, working tree, index, and untracked
-files to exactly that snapshot, so it is as if the beam never happened, and it deletes the temporary
-ref. Beaming in on a dirty main is therefore fine.
+left untouched). Beaming out checks main's branch out again and restores its working tree, index,
+and untracked files to exactly that snapshot, so it is as if the beam never happened, and it deletes
+the temporary ref. Beaming in on a dirty main is therefore fine.
 
 Ignored files (for example `.env`, `node_modules`) are never captured, never mirrored, and never
 touched during beam-in, sync, or beam-out.
