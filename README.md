@@ -9,6 +9,7 @@ own `package.json`, tests and README.
 | [crew-flows](crew-flows/) | Shows each repo's crew-flows workflow, its agent roles, and the teams running now. |
 | [cross-daemon](cross-daemon/) | Lets agents on different Paseo daemons list and message each other, without interrupting a working agent. |
 | [repo-notes](repo-notes/) | Gives every agent your own notes for its repo, kept out of the repo and synced across daemons. |
+| [shared-stack](shared-stack/) | Lets agents on several Paseo daemons on one machine queue for one shared dev stack, which shows the holder's working tree. Not on npm. |
 | [usage-pacer](usage-pacer/) | Runs the first mate's subscription usage guard when any agent starts a turn, so crew over the cap stop within seconds. Not on npm. |
 | [telegram-bridge](telegram-bridge/) | Lets you talk to one Paseo agent from a Telegram chat, with photos and files both ways. |
 
