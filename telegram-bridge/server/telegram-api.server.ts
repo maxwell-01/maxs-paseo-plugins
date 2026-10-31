@@ -14,7 +14,7 @@ const photoSizeSchema = z.object({ file_id: z.string(), file_size: z.number().op
 const documentSchema = z.object({ file_id: z.string(), file_name: z.string().optional(), mime_type: z.string().optional(), file_size: z.number().optional() });
 const voiceSchema = z.object({ file_id: z.string(), duration: z.number(), file_size: z.number().optional() });
 const fileSchema = z.object({ file_path: z.string().optional() });
-export const messageSchema = z.object({
+const messageFields = {
   message_id: z.number(),
   from: userSchema.optional(),
   chat: chatSchema,
@@ -23,6 +23,12 @@ export const messageSchema = z.object({
   photo: z.array(photoSizeSchema).optional(),
   document: documentSchema.optional(),
   voice: voiceSchema.optional(),
+};
+const quotedMessageSchema = z.object({ ...messageFields, date: z.number() }).loose();
+export const messageSchema = z.object({
+  ...messageFields,
+  // A quote it cannot read must not drop the message that carries it.
+  reply_to_message: quotedMessageSchema.optional().catch(undefined),
 }).loose();
 export type TelegramMessage = z.output<typeof messageSchema>;
 
