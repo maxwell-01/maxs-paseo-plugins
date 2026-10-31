@@ -22,7 +22,14 @@ export type Peer = z.infer<typeof peerSchema>;
 export const describeDaemon = defineRpc({
   name: "cross-daemon.describe",
   input: z.object({}),
-  output: z.object({ serverId: z.string(), switchedOn: z.boolean(), passwordSet: z.boolean(), member: peerSchema.nullable() }),
+  output: z.object({
+    serverId: z.string(),
+    switchedOn: z.boolean(),
+    passwordSet: z.boolean(),
+    // Present when the password entered here was sealed under an earlier daemon key and must be entered again.
+    passwordUnreadable: z.literal(true).optional(),
+    member: peerSchema.nullable(),
+  }),
 });
 
 // The password peers need to reach this daemon over the relay. Null forgets it. It is never read back
@@ -47,7 +54,7 @@ export const setPeerPassword = defineRpc({
   output: z.object({ passwordSet: z.boolean() }),
 });
 
-export const peerPasswordSource = z.enum(["announced", "set-here", "none"]);
+export const peerPasswordSource = z.enum(["announced", "set-here", "unreadable", "none"]);
 export type PeerPasswordSource = z.infer<typeof peerPasswordSource>;
 
 // Names, server IDs and where each password comes from: a peer's link and password never leave the daemon.

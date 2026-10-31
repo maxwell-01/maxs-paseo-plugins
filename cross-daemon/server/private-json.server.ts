@@ -19,12 +19,18 @@ function parseJsonOrUndefined(text: string): unknown {
 // the plugin for good.
 export function readPrivateJson<Schema extends z.ZodType>(file: string, schema: Schema, empty: z.output<Schema>): z.output<Schema> {
   if (!existsSync(file)) return empty;
-  const parsed = schema.safeParse(parseJsonOrUndefined(readFileSync(file, "utf8")));
-  if (parsed.success) return parsed.data;
+  const valid = readPrivateJsonIfValid(file, schema);
+  if (valid !== undefined) return valid;
   const setAside = `${file}.unreadable-${Date.now()}`;
   renameSync(file, setAside);
   console.error(`cross-daemon: ${file} was unreadable; moved it to ${setAside}`);
   return empty;
+}
+
+export function readPrivateJsonIfValid<Schema extends z.ZodType>(file: string, schema: Schema): z.output<Schema> | undefined {
+  if (!existsSync(file)) return undefined;
+  const parsed = schema.safeParse(parseJsonOrUndefined(readFileSync(file, "utf8")));
+  return parsed.success ? parsed.data : undefined;
 }
 
 export function writePrivateJson(file: string, value: unknown): void {
