@@ -10,6 +10,9 @@ export const bridgeSettings = defineSettings({
     agentId: z.string().default(""),
     allowedUserIds: z.array(z.number().int()).default([]),
     allowedChatIds: z.array(z.number().int()).default([]),
+    ffmpegPath: z.string().default("~/.local/bin/ffmpeg"),
+    whisperCliPath: z.string().default("~/.local/bin/whisper-cli"),
+    whisperModelPath: z.string().default("~/.local/share/whisper/ggml-small.en.bin"),
   }),
 });
 

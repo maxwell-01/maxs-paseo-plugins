@@ -3,6 +3,7 @@ import type { PluginHookContext, PluginServerContext } from "@getpaseo/plugin/se
 import { startBridge } from "./server/bridge.server";
 import { bridgeDataDir, paseoHome } from "./server/data-dir.server";
 import { TELEGRAM_API_URL } from "./server/telegram-api.server";
+import { transcribeVoice } from "./server/transcriber.server";
 import { callOwnRpc, wakeSelf } from "./server/wake.server";
 import { bridgeSettings } from "./shared/settings.shared";
 import { wakeBridge } from "./shared/wake.shared";
@@ -46,6 +47,7 @@ export default function contribute(server: PluginServerContext) {
     home: homedir(),
     paseoHome: paseoHome(),
     apiUrl: process.env.TELEGRAM_BRIDGE_API_URL ?? TELEGRAM_API_URL,
+    transcribe: transcribeVoice,
     log,
   });
   // Posting runs past the hook's 30-second limit when a reply has many parts, so the hook does not wait for it.

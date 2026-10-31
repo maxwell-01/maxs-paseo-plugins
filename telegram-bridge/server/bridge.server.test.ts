@@ -1,17 +1,18 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { BridgeSettings } from "../shared/settings.shared";
+import { type BridgeSettings, bridgeSettings } from "../shared/settings.shared";
 import { type AgentMessenger, startBridge } from "./bridge.server";
 import { type FakeBotApi, startFakeBotApi } from "./fake-bot-api.test-support";
 import { replyHint } from "./inbound.server";
 import type { Timeline } from "./outbound.server";
+import type { TranscribeVoice, VoiceTools } from "./transcriber.server";
 import { makeTempDir } from "./temp-dir.test-support";
 
 const TOKEN = "123:bridge-token";
 const MAX = 111;
 const GROUP = -100200;
-const configured: BridgeSettings = { botToken: TOKEN, agentId: "agent-1", allowedUserIds: [MAX], allowedChatIds: [GROUP, MAX] };
+const configured: BridgeSettings = bridgeSettings.schema.parse({ botToken: TOKEN, agentId: "agent-1", allowedUserIds: [MAX], allowedChatIds: [GROUP, MAX] });
 const groupChat = { id: GROUP, type: "supergroup", title: "Crew" };
 const directChat = { id: MAX, type: "private" };
 const update = (updateId: number, fields: Record<string, unknown>, from = MAX, chat: object = groupChat) => ({
@@ -74,11 +75,19 @@ const userMessage = (messageId: string) => ({ type: "user_message" as const, tex
 const said = (text: string) => ({ type: "assistant_message" as const, text });
 type TurnOutcome = Parameters<ReturnType<typeof startBridge>["onTurnEnded"]>[0]["outcome"];
 
+const heard: Array<{ audio: string; tools: VoiceTools }> = [];
+const fakeTranscriber: TranscribeVoice = async (audio, tools) => {
+  heard.push({ audio: audio.toString(), tools });
+  if (audio.toString() === "mumble") throw new Error("whisper-cli failed: error: failed to load model");
+  return "Is the deploy done?";
+};
+
 function start(settings = fakeSettings(configured), paseo: Promise<AgentMessenger> = Promise.resolve(fakeAgents().messenger)) {
   const logs: string[] = [];
+  heard.length = 0;
   const paseoHome = makeTempDir("tg-paseo-home-");
   const dataDir = join(paseoHome, "plugin-data", "telegram-bridge");
-  const bridge = startBridge({ settings, paseo, dataDir, home: makeTempDir("tg-home-"), paseoHome, apiUrl: bot.url, log: (line) => logs.push(line) });
+  const bridge = startBridge({ settings, paseo, dataDir, home: makeTempDir("tg-home-"), paseoHome, apiUrl: bot.url, transcribe: fakeTranscriber, log: (line) => logs.push(line) });
   const history = (chatId: number) => readFileSync(join(dataDir, "history", `${chatId}.log`), "utf8").replace(/^\S+ /gm, "");
   function endTurn(timeline: Timeline, outcome: TurnOutcome = completed, agentId = "agent-1") {
     agentTimeline = timeline;
@@ -121,7 +130,7 @@ describe("bridge, inbound", () => {
     await until(() => sentMessages().length === 1);
     await stop();
     expect(sentMessages()).toEqual([
-      { chat_id: GROUP, text: "Only text, photos and files reach the agent.", reply_parameters: { message_id: 6, allow_sending_without_reply: true } },
+      { chat_id: GROUP, text: "Only text, photos, files and voice notes reach the agent.", reply_parameters: { message_id: 6, allow_sending_without_reply: true } },
     ]);
   });
 
@@ -368,6 +377,52 @@ describe("bridge, follow-ups", () => {
     await endTurn([userMessage("app-1"), said(`\`\`\`\n[[telegram: ${MAX}]]\n\`\`\``)]);
     await stop();
     expect(sentMessages()).toEqual([]);
+  });
+});
+
+describe("bridge, voice notes", () => {
+  it("passes a voice note to the agent as its transcript, with its length", async () => {
+    const agents = fakeAgents();
+    bot.serveFile("voice", Buffer.from("ogg bytes"));
+    bot.reply("getUpdates", { json: { ok: true, result: [update(5, { voice: { file_id: "voice", duration: 42, mime_type: "audio/ogg" } })] } });
+    const { stop, history } = start(undefined, Promise.resolve(agents.messenger));
+    await until(() => agents.sent.length === 1);
+    await stop();
+    expect(agents.sent[0].text.split("\n")[0]).toBe("[Telegram, Max, in Crew]: [voice note, 0:42] Is the deploy done?");
+    expect(heard).toEqual([{ audio: "ogg bytes", tools: { ffmpegPath: expect.stringMatching(/\/\.local\/bin\/ffmpeg$/), whisperCliPath: expect.stringMatching(/\/\.local\/bin\/whisper-cli$/), whisperModelPath: expect.stringMatching(/ggml-small\.en\.bin$/) } }]);
+    expect(history(GROUP)).toBe("Max in Crew: [voice note, 0:42] Is the deploy done?\n");
+  });
+
+  it("keeps a voice note's caption after its transcript", async () => {
+    const agents = fakeAgents();
+    bot.serveFile("voice", Buffer.from("ogg bytes"));
+    bot.reply("getUpdates", { json: { ok: true, result: [update(5, { voice: { file_id: "voice", duration: 7 }, caption: "in the beam repo" })] } });
+    const { stop } = start(undefined, Promise.resolve(agents.messenger));
+    await until(() => agents.sent.length === 1);
+    await stop();
+    expect(agents.sent[0].text.split("\n").slice(0, 2)).toEqual(["[Telegram, Max, in Crew]: [voice note, 0:07] Is the deploy done?", "in the beam repo"]);
+  });
+
+  it("tells the chat, and not the agent, when the voice note cannot be transcribed", async () => {
+    const agents = fakeAgents();
+    bot.serveFile("voice", Buffer.from("mumble"));
+    bot.reply("getUpdates", { json: { ok: true, result: [update(5, { voice: { file_id: "voice", duration: 3 } })] } });
+    const { stop } = start(undefined, Promise.resolve(agents.messenger));
+    await until(() => sentMessages().length === 1);
+    await stop();
+    expect(agents.sent).toEqual([]);
+    expect(sentMessages()).toEqual([
+      { chat_id: GROUP, text: "Could not transcribe the voice note: whisper-cli failed: error: failed to load model", reply_parameters: { message_id: 5, allow_sending_without_reply: true } },
+    ]);
+  });
+
+  it("tells the chat when the voice note is over Telegram's 20 MB download limit, without fetching it", async () => {
+    bot.reply("getUpdates", { json: { ok: true, result: [update(5, { voice: { file_id: "voice", duration: 5000, file_size: 21 * 1024 * 1024 } })] } });
+    const { stop } = start();
+    await until(() => sentMessages().length === 1);
+    await stop();
+    expect(sentMessages()[0].text).toBe("Could not transcribe the voice note: The voice note is over Telegram's 20 MB bot download limit, so it was not fetched.");
+    expect(bot.calls.some((call) => call.method === "getFile")).toBe(false);
   });
 });
 
