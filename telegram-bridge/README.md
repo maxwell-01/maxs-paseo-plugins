@@ -50,8 +50,9 @@ The bridge restarts with the new values on every save.
   how to follow up later in that chat, and where that chat's history is (see
   [Chat history](#chat-history)).
 - A message sent as a **reply** to an earlier one has a second line quoting that message:
-  `(In reply to <first name> at <time>: "<text>")`. A photo, file or voice note in the quoted
-  message shows as `[photo]`, `[file: <name>]` or `[voice note, 0:42]`, before any caption; the
+  `(In reply to <first name> at <UTC time>: "<text>")`. A photo, file or voice note in the quoted
+  message shows as `[photo]`, `[file: <name>]` or `[voice note, 0:42]`, before any caption, and a message with
+  neither text nor media, such as a pin, as `[message]`; the
   quote does not hold a voice note's transcript. A quote longer than 500 characters is cut, and
   its line breaks become spaces. In a forum group, the topic's first message is not quoted.
 - If the agent is busy with a message from the same chat, or with a turn you started in the app,

@@ -121,7 +121,7 @@ describe("bridge, inbound", () => {
     const { stop } = start(undefined, Promise.resolve(agents.messenger));
     await until(() => agents.sent.length === 1);
     await stop();
-    expect(agents.sent[0].text.split("\n").slice(0, 2)).toEqual(["[Telegram, Max, in Crew]: and the tests?", '(In reply to Bot at 2026-10-31T09:05:00.000Z: "Deploy finished.")']);
+    expect(agents.sent[0].text.split("\n").slice(0, 2)).toEqual(["[Telegram, Max, in Crew]: and the tests?", '(In reply to Bot at 2026-10-31T09:05:00Z: "Deploy finished.")']);
   });
 
   it("still delivers a reply whose quoted message it cannot read", async () => {
