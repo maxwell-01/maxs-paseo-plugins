@@ -114,6 +114,25 @@ describe("bridge, inbound", () => {
     ]);
   });
 
+  it("quotes the message an allowed message replies to, right after its text", async () => {
+    const agents = fakeAgents();
+    const repliedTo = { message_id: 4, chat: groupChat, from: { id: 999, first_name: "Bot" }, date: Date.UTC(2026, 9, 31, 9, 5) / 1000, text: "Deploy finished." };
+    bot.reply("getUpdates", { json: { ok: true, result: [update(5, { text: "and the tests?", reply_to_message: repliedTo })] } });
+    const { stop } = start(undefined, Promise.resolve(agents.messenger));
+    await until(() => agents.sent.length === 1);
+    await stop();
+    expect(agents.sent[0].text.split("\n").slice(0, 2)).toEqual(["[Telegram, Max, in Crew]: and the tests?", '(In reply to Bot at 2026-10-31T09:05:00Z: "Deploy finished.")']);
+  });
+
+  it("still delivers a reply whose quoted message it cannot read", async () => {
+    const agents = fakeAgents();
+    bot.reply("getUpdates", { json: { ok: true, result: [update(5, { text: "this", reply_to_message: { message_id: "not a number" } })] } });
+    const { stop } = start(undefined, Promise.resolve(agents.messenger));
+    await until(() => agents.sent.length === 1);
+    await stop();
+    expect(agents.sent[0].text.split("\n")[1]).toMatch(/^\(Your reply goes back/);
+  });
+
   it("never sends a stranger's message, and logs the ids without the text or token", async () => {
     const agents = fakeAgents();
     bot.reply("getUpdates", { json: { ok: true, result: [update(5, { text: `leak ${TOKEN}` }, 999)] } });
