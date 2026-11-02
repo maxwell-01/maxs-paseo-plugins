@@ -412,6 +412,19 @@ describe("activate + deactivate", () => {
       await deactivate();
     });
 
+    it("keeps unreported dependency changes when listing them fails", async () => {
+      await beamIn();
+      const stateFile = join(mainRepo, ".git", "beam-state.json");
+      const state = JSON.parse(readFileSync(stateFile, "utf8"));
+      writeFileSync(stateFile, JSON.stringify({ ...state, beamedTree: "0".repeat(40) }));
+
+      expect(() => takeDependencyChanges()).toThrow();
+      expect(JSON.parse(readFileSync(stateFile, "utf8")).reportedTree).toBe(state.reportedTree);
+
+      writeFileSync(stateFile, JSON.stringify(state));
+      await deactivate();
+    });
+
     it("reports no dependency changes while nothing is beaming", () => {
       expect(takeDependencyChanges()).toBeUndefined();
     });

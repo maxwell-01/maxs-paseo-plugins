@@ -4,6 +4,7 @@ import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { type FSWatcher, watch } from "./vendor/chokidar";
 import { z } from "zod";
+import { writeFileAtomically } from "./atomic-file.server";
 import { type TitleMark, TitleMarkSchema } from "./beam-title.server";
 import { changedDependencyFiles } from "./dependency-files.server";
 
@@ -150,7 +151,7 @@ function readState(file: string): BeamState {
 function updateState(mainPath: string, fields: Pick<BeamState, "beamedTree" | "reportedTree">): void {
   const file = stateFilePath(mainPath);
   if (existsSync(file)) {
-    writeFileSync(file, JSON.stringify({ ...readState(file), ...fields }, null, 2));
+    writeFileAtomically(file, JSON.stringify({ ...readState(file), ...fields }, null, 2));
   }
 }
 
@@ -502,8 +503,9 @@ export function takeDependencyChanges(): DependencyChanges | undefined {
   if (state.reportedTree === state.beamedTree) {
     return undefined;
   }
+  const changes = dependencyChanges(state.mainPath, state.reportedTree, state.beamedTree);
   updateState(state.mainPath, { reportedTree: state.beamedTree });
-  return dependencyChanges(state.mainPath, state.reportedTree, state.beamedTree);
+  return changes;
 }
 
 export async function deactivate(): Promise<{
