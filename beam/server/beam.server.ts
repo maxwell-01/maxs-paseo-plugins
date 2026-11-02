@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import { type FSWatcher, watch } from "./vendor/chokidar";
 import { z } from "zod";
 import { type TitleMark, TitleMarkSchema } from "./beam-title.server";
+import { changedDependencyFiles } from "./dependency-files.server";
 
 const SYNC_DEBOUNCE_MS = 200;
 
@@ -53,8 +54,14 @@ export class BeamHeldError extends Error {
 
 const PointerSchema = z.object({ mainPath: z.string() });
 
+export interface DependencyChanges {
+  mainPath: string;
+  files: string[];
+}
+
 interface ActiveBeam {
   workspaceDir: string;
+  reportedTree: string;
   watcher: FSWatcher;
   timer: ReturnType<typeof setTimeout> | null;
   running: boolean;
@@ -222,6 +229,11 @@ function writeWorkingTreeTree(repo: string): string {
       rmSync(tmpIndex);
     }
   }
+}
+
+function dependencyChanges(mainPath: string, fromTree: string, toTree: string): DependencyChanges | undefined {
+  const files = changedDependencyFiles(mainPath, fromTree, toTree);
+  return files.length > 0 ? { mainPath, files } : undefined;
 }
 
 export function syncOnce(workspaceDir: string, mainPath: string): boolean {
@@ -392,7 +404,7 @@ export async function activate(input: {
   workspaceDir: string;
   agent?: HoldingAgent;
   titleMark: TitleMark | undefined;
-}): Promise<{ active: true; mainPath: string }> {
+}): Promise<{ active: true; mainPath: string; dependencyChanges?: DependencyChanges }> {
   const { workspaceId, workspaceName, workspaceDir, agent, titleMark } = input;
   const mainPath = resolveMainPath(workspaceDir);
 
@@ -434,6 +446,7 @@ export async function activate(input: {
   });
   const entry: ActiveBeam = {
     workspaceDir,
+    reportedTree: snapshot.originalTree,
     watcher,
     timer: null,
     running: false,
@@ -468,13 +481,28 @@ export async function activate(input: {
   writeFileSync(stateFile, JSON.stringify(state, null, 2));
   writeFileSync(pointerPath(), JSON.stringify({ mainPath }, null, 2));
 
-  return { active: true, mainPath };
+  return { active: true, mainPath, ...withDependencyChanges(takeDependencyChanges()) };
+}
+
+export const withDependencyChanges = (changes: DependencyChanges | undefined) => (changes ? { dependencyChanges: changes } : {});
+
+export function takeDependencyChanges(): DependencyChanges | undefined {
+  const state = readActiveState();
+  const entry = state && activeBeams.get(state.mainPath);
+  if (!state || !entry) {
+    return undefined;
+  }
+  const beamedTree = writeWorkingTreeTree(state.mainPath);
+  const changes = dependencyChanges(state.mainPath, entry.reportedTree, beamedTree);
+  entry.reportedTree = beamedTree;
+  return changes;
 }
 
 export async function deactivate(): Promise<{
   active: false;
   workspaceId?: string;
   titleMark?: TitleMark;
+  dependencyChanges?: DependencyChanges;
 }> {
   const pointer = pointerPath();
   if (!existsSync(pointer)) {
@@ -487,11 +515,13 @@ export async function deactivate(): Promise<{
 
   let workspaceId: string | undefined;
   let titleMark: TitleMark | undefined;
+  let restoredDependencies: DependencyChanges | undefined;
 
   if (existsSync(stateFile)) {
     const state = readState(stateFile);
     workspaceId = state.workspaceId;
     titleMark = state.titleMark;
+    restoredDependencies = dependencyChanges(mainPath, writeWorkingTreeTree(mainPath), state.originalTree);
     restoreMain(mainPath, state);
     logBeam("info", `beam out: restored main to ${state.originalBranch}@${state.originalHead}`);
     rmSync(stateFile);
@@ -505,7 +535,7 @@ export async function deactivate(): Promise<{
   rmSync(pointer);
   logBeam("info", "removed successfully");
 
-  return { active: false, workspaceId, titleMark };
+  return { active: false, workspaceId, titleMark, ...withDependencyChanges(restoredDependencies) };
 }
 
 export async function status(): Promise<{
