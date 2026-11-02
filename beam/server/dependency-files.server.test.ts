@@ -38,6 +38,10 @@ describe("isDependencyFile", () => {
     "composer.json",
     "composer.lock",
     "flake.lock",
+    "gradle.lockfile",
+    "Package.resolved",
+    "pubspec.yaml",
+    "mix.exs",
   ])("treats %s as a dependency file", (path) => {
     expect(isDependencyFile(path)).toBe(true);
   });
@@ -86,9 +90,9 @@ describe("changedDependencyFiles", () => {
     expect(changedDependencyFiles(repo, before, after)).toEqual([]);
   });
 
-  it("ignores dependency files inside node_modules", () => {
-    const before = treeOf({ "node_modules/zod/package.json": "1" });
-    const after = treeOf({ "node_modules/zod/package.json": "2" });
+  it("ignores dependency files of installed or vendored packages", () => {
+    const before = treeOf({ "node_modules/zod/package.json": "1", "vendor/acme/log/composer.json": "1" });
+    const after = treeOf({ "node_modules/zod/package.json": "2", "vendor/acme/log/composer.json": "2" });
 
     expect(changedDependencyFiles(repo, before, after)).toEqual([]);
   });

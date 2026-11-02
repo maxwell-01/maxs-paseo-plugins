@@ -403,11 +403,11 @@ describe("agent beam", () => {
       changeDependencies(ws1);
       syncOnce(ws1, mainRepo);
 
-      await expect(beam.status(world.port, "agent-b")).resolves.not.toHaveProperty("dependencyChanges");
+      await expect(beam.status(world.port, "agent-b")).resolves.toMatchObject({ dependencyChanges: undefined });
       await expect(beam.status(world.port, "agent-a")).resolves.toMatchObject({
         dependencyChanges: { mainPath: mainRepo, files: ["package.json"] },
       });
-      await expect(beam.status(world.port, "agent-a")).resolves.not.toHaveProperty("dependencyChanges");
+      await expect(beam.status(world.port, "agent-a")).resolves.toMatchObject({ dependencyChanges: undefined });
     });
 
     it("tells the holder about changed dependency files on a repeat beam_in", async () => {

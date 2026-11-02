@@ -23,6 +23,8 @@ const BeamStateSchema = z.object({
   originalTree: z.string(),
   originalIndexTree: z.string(),
   originalRef: z.string(),
+  beamedTree: z.string().optional(),
+  reportedTree: z.string().optional(),
   startedAt: z.string(),
 });
 type BeamState = z.infer<typeof BeamStateSchema>;
@@ -61,7 +63,6 @@ export interface DependencyChanges {
 
 interface ActiveBeam {
   workspaceDir: string;
-  reportedTree: string;
   watcher: FSWatcher;
   timer: ReturnType<typeof setTimeout> | null;
   running: boolean;
@@ -144,6 +145,13 @@ function stateFilePath(mainPath: string): string {
 
 function readState(file: string): BeamState {
   return BeamStateSchema.parse(JSON.parse(readFileSync(file, "utf8")));
+}
+
+function updateState(mainPath: string, fields: Pick<BeamState, "beamedTree" | "reportedTree">): void {
+  const file = stateFilePath(mainPath);
+  if (existsSync(file)) {
+    writeFileSync(file, JSON.stringify({ ...readState(file), ...fields }, null, 2));
+  }
 }
 
 function readPointer(file: string): { mainPath: string } {
@@ -249,6 +257,7 @@ export function syncOnce(workspaceDir: string, mainPath: string): boolean {
   git(mainPath, "update-ref", "--no-deref", "HEAD", wsHead);
   git(mainPath, "read-tree", "--reset", "-u", snapTree);
   git(mainPath, "clean", "-fd");
+  updateState(mainPath, { beamedTree: snapTree });
 
   return true;
 }
@@ -446,7 +455,6 @@ export async function activate(input: {
   });
   const entry: ActiveBeam = {
     workspaceDir,
-    reportedTree: snapshot.originalTree,
     watcher,
     timer: null,
     running: false,
@@ -460,14 +468,6 @@ export async function activate(input: {
     logBeam("error", `watcher error: ${describeError(error)}`);
   });
 
-  logBeam("info", `beam in: mirroring ${workspaceDir} -> ${mainPath}`);
-  runSyncLoop(mainPath);
-  if (entry.lastSyncAt) {
-    logBeam("info", "applied successfully");
-  } else {
-    logBeam("warn", "initial sync did not apply (skipped or failed); see log above");
-  }
-
   const state: BeamState = {
     workspaceId,
     workspaceName,
@@ -476,26 +476,34 @@ export async function activate(input: {
     titleMark,
     mainPath,
     ...snapshot,
+    beamedTree: snapshot.originalTree,
+    reportedTree: snapshot.originalTree,
     startedAt: new Date().toISOString(),
   };
   writeFileSync(stateFile, JSON.stringify(state, null, 2));
   writeFileSync(pointerPath(), JSON.stringify({ mainPath }, null, 2));
 
-  return { active: true, mainPath, ...withDependencyChanges(takeDependencyChanges()) };
-}
+  logBeam("info", `beam in: mirroring ${workspaceDir} -> ${mainPath}`);
+  runSyncLoop(mainPath);
+  if (entry.lastSyncAt) {
+    logBeam("info", "applied successfully");
+  } else {
+    logBeam("warn", "initial sync did not apply (skipped or failed); see log above");
+  }
 
-export const withDependencyChanges = (changes: DependencyChanges | undefined) => (changes ? { dependencyChanges: changes } : {});
+  return { active: true, mainPath, dependencyChanges: takeDependencyChanges() };
+}
 
 export function takeDependencyChanges(): DependencyChanges | undefined {
   const state = readActiveState();
-  const entry = state && activeBeams.get(state.mainPath);
-  if (!state || !entry) {
+  if (!state?.beamedTree || !state.reportedTree) {
     return undefined;
   }
-  const beamedTree = writeWorkingTreeTree(state.mainPath);
-  const changes = dependencyChanges(state.mainPath, entry.reportedTree, beamedTree);
-  entry.reportedTree = beamedTree;
-  return changes;
+  if (state.reportedTree === state.beamedTree) {
+    return undefined;
+  }
+  updateState(state.mainPath, { reportedTree: state.beamedTree });
+  return dependencyChanges(state.mainPath, state.reportedTree, state.beamedTree);
 }
 
 export async function deactivate(): Promise<{
@@ -521,7 +529,7 @@ export async function deactivate(): Promise<{
     const state = readState(stateFile);
     workspaceId = state.workspaceId;
     titleMark = state.titleMark;
-    restoredDependencies = dependencyChanges(mainPath, writeWorkingTreeTree(mainPath), state.originalTree);
+    restoredDependencies = state.beamedTree ? dependencyChanges(mainPath, state.beamedTree, state.originalTree) : undefined;
     restoreMain(mainPath, state);
     logBeam("info", `beam out: restored main to ${state.originalBranch}@${state.originalHead}`);
     rmSync(stateFile);
@@ -535,7 +543,7 @@ export async function deactivate(): Promise<{
   rmSync(pointer);
   logBeam("info", "removed successfully");
 
-  return { active: false, workspaceId, titleMark, ...withDependencyChanges(restoredDependencies) };
+  return { active: false, workspaceId, titleMark, dependencyChanges: restoredDependencies };
 }
 
 export async function status(): Promise<{

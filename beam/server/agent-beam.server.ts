@@ -1,6 +1,6 @@
 import { beamIn as beamWorkspaceIn, beamOut as beamWorkspaceOut } from "./beam-rpc.server";
 import type { WorkspaceTitleHandle } from "./beam-title.server";
-import { type BeamHolder, BeamHeldError, type DependencyChanges, readHolder, takeDependencyChanges, withDependencyChanges } from "./beam.server";
+import { type BeamHolder, BeamHeldError, type DependencyChanges, readHolder, takeDependencyChanges } from "./beam.server";
 import { releaseStaleHolder } from "./stale-holder.server";
 import { createWaitingAgents, type WaitingAgent } from "./waiting-agents.server";
 
@@ -108,7 +108,7 @@ export function createAgentBeam({ pollMs }: { pollMs: number }) {
       holder,
       callerHolds,
       waiting: waitingAgents.list(),
-      ...withDependencyChanges(callerHolds ? takeDependencyChanges() : undefined),
+      dependencyChanges: callerHolds ? takeDependencyChanges() : undefined,
     };
   }
 
@@ -129,13 +129,13 @@ export function createAgentBeam({ pollMs }: { pollMs: number }) {
       }
       if (readHolder()?.workspaceId === caller.workspaceId) {
         waitingAgents.left(agentId);
-        return { result: "already-yours", waiting: waitingAgents.list(), ...withDependencyChanges(takeDependencyChanges()) };
+        return { result: "already-yours", waiting: waitingAgents.list(), dependencyChanges: takeDependencyChanges() };
       }
       try {
         const { agentTitle, ...workspace } = caller;
         const { dependencyChanges } = await beamWorkspaceIn(port, { ...workspace, agent: { agentId, agentTitle } }, options.signal);
         waitingAgents.left(agentId);
-        return { result: "beamed-in", waiting: waitingAgents.list(), ...withDependencyChanges(dependencyChanges) };
+        return { result: "beamed-in", waiting: waitingAgents.list(), dependencyChanges };
       } catch (error) {
         if (options.signal.aborted) {
           waitingAgents.left(agentId);
@@ -170,7 +170,7 @@ export function createAgentBeam({ pollMs }: { pollMs: number }) {
       return { result: "not-yours", holder };
     }
     const { dependencyChanges } = await beamWorkspaceOut(port);
-    return { result: "beamed-out", waiting: waitingAgents.list(), ...withDependencyChanges(dependencyChanges) };
+    return { result: "beamed-out", waiting: waitingAgents.list(), dependencyChanges };
   }
 
   return { status, beamIn, beamOut };

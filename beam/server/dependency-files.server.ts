@@ -12,13 +12,17 @@ const DEPENDENCY_FILE_NAMES = new Set([
   "go.work",
   "Gemfile",
   "composer.json",
+  "Package.resolved",
+  "pubspec.yaml",
+  "mix.exs",
 ]);
-const LOCKFILE_NAME = /(?:^|[.-])lockb?(?:\.(?:json|ya?ml))?$/i;
+const INSTALLED_PACKAGE_DIRS = ["node_modules", "vendor"];
+const LOCKFILE_NAME = /(?:^|[.-])lock(?:b|file)?(?:\.(?:json|ya?ml))?$/i;
 const REQUIREMENTS_NAME = /^requirements.*\.txt$/i;
 
 export function isDependencyFile(path: string): boolean {
   const segments = path.split("/");
-  if (segments.includes("node_modules")) {
+  if (segments.some((segment) => INSTALLED_PACKAGE_DIRS.includes(segment))) {
     return false;
   }
   const name = segments[segments.length - 1] ?? "";

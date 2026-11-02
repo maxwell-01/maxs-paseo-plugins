@@ -4,7 +4,7 @@ import {
   restoreWorkspaceTitle,
   type WorkspaceTitlePort,
 } from "./beam-title.server";
-import { activate, deactivate, type DependencyChanges, type HoldingAgent, logBeamWarning, withDependencyChanges } from "./beam.server";
+import { activate, deactivate, type DependencyChanges, type HoldingAgent, logBeamWarning } from "./beam.server";
 
 export async function beamIn(
   port: WorkspaceTitlePort,
@@ -35,5 +35,5 @@ export async function beamOut(port: WorkspaceTitlePort): Promise<{ active: false
       ),
     );
   }
-  return { active: false, ...withDependencyChanges(dependencyChanges) };
+  return { active: false, dependencyChanges };
 }

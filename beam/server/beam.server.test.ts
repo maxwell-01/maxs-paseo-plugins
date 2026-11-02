@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -429,7 +429,29 @@ describe("activate + deactivate", () => {
     it("reports no dependency changes at beam-out when the beam changed none", async () => {
       await beamIn();
 
-      await expect(deactivate()).resolves.not.toHaveProperty("dependencyChanges");
+      await expect(deactivate()).resolves.toMatchObject({ dependencyChanges: undefined });
+    });
+
+    it("still reports unreported dependency changes after the daemon restarts", async () => {
+      await beamIn();
+      writeFileSync(join(wsDir, "package.json"), '{"dependencies":{"zod":"4"}}\n');
+      syncOnce(wsDir, mainRepo);
+      stopAllBeams();
+
+      expect(takeDependencyChanges()).toEqual({ mainPath: mainRepo, files: ["package.json"] });
+
+      await deactivate();
+    });
+
+    it("restores main at beam-out even when a file in main cannot be read", async () => {
+      writeFileSync(join(wsDir, "package.json"), '{"dependencies":{"zod":"4"}}\n');
+      await beamIn();
+      const unreadable = join(mainRepo, "written-by-root.log");
+      writeFileSync(unreadable, "x\n");
+      chmodSync(unreadable, 0o000);
+
+      await expect(deactivate()).resolves.toMatchObject({ dependencyChanges: { files: ["package.json"] } });
+      expect(readFileSync(join(mainRepo, "package.json"), "utf8")).toBe("{}\n");
     });
   });
 

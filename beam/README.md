@@ -80,9 +80,9 @@ Codex and OpenCode agent created after the plugin is installed or updated:
 Beam never installs packages. When `beam_in` brings dependency manifests or lockfiles that differ
 from what the main checkout had before the beam (for example `package.json`, any lockfile,
 `requirements*.txt`, `pyproject.toml`, `Cargo.toml`, `go.mod`, `Gemfile`, `composer.json`, at any
-depth, outside `node_modules`), its reply lists those files and tells the agent the main checkout's
-installed packages may be out of date. If a later sync changes them again, the holder's next
-`beam_status` or `beam_in` reply lists them. `beam_out` lists the ones the restore put back to their
+depth, outside `node_modules` and `vendor`), its reply lists those files and tells the agent the main checkout's
+installed packages may be out of date. If a later sync changes them again, the next `beam_status`
+or `beam_in` reply to any agent in the holding workspace lists them. `beam_out` lists the ones the restore put back to their
 pre-beam versions. The reply names no package manager: the agent decides whether and how to install.
 
 The tools find the calling agent through `PASEO_AGENT_ID`. Codex does not pass that variable to MCP
