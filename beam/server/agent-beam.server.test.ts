@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createFakeAgentPort } from "./agent-port.fake";
 import { createAgentBeam, resolveCallerWorkspace } from "./agent-beam.server";
-import { readHolder, stopAllBeams } from "./beam.server";
+import { readHolder, stopAllBeams, syncOnce } from "./beam.server";
 
 function git(cwd: string, ...args: string[]): string {
   return execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
@@ -380,6 +380,61 @@ describe("agent beam", () => {
       vi.setSystemTime(Date.now() + 30 * 60_000 + 1);
 
       await expect(beam.status(world.port, "agent-a")).resolves.toMatchObject({ waiting: [] });
+    });
+  });
+
+  describe("dependency changes", () => {
+    const changeDependencies = (dir: string) => writeFileSync(join(dir, "package.json"), '{"dependencies":{"zod":"4"}}\n');
+
+    it("names the dependency files that differ from main's when the caller beams in", async () => {
+      changeDependencies(ws1);
+
+      await expect(createAgentBeam({ pollMs: 10 }).beamIn(fakeWorld().port, "agent-a", { signal: signal() })).resolves.toEqual({
+        result: "beamed-in",
+        waiting: [],
+        dependencyChanges: { mainPath: mainRepo, files: ["package.json"] },
+      });
+    });
+
+    it("tells only the holding workspace about dependency files a later sync changed", async () => {
+      const world = fakeWorld();
+      const beam = createAgentBeam({ pollMs: 10 });
+      await beam.beamIn(world.port, "agent-a", { signal: signal() });
+      changeDependencies(ws1);
+      syncOnce(ws1, mainRepo);
+
+      await expect(beam.status(world.port, "agent-b")).resolves.toMatchObject({ dependencyChanges: undefined });
+      await expect(beam.status(world.port, "agent-a")).resolves.toMatchObject({
+        dependencyChanges: { mainPath: mainRepo, files: ["package.json"] },
+      });
+      await expect(beam.status(world.port, "agent-a")).resolves.toMatchObject({ dependencyChanges: undefined });
+    });
+
+    it("tells the holder about changed dependency files on a repeat beam_in", async () => {
+      const world = fakeWorld();
+      const beam = createAgentBeam({ pollMs: 10 });
+      await beam.beamIn(world.port, "agent-a", { signal: signal() });
+      changeDependencies(ws1);
+      syncOnce(ws1, mainRepo);
+
+      await expect(beam.beamIn(world.port, "agent-a", { signal: signal() })).resolves.toEqual({
+        result: "already-yours",
+        waiting: [],
+        dependencyChanges: { mainPath: mainRepo, files: ["package.json"] },
+      });
+    });
+
+    it("names the dependency files the beam-out restored", async () => {
+      const world = fakeWorld();
+      const beam = createAgentBeam({ pollMs: 10 });
+      changeDependencies(ws1);
+      await beam.beamIn(world.port, "agent-a", { signal: signal() });
+
+      await expect(beam.beamOut(world.port, "agent-a")).resolves.toEqual({
+        result: "beamed-out",
+        waiting: [],
+        dependencyChanges: { mainPath: mainRepo, files: ["package.json"] },
+      });
     });
   });
 

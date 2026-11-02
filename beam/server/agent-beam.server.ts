@@ -1,6 +1,6 @@
 import { beamIn as beamWorkspaceIn, beamOut as beamWorkspaceOut } from "./beam-rpc.server";
 import type { WorkspaceTitleHandle } from "./beam-title.server";
-import { type BeamHolder, BeamHeldError, readHolder } from "./beam.server";
+import { type BeamHolder, BeamHeldError, type DependencyChanges, readHolder, takeDependencyChanges } from "./beam.server";
 import { releaseStaleHolder } from "./stale-holder.server";
 import { createWaitingAgents, type WaitingAgent } from "./waiting-agents.server";
 
@@ -31,15 +31,23 @@ interface CallerWorkspace {
 }
 
 export type BeamInResult =
-  | { result: "beamed-in"; waiting: WaitingAgent[] }
-  | { result: "already-yours"; waiting: WaitingAgent[] }
+  | { result: "beamed-in"; waiting: WaitingAgent[]; dependencyChanges?: DependencyChanges }
+  | { result: "already-yours"; waiting: WaitingAgent[]; dependencyChanges?: DependencyChanges }
   | { result: "held"; holder: BeamHolder | null; waiting: WaitingAgent[]; waitedSeconds: number }
   | { result: "aborted" };
 
 export type BeamOutResult =
-  | { result: "beamed-out"; waiting: WaitingAgent[] }
+  | { result: "beamed-out"; waiting: WaitingAgent[]; dependencyChanges?: DependencyChanges }
   | { result: "not-yours"; holder: BeamHolder }
   | { result: "no-beam" };
+
+export interface BeamStatusResult {
+  active: boolean;
+  holder?: BeamHolder;
+  callerHolds: boolean;
+  waiting: WaitingAgent[];
+  dependencyChanges?: DependencyChanges;
+}
 
 export async function resolveCallerWorkspace(
   port: AgentBeamPort,
@@ -87,14 +95,21 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
 export function createAgentBeam({ pollMs }: { pollMs: number }) {
   const waitingAgents = createWaitingAgents();
 
-  async function status(port: AgentBeamPort, agentId: string | null) {
+  async function status(port: AgentBeamPort, agentId: string | null): Promise<BeamStatusResult> {
     await releaseStaleHolder(port);
     const holder = readHolder();
     if (!holder) {
       return { active: false, callerHolds: false, waiting: [] };
     }
     const callerWorkspaceId = agentId ? (await port.agents.ref(agentId).refresh())?.agent.workspaceId : null;
-    return { active: true, holder, callerHolds: holder.workspaceId === callerWorkspaceId, waiting: waitingAgents.list() };
+    const callerHolds = holder.workspaceId === callerWorkspaceId;
+    return {
+      active: true,
+      holder,
+      callerHolds,
+      waiting: waitingAgents.list(),
+      dependencyChanges: callerHolds ? takeDependencyChanges() : undefined,
+    };
   }
 
   async function beamIn(
@@ -114,13 +129,13 @@ export function createAgentBeam({ pollMs }: { pollMs: number }) {
       }
       if (readHolder()?.workspaceId === caller.workspaceId) {
         waitingAgents.left(agentId);
-        return { result: "already-yours", waiting: waitingAgents.list() };
+        return { result: "already-yours", waiting: waitingAgents.list(), dependencyChanges: takeDependencyChanges() };
       }
       try {
         const { agentTitle, ...workspace } = caller;
-        await beamWorkspaceIn(port, { ...workspace, agent: { agentId, agentTitle } }, options.signal);
+        const { dependencyChanges } = await beamWorkspaceIn(port, { ...workspace, agent: { agentId, agentTitle } }, options.signal);
         waitingAgents.left(agentId);
-        return { result: "beamed-in", waiting: waitingAgents.list() };
+        return { result: "beamed-in", waiting: waitingAgents.list(), dependencyChanges };
       } catch (error) {
         if (options.signal.aborted) {
           waitingAgents.left(agentId);
@@ -154,8 +169,8 @@ export function createAgentBeam({ pollMs }: { pollMs: number }) {
     if (holder.workspaceId !== caller.workspaceId) {
       return { result: "not-yours", holder };
     }
-    await beamWorkspaceOut(port);
-    return { result: "beamed-out", waiting: waitingAgents.list() };
+    const { dependencyChanges } = await beamWorkspaceOut(port);
+    return { result: "beamed-out", waiting: waitingAgents.list(), dependencyChanges };
   }
 
   return { status, beamIn, beamOut };

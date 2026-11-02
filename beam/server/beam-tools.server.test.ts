@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createFakeAgentPort } from "./agent-port.fake";
 import type { AgentBeamPort, BeamInResult, BeamOutResult } from "./agent-beam.server";
-import type { BeamHolder } from "./beam.server";
+import type { BeamHolder, DependencyChanges } from "./beam.server";
 import type { WaitingAgent } from "./waiting-agents.server";
 import { createBeamTools } from "./beam-tools.server";
 
@@ -17,13 +17,13 @@ const evalWorker: WaitingAgent = { agentId: "agent-e", agentTitle: "Eval worker"
 const untitled: WaitingAgent = { agentId: "agent-u", agentTitle: null, workspaceName: "gamma", since: "2026-01-01T10:06:00.000Z" };
 const port = createFakeAgentPort({ workspaces: {}, agents: {} }).port;
 
-function tools(overrides: { beamIn?: BeamInResult; beamOut?: BeamOutResult; callerHolds?: boolean; holder?: BeamHolder | null; waiting?: WaitingAgent[]; port?: AgentBeamPort | null } = {}) {
+function tools(overrides: { beamIn?: BeamInResult; beamOut?: BeamOutResult; callerHolds?: boolean; dependencyChanges?: DependencyChanges; holder?: BeamHolder | null; waiting?: WaitingAgent[]; port?: AgentBeamPort | null } = {}) {
   const current = overrides.holder === undefined ? holder : overrides.holder;
   const waiting = overrides.waiting ?? [];
   const agentBeam = {
     async status() {
       return current
-        ? { active: true as const, holder: current, callerHolds: overrides.callerHolds ?? false, waiting }
+        ? { active: true as const, holder: current, callerHolds: overrides.callerHolds ?? false, waiting, dependencyChanges: overrides.dependencyChanges }
         : { active: false as const, callerHolds: false, waiting: [] };
     },
     async beamIn() {
@@ -132,6 +132,37 @@ describe("beam tools", () => {
       "Beamed out. The main checkout is restored. " +
         'Agents waiting for the beam, in order: 1. "Eval worker" (agent-e), 2. agent-u. ' +
         "Message agent-e that the beam is free.",
+    );
+  });
+
+  const dependencyChanges = { mainPath: "/main", files: ["apps/api/package.json", "bun.lock"] };
+
+  it("tells a new holder which dependency files differ from the main checkout's, without naming a package manager", async () => {
+    const result = await tools({ beamIn: { result: "beamed-in", waiting: [], dependencyChanges } }).call("beam_in");
+    expect(result.text).toBe(
+      "Beamed in. Your workspace is now mirrored onto the main checkout. Call beam_out when you are done testing. " +
+        "These dependency manifests or lockfiles now differ from what the main checkout (/main) had before the beam: apps/api/package.json, bun.lock. " +
+        "Its installed packages may be out of date; decide whether to install packages in the main checkout.",
+    );
+  });
+
+  it("tells the holder which dependency files changed since its last beam reply", async () => {
+    const expected =
+      "These dependency manifests or lockfiles in the main checkout (/main) changed since your last beam reply: apps/api/package.json, bun.lock. " +
+      "Its installed packages may be out of date; decide whether to install packages in the main checkout.";
+    const repeat = await tools({ beamIn: { result: "already-yours", waiting: [], dependencyChanges } }).call("beam_in");
+    expect(repeat.text).toBe(`Your workspace is already beaming onto the main checkout. ${expected}`);
+
+    const agentBeamStatus = await tools({ callerHolds: true, dependencyChanges }).call("beam_status");
+    expect(JSON.parse(agentBeamStatus.text)).toMatchObject({ youHoldIt: true, dependencyNotice: expected });
+  });
+
+  it("tells the holder which dependency files the beam-out restored", async () => {
+    const result = await tools({ beamOut: { result: "beamed-out", waiting: [], dependencyChanges } }).call("beam_out");
+    expect(result.text).toBe(
+      "Beamed out. The main checkout is restored. " +
+        "The restore put these dependency manifests or lockfiles in the main checkout (/main) back to their pre-beam versions: apps/api/package.json, bun.lock. " +
+        "Packages installed during the beam may not match them; decide whether to reinstall packages in the main checkout.",
     );
   });
 

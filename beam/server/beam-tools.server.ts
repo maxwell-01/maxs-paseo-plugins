@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { type AgentBeamPort, type createAgentBeam, MAX_WAIT_SECONDS } from "./agent-beam.server";
-import type { BeamHolder } from "./beam.server";
+import type { BeamHolder, DependencyChanges } from "./beam.server";
 import { defineTool, type ToolCaller, type ToolResult, type Tools } from "./tools.server";
 import type { WaitingAgent } from "./waiting-agents.server";
 
@@ -37,6 +37,23 @@ function heldText(holder: BeamHolder | null, waiting: WaitingAgent[], callerAgen
   return `Beam is held by ${describeHolder(holder)}.${queue}${whoToTell} ${KEEP_WAITING}`;
 }
 
+const INSTALL_DECISION = "Its installed packages may be out of date; decide whether to install packages in the main checkout.";
+
+const dependencyFiles = ({ files }: DependencyChanges) => files.join(", ");
+
+const differAtBeamIn = (changes: DependencyChanges) =>
+  `These dependency manifests or lockfiles now differ from what the main checkout (${changes.mainPath}) had before the beam: ${dependencyFiles(changes)}. ${INSTALL_DECISION}`;
+
+const changedSinceLastReply = (changes: DependencyChanges) =>
+  `These dependency manifests or lockfiles in the main checkout (${changes.mainPath}) changed since your last beam reply: ${dependencyFiles(changes)}. ${INSTALL_DECISION}`;
+
+const restoredAtBeamOut = (changes: DependencyChanges) =>
+  `The restore put these dependency manifests or lockfiles in the main checkout (${changes.mainPath}) back to their pre-beam versions: ${dependencyFiles(changes)}. ` +
+  "Packages installed during the beam may not match them; decide whether to reinstall packages in the main checkout.";
+
+const dependencyNotice = (changes: DependencyChanges | undefined, describe: (changes: DependencyChanges) => string) =>
+  changes ? ` ${describe(changes)}` : "";
+
 const queueForHolder = (waiting: WaitingAgent[], ask: string) =>
   waiting.length > 0 ? ` Agents waiting for the beam, in order: ${describeQueue(waiting)}. ${ask}` : "";
 
@@ -68,6 +85,7 @@ export function createBeamTools({ agentBeam, paseo }: { agentBeam: ReturnType<ty
             holderAgentTitle: status.holder?.agentTitle,
             youHoldIt: status.callerHolds,
             waiting: status.waiting,
+            dependencyNotice: status.dependencyChanges && changedSinceLastReply(status.dependencyChanges),
           }),
         };
       }),
@@ -81,11 +99,11 @@ export function createBeamTools({ agentBeam, paseo }: { agentBeam: ReturnType<ty
         switch (outcome.result) {
           case "beamed-in":
             return {
-              text: `Beamed in. Your workspace is now mirrored onto the main checkout. Call beam_out when you are done testing.${queueForHolder(outcome.waiting, "Tell them where they stand.")}`,
+              text: `Beamed in. Your workspace is now mirrored onto the main checkout. Call beam_out when you are done testing.${dependencyNotice(outcome.dependencyChanges, differAtBeamIn)}${queueForHolder(outcome.waiting, "Tell them where they stand.")}`,
             };
           case "already-yours":
             return {
-              text: `Your workspace is already beaming onto the main checkout.${queueForHolder(outcome.waiting, "Tell them where they stand if you have not already, and beam out as soon as you are done.")}`,
+              text: `Your workspace is already beaming onto the main checkout.${dependencyNotice(outcome.dependencyChanges, changedSinceLastReply)}${queueForHolder(outcome.waiting, "Tell them where they stand if you have not already, and beam out as soon as you are done.")}`,
             };
           case "held":
             return { text: heldText(outcome.holder, outcome.waiting, agentId) };
@@ -103,7 +121,7 @@ export function createBeamTools({ agentBeam, paseo }: { agentBeam: ReturnType<ty
         switch (outcome.result) {
           case "beamed-out":
             return {
-              text: `Beamed out. The main checkout is restored.${queueForHolder(outcome.waiting, `Message ${outcome.waiting[0]?.agentId} that the beam is free.`)}`,
+              text: `Beamed out. The main checkout is restored.${dependencyNotice(outcome.dependencyChanges, restoredAtBeamOut)}${queueForHolder(outcome.waiting, `Message ${outcome.waiting[0]?.agentId} that the beam is free.`)}`,
             };
           case "not-yours":
             return { text: `Not beamed out: Beam is held by ${describeHolder(outcome.holder)}. Only that workspace can beam out.`, isError: true };

@@ -4,13 +4,13 @@ import {
   restoreWorkspaceTitle,
   type WorkspaceTitlePort,
 } from "./beam-title.server";
-import { activate, deactivate, type HoldingAgent, logBeamWarning } from "./beam.server";
+import { activate, deactivate, type DependencyChanges, type HoldingAgent, logBeamWarning } from "./beam.server";
 
 export async function beamIn(
   port: WorkspaceTitlePort,
   input: { workspaceId: string; workspaceName: string; workspaceDir: string; agent?: HoldingAgent },
   signal?: AbortSignal,
-): Promise<{ active: true; mainPath: string }> {
+): Promise<{ active: true; mainPath: string; dependencyChanges?: DependencyChanges }> {
   const titleMark = await readWorkspaceTitle(port, input.workspaceId).catch((error: unknown) => {
     logBeamWarning("could not read the workspace title", error);
     return undefined;
@@ -25,8 +25,8 @@ export async function beamIn(
   return result;
 }
 
-export async function beamOut(port: WorkspaceTitlePort): Promise<{ active: false }> {
-  const { workspaceId, titleMark } = await deactivate();
+export async function beamOut(port: WorkspaceTitlePort): Promise<{ active: false; dependencyChanges?: DependencyChanges }> {
+  const { workspaceId, titleMark, dependencyChanges } = await deactivate();
   if (workspaceId) {
     await restoreWorkspaceTitle(port, workspaceId, titleMark).catch((error: unknown) =>
       logBeamWarning(
@@ -35,5 +35,5 @@ export async function beamOut(port: WorkspaceTitlePort): Promise<{ active: false
       ),
     );
   }
-  return { active: false };
+  return { active: false, dependencyChanges };
 }

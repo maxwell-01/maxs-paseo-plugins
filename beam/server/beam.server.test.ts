@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -12,7 +12,9 @@ import {
   restoreMain,
   snapshotMain,
   status,
+  stopAllBeams,
   syncOnce,
+  takeDependencyChanges,
 } from "./beam.server";
 
 function git(cwd: string, ...args: string[]): string {
@@ -361,6 +363,109 @@ describe("activate + deactivate", () => {
     expect(git(mainRepo, "symbolic-ref", "HEAD")).toBe("refs/heads/main");
     expect(git(mainRepo, "rev-parse", "HEAD")).toBe(headBefore);
     expect(readFileSync(join(mainRepo, "tracked.txt"), "utf8")).toBe("original\n");
+  });
+
+  describe("dependency files", () => {
+    const beamIn = () => activate({ workspaceId: "ws-1", workspaceName: "cruel-dolphin", workspaceDir: wsDir, titleMark: undefined });
+
+    beforeEach(() => {
+      writeFileSync(join(mainRepo, "package.json"), "{}\n");
+      git(mainRepo, "add", "package.json");
+      git(mainRepo, "commit", "-m", "add package.json");
+      git(wsDir, "merge", "-q", "main");
+    });
+
+    afterEach(() => stopAllBeams());
+
+    it("names the dependency files that differ from main's at beam-in", async () => {
+      writeFileSync(join(wsDir, "package.json"), '{"dependencies":{"zod":"4"}}\n');
+      writeFileSync(join(wsDir, "bun.lock"), "lock\n");
+      writeFileSync(join(wsDir, "tracked.txt"), "source change\n");
+
+      await expect(beamIn()).resolves.toEqual({
+        active: true,
+        mainPath: mainRepo,
+        dependencyChanges: { mainPath: mainRepo, files: ["bun.lock", "package.json"] },
+      });
+
+      await deactivate();
+    });
+
+    it("reports no dependency changes when only source files differ", async () => {
+      writeFileSync(join(wsDir, "tracked.txt"), "source change\n");
+
+      await expect(beamIn()).resolves.toEqual({ active: true, mainPath: mainRepo });
+
+      await deactivate();
+    });
+
+    it("reports dependency files changed by a later sync once, then nothing until they change again", async () => {
+      await beamIn();
+      expect(takeDependencyChanges()).toBeUndefined();
+
+      writeFileSync(join(wsDir, "package.json"), '{"dependencies":{"zod":"4"}}\n');
+      syncOnce(wsDir, mainRepo);
+
+      expect(takeDependencyChanges()).toEqual({ mainPath: mainRepo, files: ["package.json"] });
+      expect(takeDependencyChanges()).toBeUndefined();
+
+      await deactivate();
+    });
+
+    it("keeps unreported dependency changes when listing them fails", async () => {
+      await beamIn();
+      const stateFile = join(mainRepo, ".git", "beam-state.json");
+      const state = JSON.parse(readFileSync(stateFile, "utf8"));
+      writeFileSync(stateFile, JSON.stringify({ ...state, beamedTree: "0".repeat(40) }));
+
+      expect(() => takeDependencyChanges()).toThrow();
+      expect(JSON.parse(readFileSync(stateFile, "utf8")).reportedTree).toBe(state.reportedTree);
+
+      writeFileSync(stateFile, JSON.stringify(state));
+      await deactivate();
+    });
+
+    it("reports no dependency changes while nothing is beaming", () => {
+      expect(takeDependencyChanges()).toBeUndefined();
+    });
+
+    it("names the dependency files beam-out restores to main's versions", async () => {
+      writeFileSync(join(wsDir, "package.json"), '{"dependencies":{"zod":"4"}}\n');
+      await beamIn();
+
+      await expect(deactivate()).resolves.toMatchObject({
+        dependencyChanges: { mainPath: mainRepo, files: ["package.json"] },
+      });
+      expect(readFileSync(join(mainRepo, "package.json"), "utf8")).toBe("{}\n");
+    });
+
+    it("reports no dependency changes at beam-out when the beam changed none", async () => {
+      await beamIn();
+
+      await expect(deactivate()).resolves.toMatchObject({ dependencyChanges: undefined });
+    });
+
+    it("still reports unreported dependency changes after the daemon restarts", async () => {
+      await beamIn();
+      writeFileSync(join(wsDir, "package.json"), '{"dependencies":{"zod":"4"}}\n');
+      syncOnce(wsDir, mainRepo);
+      stopAllBeams();
+
+      expect(takeDependencyChanges()).toEqual({ mainPath: mainRepo, files: ["package.json"] });
+
+      await deactivate();
+    });
+
+    it("restores main at beam-out even when a file in main cannot be read", async () => {
+      writeFileSync(join(wsDir, "package.json"), '{"dependencies":{"zod":"4"}}\n');
+      await beamIn();
+      const unreadable = join(mainRepo, "written-by-root.log");
+      writeFileSync(unreadable, "x\n");
+      chmodSync(unreadable, 0o000);
+
+      await expect(deactivate()).resolves.toMatchObject({ dependencyChanges: { files: ["package.json"] } });
+      expect(readFileSync(join(mainRepo, "package.json"), "utf8")).toBe("{}\n");
+    });
   });
 
   it("reports no recorded title for a beam started before titles were tracked", async () => {
