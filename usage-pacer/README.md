@@ -28,6 +28,9 @@ watch included, merges that file over pacing.json. A bad value in it fails the g
 | `stop_pct`           | 90                  | Hard stop: usage that pauses new work and stops crew        |
 | `up_margin_pct`      | 15                  | Headroom a forecast needs below a limit before a raise      |
 | `max_concurrency`    | 10                  | Most crew agents per provider                               |
+
+Claude and Codex have no 5-hour limit now, only weekly limits. The guard ignores their 5-hour window, so
+`contingency_5h_pct` and `emergency_5h_pct` no longer apply to them.
 | `weekly_pace`        | `working_week`      | `working_week`: reach the target by end of Friday; `whole_week`: pace evenly to the reset |
 
 Percents are 0-100, `max_concurrency` is a whole number of at least 1. Removing the plugin leaves the

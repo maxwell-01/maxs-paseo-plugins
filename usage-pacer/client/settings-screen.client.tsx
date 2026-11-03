@@ -8,9 +8,9 @@ import { type PacingDraft, type PacingKey, draftFrom, overridesFrom } from "./pa
 
 const NUMBER_FIELDS: { key: Exclude<PacingKey, "weekly_pace">; label: string; hint: string }[] = [
   { key: "weekly_target_pct", label: "Weekly target %", hint: "Weekly usage to reach by the end of the pace period." },
-  { key: "contingency_5h_pct", label: "5-hour reserve %", hint: "The 5-hour ceiling is 100 minus this." },
+  { key: "contingency_5h_pct", label: "5-hour reserve %", hint: "The 5-hour ceiling is 100 minus this. No longer applies to Claude or Codex." },
   { key: "contingency_7d_pct", label: "Weekly reserve %", hint: "The weekly ceiling is 100 minus this." },
-  { key: "emergency_5h_pct", label: "5-hour emergency ceiling %", hint: "5-hour usage that forces minimum pace." },
+  { key: "emergency_5h_pct", label: "5-hour emergency ceiling %", hint: "5-hour usage that forces minimum pace. No longer applies to Claude or Codex." },
   { key: "emergency_7d_pct", label: "Weekly emergency ceiling %", hint: "Weekly usage that forces minimum pace." },
   { key: "stop_pct", label: "Hard stop %", hint: "Usage that pauses new work and stops crew." },
   { key: "up_margin_pct", label: "Raise margin %", hint: "Headroom a forecast needs below a limit before a raise." },
