@@ -15,9 +15,8 @@ import { createAgentLifecycle } from "./agent-lifecycle.server";
 import type { PaseoCli } from "./paseo-cli.server";
 import { createMessenger, startDeliveryWorker } from "./messenger.server";
 import { createMessageQueue } from "./message-queue.server";
-import { createOwnPasswordStore } from "./own-password-store.server";
-import { createPeerPasswordStore, withPeerPasswords } from "./peer-password-store.server";
-import { createPeerStore } from "./peer-store.server";
+import { openPasswordStores, type PasswordStores } from "./password-stores.server";
+import { withPeerPasswords } from "./peer-password-store.server";
 import { createStartedAgents } from "./started-agents.server";
 import { createWatchList } from "./watch-list.server";
 import { isSwitchedOn, peersToStore } from "./switch-policy.server";
@@ -30,19 +29,19 @@ const DELIVERY_INTERVAL_MS = 15_000;
 interface CrossDaemonDependencies {
   readOwnPeer(relayEnabled: boolean): Promise<Peer | null>;
   stateDir: Promise<string>;
+  daemonSecretKey: Promise<Uint8Array>;
   cli: PaseoCli;
   ownDaemon(): Promise<DaemonIdentity>;
 }
 
 function startToolServer(
   stateDir: string,
-  peers: ReturnType<typeof createPeerStore>,
+  { peers, peerPasswords }: PasswordStores,
   { cli, ownDaemon }: Pick<CrossDaemonDependencies, "cli" | "ownDaemon">,
 ) {
   const queue = createMessageQueue(stateDir);
   const watches = createWatchList(stateDir);
-  const passwordsSetHere = createPeerPasswordStore(stateDir);
-  const readPeers = () => withPeerPasswords(peers.read(), passwordsSetHere.read());
+  const readPeers = () => withPeerPasswords(peers.read(), peerPasswords.read());
   const messenger = createMessenger({ queue, watches, readPeers, cli });
   const lifecycle = createAgentLifecycle({ cli, watches, startedAgents: createStartedAgents(stateDir) });
   const tools = createTools({ readPeers, cli, messenger, lifecycle, ownDaemon });
@@ -57,13 +56,16 @@ function startToolServer(
   return { launch: { command: process.execPath, proxyPath }, toolNames: tools.definitions.map((tool) => tool.name), stop };
 }
 
-export function registerCrossDaemon(server: PluginServerContext, { readOwnPeer, stateDir, cli, ownDaemon }: CrossDaemonDependencies) {
+export function registerCrossDaemon(
+  server: PluginServerContext,
+  { readOwnPeer, stateDir, daemonSecretKey, cli, ownDaemon }: CrossDaemonDependencies,
+) {
   const settings = server.registerSettings(crossDaemonSettings);
-  const peerStore = stateDir.then(createPeerStore);
-  const toolServer = Promise.all([stateDir, peerStore]).then(([dir, peers]) => startToolServer(dir, peers, { cli, ownDaemon }));
+  const stores = Promise.all([stateDir, daemonSecretKey]).then(([dir, key]) => openPasswordStores(dir, key));
+  const toolServer = Promise.all([stateDir, stores]).then(([dir, opened]) => startToolServer(dir, opened, { cli, ownDaemon }));
   toolServer.catch((error: unknown) => console.error("cross-daemon: the tool server did not start", error));
   const clearPeersUnlessSwitchedOn = async () => {
-    const peers = await peerStore;
+    const { peers } = await stores;
     if (!isSwitchedOn(await settings.read())) peers.write([]);
   };
 
@@ -80,19 +82,26 @@ export function registerCrossDaemon(server: PluginServerContext, { readOwnPeer, 
   server.handle(describeDaemon, async (_input, { paseo }) => {
     const { config } = await paseo.config.get();
     const own = await readOwnPeer(config.relay?.enabled === true);
-    const password = createOwnPasswordStore(await stateDir).read();
+    const { ownPassword } = await stores;
+    const password = ownPassword.read();
     const switchedOn = isSwitchedOn(await settings.read());
     const member = switchedOn && own ? { ...own, ...(password ? { password } : {}) } : null;
-    return { serverId: own?.serverId ?? (await ownDaemon()).serverId, switchedOn, passwordSet: password !== null, member };
+    return {
+      serverId: own?.serverId ?? (await ownDaemon()).serverId,
+      switchedOn,
+      passwordSet: password !== null,
+      ...(ownPassword.isUnreadable() ? { passwordUnreadable: true as const } : {}),
+      member,
+    };
   });
 
   server.handle(setOwnPassword, async ({ password }) => {
-    createOwnPasswordStore(await stateDir).write(password);
+    (await stores).ownPassword.write(password);
     return { passwordSet: password !== null };
   });
 
   server.handle(setPeers, async (input, { paseo }) => {
-    const peers = await peerStore;
+    const { peers } = await stores;
     const { config } = await paseo.config.get();
     const ownServerId = (await readOwnPeer(config.relay?.enabled === true))?.serverId ?? (await ownDaemon()).serverId;
     // Read the switch last, so a switch-off that lands during the awaits above is not overwritten.
@@ -103,17 +112,20 @@ export function registerCrossDaemon(server: PluginServerContext, { readOwnPeer, 
   });
 
   server.handle(setPeerPassword, async ({ serverId, password }) => {
-    createPeerPasswordStore(await stateDir).write(serverId, password);
+    (await stores).peerPasswords.write(serverId, password);
     return { passwordSet: password !== null };
   });
 
   server.handle(listPeers, async () => {
-    const passwordsSetHere = createPeerPasswordStore(await stateDir).read();
+    const { peers, peerPasswords } = await stores;
+    const passwordsSetHere = peerPasswords.read();
+    const unreadableHere = new Set(peerPasswords.unreadableServerIds());
     const passwordSource = (peer: Peer): PeerPasswordSource => {
       if (peer.password) return "announced";
-      return passwordsSetHere[peer.serverId] ? "set-here" : "none";
+      if (passwordsSetHere[peer.serverId]) return "set-here";
+      return unreadableHere.has(peer.serverId) ? "unreadable" : "none";
     };
-    return { peers: (await peerStore).read().map((peer) => ({ serverId: peer.serverId, name: peer.name, password: passwordSource(peer) })) };
+    return { peers: peers.read().map((peer) => ({ serverId: peer.serverId, name: peer.name, password: passwordSource(peer) })) };
   });
 
   clearPeersUnlessSwitchedOn().catch((error: unknown) => console.error("cross-daemon: could not clear peers at start", error));
