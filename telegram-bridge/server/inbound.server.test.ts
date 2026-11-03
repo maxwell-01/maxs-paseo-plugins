@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Attachments } from "./attachments.server";
-import { hasContentForAgent, historyEntryFor, isUnsupportedContent, paseoMessageId, promptFor, replyHint } from "./inbound.server";
+import { isUnsupportedContent } from "./content-kinds.server";
+import { hasContentForAgent, historyEntryFor, paseoMessageId, promptFor, replyHint } from "./inbound.server";
 import type { TelegramMessage } from "./telegram-api.server";
 
 const message = (fields: Partial<TelegramMessage>): TelegramMessage => ({
