@@ -27,7 +27,7 @@ if (args[0] === "agent" && args[1] === "update") {
 writeFileSync(usagePath, JSON.stringify(usage));
 `;
 
-function firstMateHomeAt(fiveHourPct: number) {
+function firstMateHomeAt(weeklyPct: number) {
   const home = makeTempDir("usage-pacer-boundary-");
   const data = join(home, "data/subscription-usage-watch");
   mkdirSync(data, { recursive: true });
@@ -49,8 +49,7 @@ function firstMateHomeAt(fiveHourPct: number) {
           providerId: "claude",
           status: "available",
           windows: [
-            { id: "five_hour", usedPct: fiveHourPct, resetsAt: at(3_600_000) },
-            { id: "weekly", usedPct: 30, resetsAt: at(3 * 86_400_000) },
+            { id: "weekly", usedPct: weeklyPct, resetsAt: at(3 * 86_400_000) },
           ],
         },
       ],
