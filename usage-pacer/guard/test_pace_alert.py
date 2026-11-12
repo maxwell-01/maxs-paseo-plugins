@@ -7,6 +7,7 @@ import tempfile
 import time
 import unittest
 from unittest.mock import patch
+from test_support import FIRSTMATE_CONFIG
 
 from pace_alert import pace_alerts, weekly_burn_per_hour
 
@@ -66,6 +67,7 @@ class PaceAlertTests(unittest.TestCase):
         self.assertEqual(len(self.alerts(86, 40, seen)[0]), 1)
 
 
+
 class GuardHome:
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -79,7 +81,7 @@ class GuardHome:
         cli.write_text('#!/bin/sh\nexit 0\n')
         cli.chmod(0o755)
         (self.data / 'config.json').write_text(json.dumps(
-            {'cli': str(cli), 'node': str(node), 'managed_roots': []}))
+            {'cli': str(cli), 'node': str(node), 'managed_roots': [], **FIRSTMATE_CONFIG}))
         (self.data / 'pacing-overrides.json').write_text(json.dumps({'weekly_pace': 'whole_week'}))
         self.env = dict(os.environ, HOME=str(self.home), USAGE_PACER_STATE=str(self.home),
                         USAGE_PACER_NOTICE_STATE=str(self.home / 'notices'))
@@ -99,11 +101,11 @@ class GuardHome:
 
 
 class WatchFindingTests(GuardHome, unittest.TestCase):
-    def test_crew_the_first_mate_started_counts_with_no_managed_roots_or_crew_label(self):
+    def test_with_firstmate_labels_crew_the_first_mate_started_counts(self):
         self.write_usage(10, [
             {'id': 'fm', 'provider': 'claude', 'status': 'idle', 'labels': {'firstmate.role': 'first-mate'},
              'pendingPermissionCount': 0},
-            {'id': 'mac-crew', 'provider': 'claude', 'status': 'running', 'labels': {}, 'parentAgentId': 'fm',
+            {'id': 'fm-child', 'provider': 'claude', 'status': 'running', 'labels': {}, 'parentAgentId': 'fm',
              'createdAt': iso(time.time()), 'pendingPermissionCount': 0}])
         check = json.loads(self.guard('--check', 'claude', '--slots', '0').stdout)
         self.assertEqual(check['active'], 1)

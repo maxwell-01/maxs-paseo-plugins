@@ -13,7 +13,7 @@ def usage(at, reset=NOW+18000, weekly=66, session=3):
         {'id':'weekly_model', 'usedPct':20, 'resetsAt':NOW+604800}]}
 
 
-class TowerHotfixTests(unittest.TestCase):
+class ReopenAndStaleUsageTests(unittest.TestCase):
     def setUp(self):
         sharing = patch.object(policy.pace, 'read_sharing', return_value='on')
         sharing.start()
