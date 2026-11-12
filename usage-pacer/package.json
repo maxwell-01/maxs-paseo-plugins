@@ -11,6 +11,7 @@
   },
   "type": "module",
   "scripts": {
+    "embed:guard": "node scripts/embed-guard.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run && python3 -m unittest discover -s guard -p 'test_*.py'"
   },

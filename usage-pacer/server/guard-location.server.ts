@@ -3,19 +3,14 @@ import { join, resolve } from "node:path";
 
 const expandHome = (path: string) => (path === "~" || path.startsWith("~/") ? join(homedir(), path.slice(1)) : path);
 
-export function firstMateHome(env: NodeJS.ProcessEnv = process.env): string {
-  return join(resolve(expandHome(env.PASEO_HOME ?? "~/.paseo")), "plugin-data", "firstmate", "home");
+export function stateDir(env: NodeJS.ProcessEnv = process.env): string {
+  return join(resolve(expandHome(env.PASEO_HOME ?? "~/.paseo")), "plugin-data", "usage-pacer");
 }
 
-// install.py links this into the host's myStuff clone, which the guard's watch keeps on main.
 export function guardFile(env: NodeJS.ProcessEnv = process.env): string {
-  return join(guardData(env), "assets", "guard.py");
+  return join(stateDir(env), "guard", "guard.py");
 }
 
 export function pacingOverridesFile(env: NodeJS.ProcessEnv = process.env): string {
-  return join(guardData(env), "pacing-overrides.json");
-}
-
-function guardData(env: NodeJS.ProcessEnv): string {
-  return join(firstMateHome(env), "data", "subscription-usage-watch");
+  return join(stateDir(env), "pacing-overrides.json");
 }

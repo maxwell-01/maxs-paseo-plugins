@@ -1,16 +1,16 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { runGuard } from "./guard-run.server";
 import { writePacingOverrides } from "./pacing-overrides.server";
 import { makeTempDir } from "./temp-dir.test-support";
 
-// The real guard lives in Max's myStuff clone, which this repo's checkout does not have.
-const realGuard = process.env.USAGE_PACER_GUARD;
+const realGuard = fileURLToPath(new URL("../guard/guard.py", import.meta.url));
 
 const PASEO_STUB = `#!/usr/bin/env node
 const { appendFileSync, readFileSync, writeFileSync } = require("node:fs");
-const home = process.env.FIRSTMATE_HOME;
+const home = process.env.USAGE_PACER_STATE;
 const args = process.argv.slice(2);
 appendFileSync(home + "/calls", JSON.stringify(args) + "\\n");
 const usagePath = home + "/usage.json";
@@ -27,16 +27,15 @@ if (args[0] === "agent" && args[1] === "update") {
 writeFileSync(usagePath, JSON.stringify(usage));
 `;
 
-function firstMateHomeAt(weeklyPct: number) {
+function stateAt(weeklyPct: number) {
   const home = makeTempDir("usage-pacer-boundary-");
-  const data = join(home, "data/subscription-usage-watch");
-  mkdirSync(data, { recursive: true });
+  const data = home;
   const paseo = join(home, "paseo");
   writeFileSync(paseo, PASEO_STUB);
   const node = join(home, "node");
-  writeFileSync(node, '#!/bin/sh\nexec cat "$FIRSTMATE_HOME/usage.json"\n');
+  writeFileSync(node, '#!/bin/sh\nexec cat "$USAGE_PACER_STATE/usage.json"\n');
   for (const stub of [paseo, node]) chmodSync(stub, 0o755);
-  writeFileSync(join(data, "config.json"), JSON.stringify({ cli: paseo, node, paseo_home: home }));
+  writeFileSync(join(data, "config.json"), JSON.stringify({ cli: paseo, node }));
   const now = Date.now();
   const at = (offsetMs: number) => new Date(now + offsetMs).toISOString();
   writeFileSync(
@@ -76,16 +75,16 @@ function calls(home: string): string[][] {
 
 async function runRealGuard(home: string) {
   const log = vi.fn();
-  vi.stubEnv("HOME", home);
-  await runGuard({ guard: realGuard ?? "", firstMateHome: home, log });
+  vi.stubEnv("USAGE_PACER_STATE", home);
+  await runGuard({ guard: realGuard, mode: "bootstrap", log });
   return log;
 }
 
-describe.skipIf(!realGuard)("the real usage guard, run by the pacer (set USAGE_PACER_GUARD to a myStuff guard.py)", () => {
+describe("the real usage guard, run by the pacer", () => {
   afterEach(() => vi.unstubAllEnvs());
 
   it("holds the crewmate at 92% and leaves the first mate running", async () => {
-    const { home, data } = firstMateHomeAt(92);
+    const { home, data } = stateAt(92);
     const log = await runRealGuard(home);
     expect(log).not.toHaveBeenCalled();
     const made = calls(home);
@@ -104,7 +103,7 @@ describe.skipIf(!realGuard)("the real usage guard, run by the pacer (set USAGE_P
   });
 
   it("holds the crewmate at 85% once the settings lower the hard stop to 80%", async () => {
-    const { home, data } = firstMateHomeAt(85);
+    const { home, data } = stateAt(85);
     await writePacingOverrides(join(data, "pacing-overrides.json"), { stop_pct: 80 });
     const log = await runRealGuard(home);
     expect(log).not.toHaveBeenCalled();
@@ -114,7 +113,7 @@ describe.skipIf(!realGuard)("the real usage guard, run by the pacer (set USAGE_P
   });
 
   it("stops nothing at 40%", async () => {
-    const { home } = firstMateHomeAt(40);
+    const { home } = stateAt(40);
     const log = await runRealGuard(home);
     expect(log).not.toHaveBeenCalled();
     expect(calls(home).filter(([command]) => command === "stop")).toEqual([]);

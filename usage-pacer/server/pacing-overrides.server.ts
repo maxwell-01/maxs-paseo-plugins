@@ -1,12 +1,10 @@
-import { readFileSync } from "node:fs";
 import { mkdir, rename, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { type PacingDefaults, type PacingOverrides, pacingDefaults } from "../shared/pacing.shared";
+import { guardFiles } from "./guard-files.generated";
 
-// install.py links the myStuff claudeConfig beside the guard; policy.py reads the same pacing.json.
-export function pacingDefaultsFrom(guard: string): PacingDefaults {
-  const file = join(dirname(guard), "claudeConfig", "skills", "paced-workflows", "config", "pacing.json");
-  const parsed: unknown = JSON.parse(readFileSync(file, "utf8"));
+export function pacingDefaultsFrom(): PacingDefaults {
+  const parsed: unknown = JSON.parse(guardFiles["pacing.json"]);
   return pacingDefaults.parse(parsed);
 }
 

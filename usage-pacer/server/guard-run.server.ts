@@ -1,13 +1,17 @@
 import { spawn } from "node:child_process";
+import { createInterface } from "node:readline";
 
 // Longer than the guard's own worst case: two usage reads and its 100 s stop deadline.
 const GUARD_TIMEOUT_MS = 150_000;
 const KILL_GRACE_MS = 5_000;
 const STDERR_TAIL_CHARS = 500;
 
+// Only the watch prints to stdout (pace alerts, change notices); every printed line goes to the plugin log.
+export type GuardMode = "bootstrap" | "watch";
+
 export interface GuardRun {
   guard: string;
-  firstMateHome: string;
+  mode: GuardMode;
   log: (line: string) => void;
   python?: string;
   timeoutMs?: number;
@@ -16,16 +20,15 @@ export interface GuardRun {
 
 export function runGuard({
   guard,
-  firstMateHome,
+  mode,
   log,
   python = "python3",
   timeoutMs = GUARD_TIMEOUT_MS,
   killGraceMs = KILL_GRACE_MS,
 }: GuardRun) {
   return new Promise<void>((resolve) => {
-    const child = spawn(python, [guard, "--bootstrap"], {
-      env: { ...process.env, FIRSTMATE_HOME: firstMateHome },
-      stdio: ["ignore", "ignore", "pipe"],
+    const child = spawn(python, mode === "bootstrap" ? [guard, "--bootstrap"] : [guard], {
+      stdio: ["ignore", "pipe", "pipe"],
     });
     let stderr = "";
     let settled = false;
@@ -36,6 +39,9 @@ export function runGuard({
       if (problem) log(`usage-pacer: the usage guard ${problem}`);
       resolve();
     };
+    createInterface({ input: child.stdout }).on("line", (line) => {
+      if (line.trim()) log(line);
+    });
     child.stderr.on("data", (chunk: Buffer) => {
       stderr = (stderr + chunk.toString()).slice(-STDERR_TAIL_CHARS);
     });
@@ -47,6 +53,6 @@ export function runGuard({
       settle(`ran past ${timeoutMs} ms and was ended`);
     }, timeoutMs);
     child.on("error", (error) => settle(`did not start: ${error.message}`));
-    child.on("close", (code) => settle(code === 0 ? undefined : `exited ${code}: ${stderr.trim()}`));
+    child.on("close", (code) => settle(code === 0 || (mode === "watch" && !stderr.trim()) ? undefined : `exited ${code}: ${stderr.trim()}`));
   });
 }
