@@ -1,14 +1,29 @@
 {
   "name": "paseo-usage-pacer",
-  "version": "0.2.1",
-  "private": true,
-  "description": "Run the first mate's subscription usage guard whenever an agent starts a turn.",
+  "version": "0.3.0",
+  "description": "Stop Claude and Codex agents before they use up a subscription's usage limits, and pace work across the week.",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/maxwell-01/maxs-paseo-plugins.git",
     "directory": "usage-pacer"
   },
+  "keywords": [
+    "paseo",
+    "paseo-plugin"
+  ],
+  "files": [
+    "paseo-plugin.json",
+    "index.client.tsx",
+    "index.server.ts",
+    "client/",
+    "server/",
+    "shared/",
+    "!**/*.test.ts",
+    "!**/*.test-support.ts",
+    "README.md",
+    "LICENSE"
+  ],
   "type": "module",
   "scripts": {
     "embed:guard": "node scripts/embed-guard.ts",

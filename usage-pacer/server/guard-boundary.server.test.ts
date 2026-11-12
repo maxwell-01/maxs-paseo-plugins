@@ -35,7 +35,7 @@ function stateAt(weeklyPct: number) {
   const node = join(home, "node");
   writeFileSync(node, '#!/bin/sh\nexec cat "$USAGE_PACER_STATE/usage.json"\n');
   for (const stub of [paseo, node]) chmodSync(stub, 0o755);
-  writeFileSync(join(data, "config.json"), JSON.stringify({ cli: paseo, node }));
+  writeFileSync(join(data, "config.json"), JSON.stringify({ cli: paseo, node, managed_labels: ["usage-pacer.role=worker"] }));
   const now = Date.now();
   const at = (offsetMs: number) => new Date(now + offsetMs).toISOString();
   writeFileSync(
@@ -53,13 +53,13 @@ function stateAt(weeklyPct: number) {
         },
       ],
       agents: [
-        { id: "first-mate", provider: "claude", status: "running", labels: {}, pendingPermissionCount: 0 },
+        { id: "manager", provider: "claude", status: "running", labels: {}, pendingPermissionCount: 0 },
         {
-          id: "crewmate",
+          id: "worker",
           provider: "claude",
           status: "running",
-          labels: { "firstmate.role": "crew" },
-          parentAgentId: "first-mate",
+          labels: { "usage-pacer.role": "worker" },
+          parentAgentId: "manager",
           pendingPermissionCount: 0,
         },
       ],
@@ -83,31 +83,31 @@ async function runRealGuard(home: string) {
 describe("the real usage guard, run by the pacer", () => {
   afterEach(() => vi.unstubAllEnvs());
 
-  it("holds the crewmate at 92% and leaves the first mate running", async () => {
+  it("holds the labelled worker at 92% and leaves its unlabelled manager running", async () => {
     const { home, data } = stateAt(92);
     const log = await runRealGuard(home);
     expect(log).not.toHaveBeenCalled();
     const made = calls(home);
-    expect(made.filter(([command]) => command === "stop").map(([, id]) => id)).toEqual(["crewmate"]);
-    const label = made.findIndex((call) => call.join(" ").startsWith("agent update crewmate --label usage-guard.held=claude"));
+    expect(made.filter(([command]) => command === "stop").map(([, id]) => id)).toEqual(["worker"]);
+    const label = made.findIndex((call) => call.join(" ").startsWith("agent update worker --label usage-guard.held=claude"));
     expect(label).toBeGreaterThanOrEqual(0);
     expect(label).toBeLessThan(made.findIndex(([command]) => command === "stop"));
     expect(JSON.parse(readFileSync(join(data, "stopped.json"), "utf8"))).toEqual({
-      crewmate: { provider: "claude", at: expect.any(Number) },
+      worker: { provider: "claude", at: expect.any(Number) },
     });
     const gate = JSON.parse(readFileSync(join(data, "gate.json"), "utf8"));
     expect(gate.providers.claude).toMatchObject({ mode: "paused", reason: "actual usage >=90%" });
     const sends = made.filter(([command]) => command === "send");
-    expect(sends.map(([, parent]) => parent)).toEqual(["first-mate"]);
-    expect(sends[0][sends[0].indexOf("--prompt") + 1]).toContain("crewmate (claude: actual usage >=90%)");
+    expect(sends.map(([, parent]) => parent)).toEqual(["manager"]);
+    expect(sends[0][sends[0].indexOf("--prompt") + 1]).toContain("worker (claude: actual usage >=90%)");
   });
 
-  it("holds the crewmate at 85% once the settings lower the hard stop to 80%", async () => {
+  it("holds the labelled worker at 85% once the settings lower the hard stop to 80%", async () => {
     const { home, data } = stateAt(85);
     await writePacingOverrides(join(data, "pacing-overrides.json"), { stop_pct: 80 });
     const log = await runRealGuard(home);
     expect(log).not.toHaveBeenCalled();
-    expect(calls(home).filter(([command]) => command === "stop").map(([, id]) => id)).toEqual(["crewmate"]);
+    expect(calls(home).filter(([command]) => command === "stop").map(([, id]) => id)).toEqual(["worker"]);
     const gate = JSON.parse(readFileSync(join(data, "gate.json"), "utf8"));
     expect(gate.providers.claude).toMatchObject({ mode: "paused", reason: "actual usage >=80%" });
   });

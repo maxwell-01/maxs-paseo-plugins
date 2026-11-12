@@ -35,8 +35,8 @@ def stale_hold_ids(agents, labelled, stopped):
 
 def hold_message(holds, providers):
     held = ', '.join(f"{agent_id} ({key}: {providers[key]['reason']})" for agent_id, key in sorted(holds.items()))
-    return (f'Subscription usage guard held {held}. Do not resend, restart or replace them: the first mate '
-            f'resumes them when usage allows. Until then each has the label {HOLD_LABEL}=<provider>. '
+    return (f'Subscription usage guard held {held}. Do not resend, restart or replace them: whoever runs this '
+            f'work resumes them when usage allows. Until then each has the label {HOLD_LABEL}=<provider>. '
             'This is information from the guard, not a task.')
 
 
