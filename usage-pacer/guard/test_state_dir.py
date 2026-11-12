@@ -12,7 +12,6 @@ HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE))
 
 from guard import app_bundle_runtime  # noqa: E402
-from state_dir import state_dir  # noqa: E402
 
 
 def stub(path, body):
@@ -49,15 +48,15 @@ class StandaloneGuardTests(unittest.TestCase):
         return subprocess.run([sys.executable, str(self.guard_dir / 'guard.py'), *args], env=self.env,
                               capture_output=True, text=True, timeout=20)
 
-    def test_state_is_the_folder_above_the_guard_even_through_a_symlink(self):
-        link = self.paseo_home / 'linked/state_dir.py'
+    def test_state_is_the_folder_above_the_real_guard_when_called_through_a_symlink(self):
+        link = self.paseo_home / 'linked/guard.py'
         link.parent.mkdir()
-        link.symlink_to(self.guard_dir / 'state_dir.py')
-        out = subprocess.run([sys.executable, '-c', 'import sys; sys.path.insert(0, sys.argv[1]); '
-                              'import state_dir; print(state_dir.state_dir())', str(link.parent)],
-                             env=self.env, capture_output=True, text=True).stdout.strip()
-        self.assertEqual(Path(out).resolve(), self.state.resolve())
-        self.assertEqual(state_dir(), HERE.parent)
+        link.symlink_to(self.guard_dir / 'guard.py')
+        result = subprocess.run([sys.executable, str(link), '--override', 't', '--hours', '1'], env=self.env,
+                                capture_output=True, text=True, timeout=20)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('t', json.loads((self.state / 'overrides.json').read_text()))
+        self.assertFalse((link.parent / 'overrides.json').exists())
 
     def test_runs_with_no_config_file_and_derives_paseo_home_from_the_state_folder(self):
         self.env['PASEO_CLI'] = str(self.cli)

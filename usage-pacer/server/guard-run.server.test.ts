@@ -1,6 +1,6 @@
 import { chmodSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { runGuard } from "./guard-run.server";
 import { makeTempDir } from "./temp-dir.test-support";
 
@@ -12,6 +12,8 @@ function fakeGuard(body: string) {
 }
 
 describe("runGuard", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
   it("runs the guard once in its enforce-only mode", async () => {
     const dir = makeTempDir("usage-pacer-seen-");
     const seen = join(dir, "seen");
@@ -24,11 +26,33 @@ describe("runGuard", () => {
     expect(log).not.toHaveBeenCalled();
   });
 
-  it("runs the watch with no flag and logs each line it prints, with the given environment", async () => {
+  it("runs the watch with no flag and logs each line it prints, with the environment it was started in", async () => {
     const { guard } = fakeGuard("print('Subscription pace alert: one')\nprint()\nprint('- two ' + os.environ['STATE'] + ' ' + str(len(sys.argv)))");
+    vi.stubEnv("STATE", "/s");
     const log = vi.fn();
-    await runGuard({ guard, mode: "watch", env: { STATE: "/s" }, log });
+    await runGuard({ guard, mode: "watch", log });
     expect(log.mock.calls).toEqual([["Subscription pace alert: one"], ["- two /s 1"]]);
+  });
+
+  it("in watch mode, stays quiet about a nonzero exit that printed nothing to stderr", async () => {
+    const { guard } = fakeGuard("sys.exit(1)");
+    const log = vi.fn();
+    await runGuard({ guard, mode: "watch", log });
+    expect(log).not.toHaveBeenCalled();
+  });
+
+  it("in watch mode, logs a nonzero exit that printed to stderr", async () => {
+    const { guard } = fakeGuard("print('boom', file=sys.stderr)\nsys.exit(1)");
+    const log = vi.fn();
+    await runGuard({ guard, mode: "watch", log });
+    expect(log).toHaveBeenCalledWith("usage-pacer: the usage guard exited 1: boom");
+  });
+
+  it("logs a line whole when it arrives in two chunks", async () => {
+    const { guard } = fakeGuard("sys.stdout.write('hel'); sys.stdout.flush(); time.sleep(0.2); print('lo')");
+    const log = vi.fn();
+    await runGuard({ guard, mode: "watch", log });
+    expect(log.mock.calls).toEqual([["hello"]]);
   });
 
   it("logs a failed run with the end of its stderr", async () => {

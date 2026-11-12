@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { createInterface } from "node:readline";
 
 // Longer than the guard's own worst case: two usage reads and its 100 s stop deadline.
 const GUARD_TIMEOUT_MS = 150_000;
@@ -12,7 +13,6 @@ export interface GuardRun {
   guard: string;
   mode: GuardMode;
   log: (line: string) => void;
-  env?: NodeJS.ProcessEnv;
   python?: string;
   timeoutMs?: number;
   killGraceMs?: number;
@@ -21,7 +21,6 @@ export interface GuardRun {
 export function runGuard({
   guard,
   mode,
-  env,
   log,
   python = "python3",
   timeoutMs = GUARD_TIMEOUT_MS,
@@ -29,7 +28,6 @@ export function runGuard({
 }: GuardRun) {
   return new Promise<void>((resolve) => {
     const child = spawn(python, mode === "bootstrap" ? [guard, "--bootstrap"] : [guard], {
-      env: { ...process.env, ...env },
       stdio: ["ignore", "pipe", "pipe"],
     });
     let stderr = "";
@@ -41,8 +39,8 @@ export function runGuard({
       if (problem) log(`usage-pacer: the usage guard ${problem}`);
       resolve();
     };
-    child.stdout.on("data", (chunk: Buffer) => {
-      for (const line of chunk.toString().split("\n")) if (line.trim()) log(line);
+    createInterface({ input: child.stdout }).on("line", (line) => {
+      if (line.trim()) log(line);
     });
     child.stderr.on("data", (chunk: Buffer) => {
       stderr = (stderr + chunk.toString()).slice(-STDERR_TAIL_CHARS);
@@ -55,6 +53,6 @@ export function runGuard({
       settle(`ran past ${timeoutMs} ms and was ended`);
     }, timeoutMs);
     child.on("error", (error) => settle(`did not start: ${error.message}`));
-    child.on("close", (code) => settle(code === 0 ? undefined : `exited ${code}: ${stderr.trim()}`));
+    child.on("close", (code) => settle(code === 0 || (mode === "watch" && !stderr.trim()) ? undefined : `exited ${code}: ${stderr.trim()}`));
   });
 }

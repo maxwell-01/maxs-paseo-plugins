@@ -50,6 +50,13 @@ function withStubbedPaseo(state: string) {
   );
 }
 
+async function startupDone(state: string) {
+  await vi.waitFor(() => {
+    expect(existsSync(join(state, "guard/guard.py"))).toBe(true);
+    expect(existsSync(join(state, "pacing-overrides.json"))).toBe(true);
+  });
+}
+
 describe("contribute", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
@@ -59,7 +66,7 @@ describe("contribute", () => {
   it("installs its own guard on start", async () => {
     const state = pacerHome();
     const stop = contribute(fakeServer().server);
-    await vi.waitFor(() => expect(existsSync(join(state, "guard/guard.py"))).toBe(true));
+    await startupDone(state);
     stop();
   });
 
@@ -70,6 +77,7 @@ describe("contribute", () => {
     const stop = contribute(server);
     expect(handlers.get("agent.turn_started")?.()).toBeUndefined();
     await vi.waitFor(() => expect(existsSync(join(state, "gate.json"))).toBe(true), { timeout: 5_000 });
+    await startupDone(state);
     stop();
   });
 
@@ -80,27 +88,31 @@ describe("contribute", () => {
     const stop = contribute(fakeServer().server);
     await vi.advanceTimersByTimeAsync(3 * 60_000);
     await vi.waitFor(() => expect(existsSync(join(state, "watch-state/last-notice.json"))).toBe(true), { timeout: 5_000 });
+    await startupDone(state);
     stop();
     expect(vi.getTimerCount()).toBe(0);
   });
 
   it("hands the saved pacing settings to the guard, and each later save", async () => {
-    const overrides = join(pacerHome(), "pacing-overrides.json");
+    const state = pacerHome();
+    const overrides = join(state, "pacing-overrides.json");
     const { server, saveSettings } = fakeServer({ stop_pct: 80 });
     const stop = contribute(server);
     await vi.waitFor(() => expect(JSON.parse(readFileSync(overrides, "utf8"))).toEqual({ stop_pct: 80 }));
     await saveSettings({ weekly_pace: "whole_week" });
     expect(JSON.parse(readFileSync(overrides, "utf8"))).toEqual({ weekly_pace: "whole_week" });
+    await startupDone(state);
     stop();
   });
 
   it("serves the pacing.json defaults to the settings screen", async () => {
-    pacerHome();
+    const state = pacerHome();
     const { server, rpcs } = fakeServer();
     const stop = contribute(server);
     expect(await rpcs.get("pacing.defaults")?.()).toEqual(
       expect.objectContaining({ stop_pct: 90, weekly_pace: "working_week" }),
     );
+    await startupDone(state);
     stop();
   });
 });

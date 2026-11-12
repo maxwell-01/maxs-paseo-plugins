@@ -1,7 +1,7 @@
 import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { runGuard } from "./guard-run.server";
 import { writePacingOverrides } from "./pacing-overrides.server";
 import { makeTempDir } from "./temp-dir.test-support";
@@ -75,11 +75,14 @@ function calls(home: string): string[][] {
 
 async function runRealGuard(home: string) {
   const log = vi.fn();
-  await runGuard({ guard: realGuard, mode: "bootstrap", env: { USAGE_PACER_STATE: home }, log });
+  vi.stubEnv("USAGE_PACER_STATE", home);
+  await runGuard({ guard: realGuard, mode: "bootstrap", log });
   return log;
 }
 
 describe("the real usage guard, run by the pacer", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
   it("holds the crewmate at 92% and leaves the first mate running", async () => {
     const { home, data } = stateAt(92);
     const log = await runRealGuard(home);
