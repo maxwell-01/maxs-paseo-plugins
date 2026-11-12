@@ -67,7 +67,7 @@ bad value, dispatch checks are refused and no agents are stopped.
 ## Use from scripts and managers
 
 ```sh
-python3 $PASEO_HOME/plugin-data/usage-pacer/guard/guard.py --check claude [--slots N]
+python3 "${PASEO_HOME:-$HOME/.paseo}"/plugin-data/usage-pacer/guard/guard.py --check claude [--slots N]
 ```
 
 Exit code 0 means N more agents may start now, 2 means they may not, and 1 means the guard failed or
@@ -79,12 +79,12 @@ was stopped during the turn.
 To let one task bypass the guard, give its agents the `task_label` label with the task id, then run:
 
 ```sh
-python3 $PASEO_HOME/plugin-data/usage-pacer/guard/guard.py --override TASK --hours 4
+python3 "${PASEO_HOME:-$HOME/.paseo}"/plugin-data/usage-pacer/guard/guard.py --override TASK --hours 4
 ```
 
 `--hours 0` removes it. `--check claude --task TASK` is then allowed while the override lasts.
 
-`python3 $PASEO_HOME/plugin-data/usage-pacer/guard/usage_log.py` reports account usage per hour, idle against
+`python3 "${PASEO_HOME:-$HOME/.paseo}"/plugin-data/usage-pacer/guard/usage_log.py` reports account usage per hour, idle against
 busy, from `usage-log.jsonl`.
 
 ## Where state lives
