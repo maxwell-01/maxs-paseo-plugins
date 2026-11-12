@@ -1,12 +1,10 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { PluginServerContext } from "@getpaseo/plugin/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import contribute from "../index.server";
 import type { PacingOverrides } from "../shared/pacing.shared";
 import { makeTempDir } from "./temp-dir.test-support";
-
-const WATCH = "plugin-data/firstmate/home/data/subscription-usage-watch";
 
 function fakeServer(saved: PacingOverrides = {}) {
   const handlers = new Map<string, () => unknown>();
@@ -28,38 +26,66 @@ function fakeServer(saved: PacingOverrides = {}) {
   return { server: server as unknown as PluginServerContext, handlers, rpcs, saveSettings };
 }
 
-function homeWithGuard(guardSource: string) {
+function pacerHome() {
   const home = makeTempDir("usage-pacer-home-");
-  mkdirSync(join(home, WATCH, "assets"), { recursive: true });
-  writeFileSync(join(home, WATCH, "assets", "guard.py"), guardSource);
   vi.stubEnv("PASEO_HOME", home);
-  return home;
+  const state = join(home, "plugin-data/usage-pacer");
+  mkdirSync(state, { recursive: true });
+  return state;
+}
+
+function withStubbedPaseo(state: string) {
+  const node = join(state, "node");
+  writeFileSync(node, `#!/bin/sh\nexec cat ${state}/usage.json\n`);
+  chmodSync(node, 0o755);
+  writeFileSync(join(state, "config.json"), JSON.stringify({ cli: "/bin/true", node }));
+  writeFileSync(
+    join(state, "usage.json"),
+    JSON.stringify({
+      fetchedAt: new Date().toISOString(),
+      bases: {},
+      agents: [],
+      providers: [{ providerId: "claude", status: "available", windows: [] }, { providerId: "codex", status: "available", windows: [] }],
+    }),
+  );
 }
 
 describe("contribute", () => {
-  afterEach(() => vi.unstubAllEnvs());
-
-  it("paces nothing and says why when the first mate has no usage guard", () => {
-    vi.stubEnv("PASEO_HOME", makeTempDir("usage-pacer-home-"));
-    const error = vi.spyOn(console, "error").mockImplementation(() => {});
-    const { server, handlers } = fakeServer();
-    contribute(server);
-    expect(handlers.size).toBe(0);
-    expect(error).toHaveBeenCalledWith(expect.stringMatching(/^usage-pacer: no usage guard at .*guard\.py/));
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.useRealTimers();
   });
 
-  it("answers a turn start at once and runs the guard in the background", async () => {
-    const home = homeWithGuard("import os\nopen(os.environ['FIRSTMATE_HOME'] + '/ran', 'w').close()\n");
-    const { server, handlers } = fakeServer();
-    const stop = contribute(server);
-    expect(handlers.get("agent.turn_started")?.()).toBeUndefined();
-    await vi.waitFor(() => expect(existsSync(join(home, "plugin-data/firstmate/home/ran"))).toBe(true));
+  it("installs its own guard on start", async () => {
+    const state = pacerHome();
+    const stop = contribute(fakeServer().server);
+    await vi.waitFor(() => expect(existsSync(join(state, "guard/guard.py"))).toBe(true));
     stop();
   });
 
+  it("answers a turn start at once and runs the installed guard in the background", async () => {
+    const state = pacerHome();
+    withStubbedPaseo(state);
+    const { server, handlers } = fakeServer();
+    const stop = contribute(server);
+    expect(handlers.get("agent.turn_started")?.()).toBeUndefined();
+    await vi.waitFor(() => expect(existsSync(join(state, "gate.json"))).toBe(true), { timeout: 5_000 });
+    stop();
+  });
+
+  it("watches every 3 minutes, which also keeps the change-notice baseline", async () => {
+    const state = pacerHome();
+    withStubbedPaseo(state);
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    const stop = contribute(fakeServer().server);
+    await vi.advanceTimersByTimeAsync(3 * 60_000);
+    await vi.waitFor(() => expect(existsSync(join(state, "watch-state/last-notice.json"))).toBe(true), { timeout: 5_000 });
+    stop();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("hands the saved pacing settings to the guard, and each later save", async () => {
-    const home = homeWithGuard("");
-    const overrides = join(home, WATCH, "pacing-overrides.json");
+    const overrides = join(pacerHome(), "pacing-overrides.json");
     const { server, saveSettings } = fakeServer({ stop_pct: 80 });
     const stop = contribute(server);
     await vi.waitFor(() => expect(JSON.parse(readFileSync(overrides, "utf8"))).toEqual({ stop_pct: 80 }));
@@ -69,15 +95,12 @@ describe("contribute", () => {
   });
 
   it("serves the pacing.json defaults to the settings screen", async () => {
-    const home = homeWithGuard("");
-    const config = join(home, WATCH, "assets/claudeConfig/skills/paced-workflows/config");
-    mkdirSync(config, { recursive: true });
-    const pacing = { weekly_target_pct: 90, contingency_5h_pct: 10, contingency_7d_pct: 10, emergency_5h_pct: 90,
-      emergency_7d_pct: 90, stop_pct: 90, up_margin_pct: 15, max_concurrency: 10, weekly_pace: "working_week" };
-    writeFileSync(join(config, "pacing.json"), JSON.stringify(pacing));
+    pacerHome();
     const { server, rpcs } = fakeServer();
     const stop = contribute(server);
-    expect(await rpcs.get("pacing.defaults")?.()).toEqual(pacing);
+    expect(await rpcs.get("pacing.defaults")?.()).toEqual(
+      expect.objectContaining({ stop_pct: 90, weekly_pace: "working_week" }),
+    );
     stop();
   });
 });

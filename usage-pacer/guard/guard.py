@@ -16,6 +16,7 @@ from holds import LIVE, clear_hold_label, resumed_agent_ids, set_hold_label, sta
 from pace_alert import pace_alerts
 from policy import decide, with_overrides
 from slots import stop_order, waiting_ids, working_agents
+from state_dir import state_dir
 from usage_log import LOG_NAME, append_reading
 
 HERE = Path(__file__).resolve().parent
@@ -105,12 +106,22 @@ def without_reasons(summary):
                                     for key, provider in summary['providers'].items()})
 
 
+def app_bundle_runtime(cli):
+    resources = Path(cli).resolve().parent.parent
+    helper = resources.parent / 'Frameworks/Paseo Helper.app/Contents/MacOS/Paseo Helper'
+    if not ((resources / 'app.asar').is_file() and helper.is_file()):
+        return {}
+    return {'node': str(helper), 'sdk': str(resources / 'app.asar/node_modules/@getpaseo/cli/dist/index.js')}
+
+
 def snapshot(config):
     cli = config.get('cli') or os.environ.get('PASEO_CLI') or shutil.which('paseo')
     if not cli:
         raise ValueError('Paseo CLI unavailable')
-    response = subprocess.run([config.get('node', 'node'), str(HERE / 'paseo-source.mjs'), config.get('sdk', cli),
-                               config['paseo_home']], capture_output=True, text=True, timeout=40,
+    runtime = {} if 'node' in config or 'sdk' in config else app_bundle_runtime(cli)
+    response = subprocess.run([config.get('node') or runtime.get('node', 'node'), str(HERE / 'paseo-source.mjs'),
+                               config.get('sdk') or runtime.get('sdk', cli), config['paseo_home']],
+                              capture_output=True, text=True, timeout=40,
                               env=dict(os.environ, ELECTRON_RUN_AS_NODE='1'))
     if response.returncode:
         raise RuntimeError('Paseo snapshot failed: ' + response.stderr.strip())
@@ -130,8 +141,7 @@ def snapshot_with_retry(config):
     return snapshot(config)
 
 
-def run(home, watch_state, bootstrap=False, check=None, slots=1, target=None, started_at=0, task=None):
-    data_dir = home / 'data/subscription-usage-watch'
+def run(data_dir, watch_state, bootstrap=False, check=None, slots=1, target=None, started_at=0, task=None):
     data_dir.mkdir(parents=True, exist_ok=True)
     with (data_dir / 'lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
@@ -139,9 +149,7 @@ def run(home, watch_state, bootstrap=False, check=None, slots=1, target=None, st
 
 
 def run_locked(data_dir, watch_state, bootstrap, check, slots, target=None, started_at=0, task=None):
-    config = read_json(data_dir / 'config.json', {})
-    if 'paseo_home' not in config:
-        raise ValueError('Guard installation config missing')
+    config = {'paseo_home': str(data_dir.parent.parent), **read_json(data_dir / 'config.json', {})}
     gate_path = data_dir / 'gate.json'
     now = time.time()
     previous = read_json(gate_path, {})
@@ -292,19 +300,17 @@ def main():
         parser.error('--turn-started-at must be a nonnegative finite epoch')
     if args.slots < 0:
         parser.error('--slots must be nonnegative')
-    if not os.environ.get('FIRSTMATE_HOME'):
-        parser.error('Set FIRSTMATE_HOME to the FirstMate home')
-    home = Path(os.environ['FIRSTMATE_HOME'])
+    data_dir = state_dir()
     if args.override:
         if args.hours is None or not math.isfinite(args.hours) or args.hours < 0:
             parser.error('--override needs --hours, a nonnegative number')
-        return set_override(home / 'data/subscription-usage-watch', args.override, args.hours)
-    state = Path(os.environ.get('FIRSTMATE_WATCH_STATE', str(home / 'data/subscription-usage-watch/watch-state')))
+        return set_override(data_dir, args.override, args.hours)
+    state = Path(os.environ.get('USAGE_PACER_NOTICE_STATE', str(data_dir / 'watch-state')))
     try:
-        return run(home, state, args.bootstrap, args.check, args.slots, args.target_agent, args.turn_started_at,
+        return run(data_dir, state, args.bootstrap, args.check, args.slots, args.target_agent, args.turn_started_at,
                    args.task)
     except (OSError, ValueError, TypeError, KeyError, AttributeError, subprocess.SubprocessError):
-        gate_path = home / 'data/subscription-usage-watch/gate.json'
+        gate_path = data_dir / 'gate.json'
         try:
             stopped = read_json(gate_path.parent / 'stopped.json', {})
         except (OSError, ValueError):

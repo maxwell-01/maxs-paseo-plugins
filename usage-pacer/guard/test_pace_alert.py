@@ -71,19 +71,18 @@ class GuardHome:
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.home = Path(self.temp.name)
-        self.data = self.home / 'data/subscription-usage-watch'
-        self.data.mkdir(parents=True)
+        self.data = self.home
         node = self.home / 'node'
-        node.write_text('#!/bin/sh\nexec cat "$FIRSTMATE_HOME/usage.json"\n')
+        node.write_text('#!/bin/sh\nexec cat "$USAGE_PACER_STATE/usage.json"\n')
         node.chmod(0o755)
         cli = self.home / 'paseo'
         cli.write_text('#!/bin/sh\nexit 0\n')
         cli.chmod(0o755)
         (self.data / 'config.json').write_text(json.dumps(
-            {'cli': str(cli), 'node': str(node), 'paseo_home': str(self.home), 'managed_roots': []}))
+            {'cli': str(cli), 'node': str(node), 'managed_roots': []}))
         (self.data / 'pacing-overrides.json').write_text(json.dumps({'weekly_pace': 'whole_week'}))
-        self.env = dict(os.environ, HOME=str(self.home), FIRSTMATE_HOME=str(self.home),
-                        FIRSTMATE_WATCH_STATE=str(self.home / 'watch-state'))
+        self.env = dict(os.environ, HOME=str(self.home), USAGE_PACER_STATE=str(self.home),
+                        USAGE_PACER_NOTICE_STATE=str(self.home / 'notices'))
         self.env.pop('PASEO_AGENT_ID', None)
 
     def write_usage(self, weekly_pct, agents):

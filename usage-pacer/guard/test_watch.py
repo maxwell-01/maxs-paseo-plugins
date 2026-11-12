@@ -16,14 +16,12 @@ class WatchBoundaryTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.home = Path(self.temp.name)
-        self.data = self.home / 'data/subscription-usage-watch'
-        (self.data / 'assets').mkdir(parents=True)
-        (self.data / 'assets/guard.py').symlink_to(HERE / 'guard.py')
+        self.data = self.home
         self.fixture = self.home / 'usage.json'
         self.cli = self.home / 'paseo'
         self.cli.write_text("""#!/usr/bin/env python3
 import json, os, pathlib, sys
-home = pathlib.Path(os.environ['FIRSTMATE_HOME'])
+home = pathlib.Path(os.environ['USAGE_PACER_STATE'])
 with (home / 'calls').open('a') as log:
     log.write(json.dumps(sys.argv[1:]) + '\\n')
 if sys.argv[1] == 'agent':
@@ -54,11 +52,10 @@ print(json.dumps({'agentIds': ids, 'stoppedCount': len(ids)}))
 """)
         self.cli.chmod(0o755)
         node = self.home / 'node'
-        node.write_text("#!/bin/sh\nexec cat \"$FIRSTMATE_HOME/usage.json\"\n")
+        node.write_text("#!/bin/sh\nexec cat \"$USAGE_PACER_STATE/usage.json\"\n")
         node.chmod(0o755)
-        (self.data / 'config.json').write_text(json.dumps({'cli': str(self.cli), 'node': str(node),
-                                                           'paseo_home': str(self.home)}))
-        self.env = dict(os.environ, HOME=str(self.home), FIRSTMATE_HOME=str(self.home), FIRSTMATE_WATCH_STATE=str(self.home / 'watch-state'))
+        (self.data / 'config.json').write_text(json.dumps({'cli': str(self.cli), 'node': str(node)}))
+        self.env = dict(os.environ, HOME=str(self.home), USAGE_PACER_STATE=str(self.home), USAGE_PACER_NOTICE_STATE=str(self.home / 'notices'))
         self.env.pop('PASEO_AGENT_ID', None)
         self.set_usage(90)
 
@@ -83,7 +80,7 @@ print(json.dumps({'agentIds': ids, 'stoppedCount': len(ids)}))
         self.fixture.write_text(json.dumps(data))
 
     def call(self, *args):
-        return subprocess.run([sys.executable, str(self.data / 'assets/guard.py'), *args],
+        return subprocess.run([sys.executable, str(HERE / 'guard.py'), *args],
                               env=self.env, capture_output=True, text=True, timeout=10)
 
     def watch(self):
@@ -183,7 +180,7 @@ print(json.dumps({'agentIds': ids, 'stoppedCount': len(ids)}))
     def test_a_new_reason_alone_does_not_notify(self):
         self.set_usage(20)
         self.call()
-        marker = self.home / 'watch-state/last-notice.json'
+        marker = self.home / 'notices/last-notice.json'
         notice = json.loads(marker.read_text())
         notice['providers']['claude']['reason'] = 'five_hour forecast 61.1% vs raise limit 75%: holding'
         marker.write_text(json.dumps(notice))

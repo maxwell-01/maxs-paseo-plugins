@@ -1,16 +1,16 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { firstMateHome, guardFile } from "./guard-location.server";
+import { guardFile, pacingOverridesFile, stateDir } from "./guard-location.server";
 
 describe("guard location", () => {
-  it("finds the first mate home under ~/.paseo when PASEO_HOME is not set", () => {
-    expect(firstMateHome({})).toBe(join(homedir(), ".paseo", "plugin-data", "firstmate", "home"));
+  it("keeps the state under ~/.paseo when PASEO_HOME is not set", () => {
+    expect(stateDir({})).toBe(join(homedir(), ".paseo", "plugin-data", "usage-pacer"));
   });
 
-  it("follows PASEO_HOME to the guard the first mate installed", () => {
-    expect(guardFile({ PASEO_HOME: "/data/paseo" })).toBe(
-      "/data/paseo/plugin-data/firstmate/home/data/subscription-usage-watch/assets/guard.py",
-    );
+  it("follows PASEO_HOME for the guard and the pacing overrides", () => {
+    const env = { PASEO_HOME: "/data/paseo" };
+    expect(guardFile(env)).toBe("/data/paseo/plugin-data/usage-pacer/guard/guard.py");
+    expect(pacingOverridesFile(env)).toBe("/data/paseo/plugin-data/usage-pacer/pacing-overrides.json");
   });
 });

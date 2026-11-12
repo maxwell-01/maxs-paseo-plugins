@@ -12,29 +12,36 @@ function fakeGuard(body: string) {
 }
 
 describe("runGuard", () => {
-  it("runs the guard once in its enforce-only mode, against the first mate home", async () => {
+  it("runs the guard once in its enforce-only mode", async () => {
     const dir = makeTempDir("usage-pacer-seen-");
     const seen = join(dir, "seen");
     const { guard } = fakeGuard(
-      `open(${JSON.stringify(seen)}, 'w').write(' '.join(sys.argv[1:]) + '|' + os.environ['FIRSTMATE_HOME'])`,
+      `open(${JSON.stringify(seen)}, 'w').write(' '.join(sys.argv[1:]))`,
     );
     const log = vi.fn();
-    await runGuard({ guard, firstMateHome: "/fm/home", log });
-    expect(readFileSync(seen, "utf8")).toBe("--bootstrap|/fm/home");
+    await runGuard({ guard, mode: "bootstrap", log });
+    expect(readFileSync(seen, "utf8")).toBe("--bootstrap");
     expect(log).not.toHaveBeenCalled();
+  });
+
+  it("runs the watch with no flag and logs each line it prints, with the given environment", async () => {
+    const { guard } = fakeGuard("print('Subscription pace alert: one')\nprint()\nprint('- two ' + os.environ['STATE'] + ' ' + str(len(sys.argv)))");
+    const log = vi.fn();
+    await runGuard({ guard, mode: "watch", env: { STATE: "/s" }, log });
+    expect(log.mock.calls).toEqual([["Subscription pace alert: one"], ["- two /s 1"]]);
   });
 
   it("logs a failed run with the end of its stderr", async () => {
     const { guard } = fakeGuard("print('Managed crew interruption failed', file=sys.stderr)\nsys.exit(1)");
     const log = vi.fn();
-    await runGuard({ guard, firstMateHome: "/fm/home", log });
+    await runGuard({ guard, mode: "bootstrap", log });
     expect(log).toHaveBeenCalledWith("usage-pacer: the usage guard exited 1: Managed crew interruption failed");
   });
 
   it("ends a hung run with SIGTERM and logs it", async () => {
     const { guard } = fakeGuard("time.sleep(30)");
     const log = vi.fn();
-    await runGuard({ guard, firstMateHome: "/fm/home", log, timeoutMs: 200 });
+    await runGuard({ guard, mode: "bootstrap", log, timeoutMs: 200 });
     expect(log).toHaveBeenCalledWith("usage-pacer: the usage guard ran past 200 ms and was ended");
   });
 
@@ -46,7 +53,7 @@ describe("runGuard", () => {
     );
     const log = vi.fn();
     const started = Date.now();
-    await runGuard({ guard, firstMateHome: "/fm/home", log, timeoutMs: 300, killGraceMs: 200 });
+    await runGuard({ guard, mode: "bootstrap", log, timeoutMs: 300, killGraceMs: 200 });
     expect(Date.now() - started).toBeLessThan(2_000);
     const pid = Number(readFileSync(pidFile, "utf8"));
     await vi.waitFor(() => expect(() => process.kill(pid, 0)).toThrow());
@@ -54,7 +61,7 @@ describe("runGuard", () => {
 
   it("logs a guard that cannot start, without throwing", async () => {
     const log = vi.fn();
-    await runGuard({ guard: "/no/such/guard.py", firstMateHome: "/fm/home", log, python: "/no/such/python3" });
+    await runGuard({ guard: "/no/such/guard.py", mode: "bootstrap", log, python: "/no/such/python3" });
     await new Promise((settle) => setTimeout(settle, 50));
     expect(log).toHaveBeenCalledTimes(1);
     expect(log).toHaveBeenCalledWith(expect.stringMatching(/^usage-pacer: the usage guard did not start: /));

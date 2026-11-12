@@ -2,9 +2,10 @@
 import argparse
 from datetime import datetime
 import json
-import os
 from pathlib import Path
 import time
+
+from state_dir import state_dir
 
 HOUR = 3600
 MAX_GAP_SECONDS = 30 * 60
@@ -67,7 +68,7 @@ def main():
                         help=f'a {LOG_NAME} to read; repeat for each machine (default: this machine\'s)')
     parser.add_argument('--hours', type=float, default=48, help='how far back to report (default 48)')
     args = parser.parse_args()
-    paths = args.log or [Path(os.environ['FIRSTMATE_HOME']) / 'data/subscription-usage-watch' / LOG_NAME]
+    paths = args.log or [state_dir() / LOG_NAME]
     rows = read_logs(paths)
     now = time.time()
     print(f'Usage per hour over the last {args.hours:g} h from {len(rows)} readings on '

@@ -5,10 +5,14 @@ const GUARD_TIMEOUT_MS = 150_000;
 const KILL_GRACE_MS = 5_000;
 const STDERR_TAIL_CHARS = 500;
 
+// Only the watch prints to stdout (pace alerts, change notices); every printed line goes to the plugin log.
+export type GuardMode = "bootstrap" | "watch";
+
 export interface GuardRun {
   guard: string;
-  firstMateHome: string;
+  mode: GuardMode;
   log: (line: string) => void;
+  env?: NodeJS.ProcessEnv;
   python?: string;
   timeoutMs?: number;
   killGraceMs?: number;
@@ -16,16 +20,17 @@ export interface GuardRun {
 
 export function runGuard({
   guard,
-  firstMateHome,
+  mode,
+  env,
   log,
   python = "python3",
   timeoutMs = GUARD_TIMEOUT_MS,
   killGraceMs = KILL_GRACE_MS,
 }: GuardRun) {
   return new Promise<void>((resolve) => {
-    const child = spawn(python, [guard, "--bootstrap"], {
-      env: { ...process.env, FIRSTMATE_HOME: firstMateHome },
-      stdio: ["ignore", "ignore", "pipe"],
+    const child = spawn(python, mode === "bootstrap" ? [guard, "--bootstrap"] : [guard], {
+      env: { ...process.env, ...env },
+      stdio: ["ignore", "pipe", "pipe"],
     });
     let stderr = "";
     let settled = false;
@@ -36,6 +41,9 @@ export function runGuard({
       if (problem) log(`usage-pacer: the usage guard ${problem}`);
       resolve();
     };
+    child.stdout.on("data", (chunk: Buffer) => {
+      for (const line of chunk.toString().split("\n")) if (line.trim()) log(line);
+    });
     child.stderr.on("data", (chunk: Buffer) => {
       stderr = (stderr + chunk.toString()).slice(-STDERR_TAIL_CHARS);
     });
