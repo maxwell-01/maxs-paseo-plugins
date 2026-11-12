@@ -1,0 +1,21 @@
+{
+  "_comment": "Tunables that govern how fast an unattended Claude workflow spends the user's Anthropic usage budget. LOWER = SAFER (slower burn, more headroom kept in reserve). The controller (bin/recommend-pace.py) reads these; it is asymmetric — slow to scale up, fast to scale down, and fail-safe when no fresh live signal exists. Contingency reserves mean the user always keeps credit for work: the controller aims to keep usage under (100 - contingency) in each window, and hard-floors before the emergency ceilings.",
+  "stale_minutes": 5,
+  "start_concurrency": 4,
+  "min_concurrency": 2,
+  "max_concurrency": 10,
+  "start_effort": "medium",
+  "max_builder_effort": "medium",
+  "observe_minutes": 45,
+  "up_step": 1,
+  "up_cooldown_min": 20,
+  "up_margin_pct": 15,
+  "proj_horizon_min": 720,
+  "contingency_5h_pct": 10,
+  "contingency_7d_pct": 10,
+  "weekly_target_pct": 90,
+  "weekly_pace": "working_week",
+  "emergency_5h_pct": 90,
+  "emergency_7d_pct": 90,
+  "stop_pct": 90
+}
