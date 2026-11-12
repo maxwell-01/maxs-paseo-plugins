@@ -58,7 +58,7 @@ print(json.dumps({'agentIds': ids, 'stoppedCount': len(ids)}))
         node.chmod(0o755)
         (self.data / 'config.json').write_text(json.dumps({'cli': str(self.cli), 'node': str(node),
                                                            'paseo_home': str(self.home)}))
-        self.env = dict(os.environ, FIRSTMATE_HOME=str(self.home), FIRSTMATE_WATCH_STATE=str(self.home / 'watch-state'))
+        self.env = dict(os.environ, HOME=str(self.home), FIRSTMATE_HOME=str(self.home), FIRSTMATE_WATCH_STATE=str(self.home / 'watch-state'))
         self.env.pop('PASEO_AGENT_ID', None)
         self.set_usage(90)
 

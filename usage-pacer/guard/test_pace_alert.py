@@ -73,7 +73,6 @@ class GuardHome:
         self.home = Path(self.temp.name)
         self.data = self.home / 'data/subscription-usage-watch'
         self.data.mkdir(parents=True)
-        (self.data / 'last-pull').touch()
         node = self.home / 'node'
         node.write_text('#!/bin/sh\nexec cat "$FIRSTMATE_HOME/usage.json"\n')
         node.chmod(0o755)
@@ -83,7 +82,7 @@ class GuardHome:
         (self.data / 'config.json').write_text(json.dumps(
             {'cli': str(cli), 'node': str(node), 'paseo_home': str(self.home), 'managed_roots': []}))
         (self.data / 'pacing-overrides.json').write_text(json.dumps({'weekly_pace': 'whole_week'}))
-        self.env = dict(os.environ, FIRSTMATE_HOME=str(self.home),
+        self.env = dict(os.environ, HOME=str(self.home), FIRSTMATE_HOME=str(self.home),
                         FIRSTMATE_WATCH_STATE=str(self.home / 'watch-state'))
         self.env.pop('PASEO_AGENT_ID', None)
 
