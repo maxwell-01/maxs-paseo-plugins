@@ -26,7 +26,7 @@ paseo plugin install https://github.com/maxwell-01/maxs-paseo-plugins.git:usage-
 ## What it does
 
 The plugin copies a Python guard to `$PASEO_HOME/plugin-data/usage-pacer/guard/` on every start
-(`$PASEO_HOME` is `~/.paseo` unless you set it). The guard:
+(`$PASEO_HOME` is `~/.paseo` unless you set it; every path below uses it). The guard:
 
 - Sets a cap per provider: how many managed agents may work at once.
 - Paces weekly usage. `weekly_pace` chooses whether to reach the target by the end of Friday or evenly
@@ -37,13 +37,14 @@ The plugin copies a Python guard to `$PASEO_HOME/plugin-data/usage-pacer/guard/`
 - Prints an alert when a weekly window is forecast to end at 85% or more.
 
 The turn-start run enforces and prints nothing. The 3-minute run also prints changes and alerts. Both go to
-`paseo plugin logs usage-pacer`. Runs start at most once every 30 seconds, and a run that takes over 150
+`paseo plugin logs usage-pacer`. Runs start at most once every 30 seconds per trigger (turn-start runs and 3-minute runs are paced
+separately), and a run that takes over 150
 seconds is stopped. The turn-start hook is a notification, so the plugin never blocks an agent.
 
 ## Which agents it manages
 
 Every agent that is not archived. To manage fewer, create
-`~/.paseo/plugin-data/usage-pacer/config.json`:
+`$PASEO_HOME/plugin-data/usage-pacer/config.json`:
 
 ```json
 {
@@ -60,28 +61,30 @@ Every agent that is not archived. To manage fewer, create
 - `managed_roots`: agent IDs, and their descendants, that are managed.
 - `task_label`: the label key that `--override` and `--task` match. Default `usage-pacer.task`.
 
-If `managed_labels` and `manager_labels` are both missing or empty, every agent is managed. A bad value in
-this file makes the guard fail closed (dispatch checks are refused).
+If `managed_labels` and `manager_labels` are both missing or empty, every agent is managed. While this file has a
+bad value, dispatch checks are refused and no agents are stopped.
 
 ## Use from scripts and managers
 
 ```sh
-python3 ~/.paseo/plugin-data/usage-pacer/guard/guard.py --check claude [--slots N]
+python3 $PASEO_HOME/plugin-data/usage-pacer/guard/guard.py --check claude [--slots N]
 ```
 
-Exit code 0 means N more agents may start now; 2 means they may not. It prints a JSON line with the cap
-and the number of active agents. Add `--target-agent ID --turn-started-at EPOCH` to refuse when that agent
+Exit code 0 means N more agents may start now, 2 means they may not, and 1 means the guard failed or
+has an enforcement error. It prints a JSON line with the cap
+and the number of active agents. Scripts can set `USAGE_PACER_STATE` to use another state folder (default: the folder above `guard/`) and
+`USAGE_PACER_NOTICE_STATE` to use another `watch-state/` folder. Add `--target-agent ID --turn-started-at EPOCH` to refuse when that agent
 was stopped during the turn.
 
 To let one task bypass the guard, give its agents the `task_label` label with the task id, then run:
 
 ```sh
-python3 ~/.paseo/plugin-data/usage-pacer/guard/guard.py --override TASK --hours 4
+python3 $PASEO_HOME/plugin-data/usage-pacer/guard/guard.py --override TASK --hours 4
 ```
 
 `--hours 0` removes it. `--check claude --task TASK` is then allowed while the override lasts.
 
-`python3 ~/.paseo/plugin-data/usage-pacer/guard/usage_log.py` reports account usage per hour, idle against
+`python3 $PASEO_HOME/plugin-data/usage-pacer/guard/usage_log.py` reports account usage per hour, idle against
 busy, from `usage-log.jsonl`.
 
 ## Where state lives
@@ -109,10 +112,9 @@ run merges that file over pacing.json. A bad value fails the guard closed.
 | `contingency_7d_pct` | 10                  | Weekly reserve; the weekly ceiling is 100 minus this        |
 | `emergency_5h_pct`   | 90                  | 5-hour usage that forces minimum pace                       |
 | `emergency_7d_pct`   | 90                  | Weekly usage that forces minimum pace                       |
-| `stop_pct`           | 90                  | Hard stop: usage that pauses new work and stops crew        |
+| `stop_pct`           | 90                  | Hard stop: usage that pauses new work and stops managed agents |
 | `up_margin_pct`      | 15                  | Headroom a forecast needs below a limit before a raise      |
-| `max_concurrency`    | 10                  | Most crew agents per provider                               |
-
+| `max_concurrency`    | 10                  | Most managed agents per provider                            |
 | `weekly_pace`        | `working_week`      | `working_week`: reach the target by end of Friday; `whole_week`: pace evenly to the reset |
 
 Claude and Codex have only weekly limits now. The guard ignores their 5-hour window, so

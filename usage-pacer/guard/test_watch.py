@@ -8,10 +8,9 @@ import tempfile
 import time
 import unittest
 
-HERE = Path(__file__).parent
-FIRSTMATE_LABELS = {'managed_labels': ['firstmate.role=crew'], 'manager_labels': ['firstmate.role=first-mate'],
-                    'task_label': 'firstmate.task'}
+from test_support import FIRSTMATE_CONFIG
 
+HERE = Path(__file__).parent
 
 class WatchBoundaryTests(unittest.TestCase):
     def setUp(self):
@@ -56,7 +55,7 @@ print(json.dumps({'agentIds': ids, 'stoppedCount': len(ids)}))
         node = self.home / 'node'
         node.write_text("#!/bin/sh\nexec cat \"$USAGE_PACER_STATE/usage.json\"\n")
         node.chmod(0o755)
-        (self.data / 'config.json').write_text(json.dumps({'cli': str(self.cli), 'node': str(node), **FIRSTMATE_LABELS}))
+        (self.data / 'config.json').write_text(json.dumps({'cli': str(self.cli), 'node': str(node), **FIRSTMATE_CONFIG}))
         self.env = dict(os.environ, HOME=str(self.home), USAGE_PACER_STATE=str(self.home), USAGE_PACER_NOTICE_STATE=str(self.home / 'notices'))
         self.env.pop('PASEO_AGENT_ID', None)
         self.set_usage(90)
@@ -100,6 +99,19 @@ print(json.dumps({'agentIds': ids, 'stoppedCount': len(ids)}))
             {k: v for k, v in json.loads((self.data / 'config.json').read_text()).items() if k in ('cli', 'node')}))
         self.assertEqual(self.watch().returncode, 0)
         self.assertEqual(sorted((self.home / 'stops').read_text().splitlines()), ['child', 'crew', 'human'])
+
+    def test_an_agent_on_a_provider_without_a_subscription_does_not_stop_the_guard(self):
+        (self.data / 'config.json').write_text(json.dumps({'cli': str(self.cli), 'node': str(self.home / 'node')}))
+        self.set_usage(95)
+        data = json.loads(self.fixture.read_text())
+        data['agents'].append({'id': 'other', 'provider': 'opencode', 'status': 'running', 'labels': {},
+                               'createdAt': '2026-10-28T10:00:00+00:00', 'pendingPermissionCount': 0})
+        self.fixture.write_text(json.dumps(data))
+        self.assertEqual(self.watch().returncode, 0)
+        self.assertNotIn('other', (self.home / 'stops').read_text().splitlines())
+        self.assertIn('crew', (self.home / 'stops').read_text().splitlines())
+        self.assertEqual(self.call('--check', 'claude', '--slots', '0').returncode, 2)
+        self.assertEqual(json.loads((self.data / 'gate.json').read_text())['enforcement_error'], None)
 
     def test_watch_relays_a_change_only_when_crew_was_running(self):
         self.set_usage(20)

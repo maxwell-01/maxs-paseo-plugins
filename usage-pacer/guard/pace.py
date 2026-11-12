@@ -172,8 +172,7 @@ def recommend(cfg, signal, telemetry, current_concurrency_arg=None, now=None, ag
             "concurrency": min_c,
             "builder_effort": "low",
             "action": "paused",
-            "reason": "usage sharing is OFF (paced-workflows/bin/sharing.sh) — "
-                      "not consuming the user's budget; resume with /sharing on",
+            "reason": "usage sharing is off in ~/.claude/paced-workflows/sharing.json",
             "signals": signals(),
         }
 

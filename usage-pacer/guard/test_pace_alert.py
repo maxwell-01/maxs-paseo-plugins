@@ -7,6 +7,7 @@ import tempfile
 import time
 import unittest
 from unittest.mock import patch
+from test_support import FIRSTMATE_CONFIG
 
 from pace_alert import pace_alerts, weekly_burn_per_hour
 
@@ -66,9 +67,6 @@ class PaceAlertTests(unittest.TestCase):
         self.assertEqual(len(self.alerts(86, 40, seen)[0]), 1)
 
 
-FIRSTMATE_LABELS = {'managed_labels': ['firstmate.role=crew'], 'manager_labels': ['firstmate.role=first-mate'],
-                    'task_label': 'firstmate.task'}
-
 
 class GuardHome:
     def setUp(self):
@@ -83,7 +81,7 @@ class GuardHome:
         cli.write_text('#!/bin/sh\nexit 0\n')
         cli.chmod(0o755)
         (self.data / 'config.json').write_text(json.dumps(
-            {'cli': str(cli), 'node': str(node), 'managed_roots': [], **FIRSTMATE_LABELS}))
+            {'cli': str(cli), 'node': str(node), 'managed_roots': [], **FIRSTMATE_CONFIG}))
         (self.data / 'pacing-overrides.json').write_text(json.dumps({'weekly_pace': 'whole_week'}))
         self.env = dict(os.environ, HOME=str(self.home), USAGE_PACER_STATE=str(self.home),
                         USAGE_PACER_NOTICE_STATE=str(self.home / 'notices'))

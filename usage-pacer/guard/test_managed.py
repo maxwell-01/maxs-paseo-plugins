@@ -1,9 +1,8 @@
 import unittest
 
-from guard import managed_agents
+from test_support import FIRSTMATE_CONFIG
 
-FIRSTMATE_CONFIG = {'managed_labels': ['firstmate.role=crew'], 'manager_labels': ['firstmate.role=first-mate'],
-                    'task_label': 'firstmate.task'}
+from guard import managed_agents
 
 
 def agent(agent_id, parent=None, archived=False, **labels):
@@ -70,7 +69,8 @@ class FirstMateConfigTests(unittest.TestCase):
 class ConfigValidationTests(unittest.TestCase):
     def test_wrong_types_fail_closed(self):
         for config in ({'managed_labels': 'a=b'}, {'managed_labels': ['nokey']}, {'manager_labels': [1]},
-                       {'task_label': 3}, {'task_label': ''}):
+                       {'managed_labels': {}}, {'managed_labels': ''}, {'manager_labels': 0}, {'manager_labels': False},
+                       {'managed_roots': 'abc'}, {'managed_roots': [1]}, {'task_label': 3}, {'task_label': ''}):
             with self.subTest(config=config), self.assertRaises(ValueError):
                 managed_agents([agent('a')], config, set())
 

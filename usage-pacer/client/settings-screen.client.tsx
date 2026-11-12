@@ -12,9 +12,9 @@ const NUMBER_FIELDS: { key: Exclude<PacingKey, "weekly_pace">; label: string; hi
   { key: "contingency_7d_pct", label: "Weekly reserve %", hint: "The weekly ceiling is 100 minus this." },
   { key: "emergency_5h_pct", label: "5-hour emergency ceiling %", hint: "5-hour usage that forces minimum pace. No longer applies to Claude or Codex." },
   { key: "emergency_7d_pct", label: "Weekly emergency ceiling %", hint: "Weekly usage that forces minimum pace." },
-  { key: "stop_pct", label: "Hard stop %", hint: "Usage that pauses new work and stops crew." },
+  { key: "stop_pct", label: "Hard stop %", hint: "Usage that pauses new work and stops managed agents." },
   { key: "up_margin_pct", label: "Raise margin %", hint: "Headroom a forecast needs below a limit before a raise." },
-  { key: "max_concurrency", label: "Max agents", hint: "Most crew agents per provider. A whole number, 1 or more." },
+  { key: "max_concurrency", label: "Max agents", hint: "Most managed agents per provider. A whole number, 1 or more." },
 ];
 
 export function PacingSettingsScreen({ theme, layout }: PluginSurfaceProps) {

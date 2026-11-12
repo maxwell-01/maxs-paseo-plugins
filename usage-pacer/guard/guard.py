@@ -50,9 +50,16 @@ def write_json(path, data):
     temp.replace(path)
 
 
+def string_list(config, key):
+    values = config.get(key, [])
+    if not isinstance(values, list) or not all(isinstance(v, str) for v in values):
+        raise ValueError(f'{key} must be a list of strings')
+    return values
+
+
 def label_pairs(config, key):
-    pairs = config.get(key) or []
-    if not isinstance(pairs, list) or not all(isinstance(p, str) and '=' in p for p in pairs):
+    pairs = string_list(config, key)
+    if not all('=' in p for p in pairs):
         raise ValueError(f'{key} must be a list of key=value strings')
     return [tuple(p.split('=', 1)) for p in pairs]
 
@@ -73,6 +80,7 @@ def with_descendants(agents, ids):
 
 def managed_agents(agents, config, overridden):
     managed_labels, manager_labels = label_pairs(config, 'managed_labels'), label_pairs(config, 'manager_labels')
+    roots = string_list(config, 'managed_roots')
     task_label = config.get('task_label', 'usage-pacer.task')
     if not isinstance(task_label, str) or not task_label:
         raise ValueError('task_label must be a label key')
@@ -80,7 +88,7 @@ def managed_agents(agents, config, overridden):
     if managed_labels or manager_labels:
         managers = {a['id'] for a in agents if has_label(a, manager_labels)}
         seeds = {a['id'] for a in agents if (has_label(a, managed_labels) or a.get('parentAgentId') in managers)
-                 and a['id'] not in paused} | set(config.get('managed_roots', []))
+                 and a['id'] not in paused} | set(roots)
         owned = with_descendants(agents, seeds)
     else:
         owned = {a['id'] for a in agents} - with_descendants(agents, paused)
@@ -103,9 +111,11 @@ def provider_key(agent, bases):
             raise ValueError('provider alias cycle')
         visited.add(key)
         key = bases[key].lower()
-    if key not in ('claude', 'codex'):
-        raise ValueError('managed agent provider has no subscription source')
-    return key
+    return key if key in ('claude', 'codex') else None
+
+
+def with_subscription(agents, bases):
+    return [a for a in agents if provider_key(a, bases)]
 
 
 def active_overrides(data_dir, now):
@@ -188,7 +198,7 @@ def run_locked(data_dir, watch_state, bootstrap, check, slots, target=None, star
         error = 'Paseo snapshot unavailable; dispatch closed, active fleet enforcement unverified'
         snapshot_failure = failure
     now = time.time()
-    crew = managed_agents(live['agents'], config, overridden)
+    crew = with_subscription(managed_agents(live['agents'], config, overridden), live['bases'])
     crew_was_running = any(a['status'] == 'running' for a in crew)
     live_crew = [a for a in crew if a['status'] in LIVE]
     parent_of = parents_by_id(live['agents'])
@@ -215,7 +225,7 @@ def run_locked(data_dir, watch_state, bootstrap, check, slots, target=None, star
     labelled, requested_stops = set(), {}
     for agent in stop_queue:
         if time.time() - now > 100:
-            gate['enforcement_error'] = 'Interruption deadline reached; remaining crew enforcement unverified'
+            gate['enforcement_error'] = 'Interruption deadline reached; remaining managed agent enforcement unverified'
             break
         if agent['id'] in waiting_ids([a for a in live_crew if a['id'] not in requested_stops], parent_of):
             continue
@@ -226,14 +236,14 @@ def run_locked(data_dir, watch_state, bootstrap, check, slots, target=None, star
             result = subprocess.run([cli, 'stop', agent['id'], '--home', config['paseo_home'], '--json'],
                                     capture_output=True, text=True, timeout=15)
         except (OSError, subprocess.SubprocessError):
-            gate['enforcement_error'] = 'Managed crew interruption unavailable or timed out'
+            gate['enforcement_error'] = 'Managed agent interruption unavailable or timed out'
             continue
         if result.returncode:
-            gate['enforcement_error'] = 'Managed crew interruption failed'
+            gate['enforcement_error'] = 'Managed agent interruption failed'
             continue
         acknowledgement = json.loads(result.stdout)
         if agent['id'] not in acknowledgement.get('agentIds', []) or acknowledgement.get('stoppedCount', 0) < 1:
-            gate['enforcement_error'] = 'Managed crew interruption unverified; CLI did not acknowledge target'
+            gate['enforcement_error'] = 'Managed agent interruption unverified; CLI did not acknowledge target'
             continue
         requested_stops[agent['id']] = key
     if requested_stops:
@@ -245,9 +255,9 @@ def run_locked(data_dir, watch_state, bootstrap, check, slots, target=None, star
                 if by_id.get(agent_id, {}).get('status') == 'idle':
                     gate['stopped'][agent_id] = {'provider': key, 'at': now}
                 else:
-                    gate['enforcement_error'] = 'Managed crew interruption unverified; retry next watch'
+                    gate['enforcement_error'] = 'Managed agent interruption unverified; retry next watch'
         except (RuntimeError, ValueError, subprocess.SubprocessError, OSError):
-            gate['enforcement_error'] = 'Managed crew interruption unverified; lifecycle read failed'
+            gate['enforcement_error'] = 'Managed agent interruption unverified; lifecycle read failed'
     for agent_id in stale_hold_ids(live['agents'], labelled, gate['stopped']):
         clear_hold_label(cli, config['paseo_home'], agent_id)
     new_holds = {agent_id: gate['stopped'][agent_id]['provider'] for agent_id in labelled
@@ -258,8 +268,8 @@ def run_locked(data_dir, watch_state, bootstrap, check, slots, target=None, star
     write_json(gate_path, gate)
     if check:
         provider = providers[check]
-        check_live_crew = [a for a in managed_agents(live['agents'], config, overridden)
-                         if a['status'] in LIVE]
+        check_live_crew = [a for a in with_subscription(managed_agents(live['agents'], config, overridden), live['bases'])
+                           if a['status'] in LIVE]
         check_slots = [a for a in working_agents(check_live_crew, parents_by_id(live['agents']))
                        if provider_key(a, live['bases']) == check]
         active = len(check_slots)

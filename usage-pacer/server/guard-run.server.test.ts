@@ -56,10 +56,10 @@ describe("runGuard", () => {
   });
 
   it("logs a failed run with the end of its stderr", async () => {
-    const { guard } = fakeGuard("print('Managed crew interruption failed', file=sys.stderr)\nsys.exit(1)");
+    const { guard } = fakeGuard("print('Managed agent interruption failed', file=sys.stderr)\nsys.exit(1)");
     const log = vi.fn();
     await runGuard({ guard, mode: "bootstrap", log });
-    expect(log).toHaveBeenCalledWith("usage-pacer: the usage guard exited 1: Managed crew interruption failed");
+    expect(log).toHaveBeenCalledWith("usage-pacer: the usage guard exited 1: Managed agent interruption failed");
   });
 
   it("ends a hung run with SIGTERM and logs it", async () => {
