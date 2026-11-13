@@ -63,7 +63,7 @@ function RoleCard({ theme, role, repoCount, selected, onSelect }: {
 function VariantDetail({ theme, variant, craftWords }: { theme: PluginTheme; variant: RoleVariant; craftWords: number | null }) {
   const { flow, stage } = variant;
   const effects = stageEffects(flow, stage);
-  const briefPath = !stage.brief ? "not found" : stage.brief.ref.startsWith("skill:") ? stage.brief.ref : `.claude/${stage.brief.ref}`;
+  const briefPath = !stage.brief ? "not found" : stage.brief.ref.startsWith("skill:") ? stage.brief.ref : `.agents/crew-flows/${stage.brief.ref}`;
   return (
     <View style={{ gap: 8 }}>
       <Field theme={theme} label="Model" value={`${stage.model} · ${stage.thinking}`} />

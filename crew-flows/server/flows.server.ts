@@ -6,7 +6,8 @@ import type { Brief, Flow, FlowList, Stage } from "../shared/flows.shared";
 import { git } from "./git.server";
 import { readRoleDefaults, type RoleDefaults, stageSetup } from "./role-stages.server";
 
-const MANIFEST = ".claude/crew-flows.json";
+const REPO_DIR = ".agents/crew-flows";
+const MANIFEST = `${REPO_DIR}/crew-flows.json`;
 const MAIN = "origin/main";
 const SKILL_PREFIX = "skill:";
 
@@ -71,7 +72,7 @@ async function gitRepos(root: string): Promise<string[]> {
 
 async function readFlow(dir: string, skillDir: string, roles: RoleDefaults | null, problems: string[]): Promise<Flow | null> {
   if (!(await git(dir, ["for-each-ref", `refs/remotes/${MAIN}`])).trim()) return null;
-  const onMain = new Set((await git(dir, ["ls-tree", "-r", "--name-only", MAIN, "--", ".claude"])).split("\n"));
+  const onMain = new Set((await git(dir, ["ls-tree", "-r", "--name-only", MAIN, "--", REPO_DIR])).split("\n"));
   if (!onMain.has(MANIFEST)) return null;
   const manifest = manifestSchema.parse(JSON.parse(await git(dir, ["show", `${MAIN}:${MANIFEST}`])));
 
@@ -82,7 +83,7 @@ async function readFlow(dir: string, skillDir: string, roles: RoleDefaults | nul
       problems.push(`${manifest.name} ${stageId}: brief ${path} not found`);
       return null;
     }
-    const path = `.claude/${ref}`;
+    const path = `${REPO_DIR}/${ref}`;
     if (onMain.has(path)) return summariseBrief(ref, await git(dir, ["show", `${MAIN}:${path}`]));
     problems.push(`${manifest.name} ${stageId}: brief ${ref} is not on ${MAIN}`);
     return null;
