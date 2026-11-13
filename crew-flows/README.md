@@ -58,7 +58,7 @@ The plugin reads the machine of the daemon it is installed on. Change its folder
 
 ## Where it reads from
 
-- **Workflows.** A repo has a loop when its `origin/main` has `.claude/crew-flows.json`. The
+- **Workflows.** A repo has a loop when its `origin/main` has `.agents/crew-flows/crew-flows.json`. The
   plugin reads `origin/main`, not the working tree, so a stale checkout does not hide a loop. It
   never fetches, so the view is as fresh as your last `git fetch`.
 - **Briefs.** A stage's brief comes from the same `origin/main`. A `skill:` brief, and `craft.md`,
@@ -75,7 +75,7 @@ problem. The rest of the screen still shows. A missing `craft.md` shows only in 
 
 ## Caveats
 
-- It is built for one workflow format: the `.claude/crew-flows.json` manifest and run state folders
+- It is built for one workflow format: the `.agents/crew-flows/crew-flows.json` manifest and run state folders
   of the crewFlows skill. Without them, the Workflows, Agents and runs views are empty.
 - The crew section needs the FirstMate plugin. Without it, the section is empty.
 - It reads one daemon only. To see another machine's teams, install it there and open that host.
