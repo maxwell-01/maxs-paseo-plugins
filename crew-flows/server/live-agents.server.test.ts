@@ -1,5 +1,26 @@
+import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import { describe, expect, it } from "vitest";
-import { isTeamAgent, lastSaid, needsYou } from "./live-agents.server";
+import { isTeamAgent, lastSaid, liveAgentsLabelled, type SaidWhileLoaded, needsYou } from "./live-agents.server";
+
+type FakeAgent = { id: string; status: string; updatedAt: string; said: string };
+
+function fakePaseo(agents: FakeAgent[]) {
+  const timelineReads: string[] = [];
+  const paseo = {
+    agents: {
+      list: async () => ({
+        entries: agents.map((a) => ({ agent: { id: a.id, title: a.id, status: a.status, model: null, labels: { "firstmate.role": "crew" },
+          updatedAt: a.updatedAt, archivedAt: null } })),
+        pageInfo: { nextCursor: null },
+      }),
+      ref: (id: string) => ({ timeline: { refetch: async () => {
+        timelineReads.push(id);
+        return { entries: [{ item: { type: "assistant_message", text: agents.find((a) => a.id === id)?.said } }] };
+      } } }),
+    },
+  } as unknown as PluginHandlerContext["paseo"];
+  return { paseo, timelineReads };
+}
 
 describe("lastSaid", () => {
   it("joins the assistant messages that close the timeline, past any notice", () => {
@@ -30,5 +51,27 @@ describe("needsYou", () => {
     expect(needsYou({ requiresAttention: true, attentionReason: "error" })).toBe(true);
     expect(needsYou({ requiresAttention: true, attentionReason: "finished" })).toBe(false);
     expect(needsYou({ requiresAttention: false })).toBe(false);
+  });
+});
+
+describe("liveAgentsLabelled", () => {
+  it("reads no timeline of a closed agent, which Paseo would first resume from disk", async () => {
+    const { paseo, timelineReads } = fakePaseo([
+      { id: "open", status: "idle", updatedAt: "t1", said: "working: tests" },
+      { id: "shut", status: "closed", updatedAt: "t1", said: "blocked: needs a key" },
+    ]);
+    const { agents } = await liveAgentsLabelled(paseo, ["firstmate."], new Map());
+    expect(timelineReads).toEqual(["open"]);
+    expect(agents.map((a) => [a.id, a.lastSaid])).toEqual([["open", "working: tests"], ["shut", null]]);
+  });
+
+  it("keeps what an agent said while loaded once it closes, until it changes", async () => {
+    const saidWhileLoaded: SaidWhileLoaded = new Map();
+    await liveAgentsLabelled(fakePaseo([{ id: "a", status: "idle", updatedAt: "t1", said: "blocked: needs a key" }]).paseo, ["firstmate."], saidWhileLoaded);
+    const closed = fakePaseo([{ id: "a", status: "closed", updatedAt: "t1", said: "" }]);
+    expect((await liveAgentsLabelled(closed.paseo, ["firstmate."], saidWhileLoaded)).agents[0].lastSaid).toBe("blocked: needs a key");
+    expect(closed.timelineReads).toEqual([]);
+    const changed = fakePaseo([{ id: "a", status: "closed", updatedAt: "t2", said: "" }]);
+    expect((await liveAgentsLabelled(changed.paseo, ["firstmate."], saidWhileLoaded)).agents[0].lastSaid).toBeNull();
   });
 });
