@@ -39,9 +39,9 @@ const PLAN_REVIEW = `## The task
 function traqx(root: string) {
   const briefs = ["plan", "develop", "code-review", "qa", "deploy"];
   return repoOnMain(root, "traqx-bookings", {
-    ".claude/crew-flows.json": fixture("traqx.crew-flows.json"),
-    ".claude/briefs/plan-review.md": PLAN_REVIEW,
-    ...Object.fromEntries(briefs.map((b) => [`.claude/briefs/${b}.md`, `**Outcome:** ${b} done.\n`])),
+    ".agents/crew-flows/crew-flows.json": fixture("traqx.crew-flows.json"),
+    ".agents/crew-flows/briefs/plan-review.md": PLAN_REVIEW,
+    ...Object.fromEntries(briefs.map((b) => [`.agents/crew-flows/briefs/${b}.md`, `**Outcome:** ${b} done.\n`])),
   }, "https://github.com/maxwell-01/traqx-bookings.git");
 }
 
@@ -83,7 +83,7 @@ describe("readFlows", () => {
   it("reads each repo's manifest from origin/main, not its working tree", async () => {
     const root = makeTempDir("crew-flows-root-");
     const dir = traqx(root);
-    write(join(dir, ".claude/crew-flows.json"), JSON.stringify({ name: "stale", stages: [] }));
+    write(join(dir, ".agents/crew-flows/crew-flows.json"), JSON.stringify({ name: "stale", stages: [] }));
     const { flows } = await readFlows({ roots: [root], repoDirs: [], skillDir: skillDir() });
     expect(flows.map((f) => f.name)).toEqual(["traqx"]);
     expect(flows[0]).toMatchObject({ repoDir: dir, remote: "maxwell-01/traqx-bookings", maxRounds: 3, stallSeconds: 1800 });
@@ -126,11 +126,11 @@ describe("readFlows", () => {
   it("uses a brief's first line when it has no outcome, and surfaces keys loop.py ignores", async () => {
     const root = makeTempDir("crew-flows-root-");
     repoOnMain(root, "gsmail", {
-      ".claude/crew-flows.json": fixture("gsmail.crew-flows.json"),
-      ".claude/briefs/plan.md": "# Plan\n\nPlan the ticket in at most `8` lines.\n",
-      ".claude/briefs/plan-review.md": "Read the plan.",
-      ".claude/briefs/develop.md": "Implement it.",
-      ".claude/briefs/code-review.md": "Check it.",
+      ".agents/crew-flows/crew-flows.json": fixture("gsmail.crew-flows.json"),
+      ".agents/crew-flows/briefs/plan.md": "# Plan\n\nPlan the ticket in at most `8` lines.\n",
+      ".agents/crew-flows/briefs/plan-review.md": "Read the plan.",
+      ".agents/crew-flows/briefs/develop.md": "Implement it.",
+      ".agents/crew-flows/briefs/code-review.md": "Check it.",
     });
     const [flow] = (await readFlows({ roots: [root], repoDirs: [], skillDir: skillDir() })).flows;
     expect(flow.remote).toBeNull();
@@ -141,7 +141,7 @@ describe("readFlows", () => {
 
   it("reads a stage with no brief as a shared role, with the role's prompt and defaults from the crewFlows skill", async () => {
     const root = makeTempDir("crew-flows-root-");
-    repoOnMain(root, "editor", { ".claude/crew-flows.json": JSON.stringify(ROLE_MANIFEST) });
+    repoOnMain(root, "editor", { ".agents/crew-flows/crew-flows.json": JSON.stringify(ROLE_MANIFEST) });
     const result = await readFlows({ roots: [root], repoDirs: [], skillDir: roleSkillDir() });
     expect(result.problems).toEqual([]);
     expect(result.flows[0].stages.map((s) => [s.id, s.model, s.thinking, s.persist, s.reviews, s.brief?.ref, s.brief?.outcome])).toEqual([
@@ -155,7 +155,7 @@ describe("readFlows", () => {
 
   it("refuses a stage that names both a role and a brief, as loop.py does", async () => {
     const root = makeTempDir("crew-flows-root-");
-    repoOnMain(root, "editor", { ".claude/crew-flows.json": JSON.stringify({ name: "editor", stages: [{ id: "plan", role: "plan", brief: "briefs/plan.md" }] }) });
+    repoOnMain(root, "editor", { ".agents/crew-flows/crew-flows.json": JSON.stringify({ name: "editor", stages: [{ id: "plan", role: "plan", brief: "briefs/plan.md" }] }) });
     const result = await readFlows({ roots: [root], repoDirs: [], skillDir: roleSkillDir() });
     expect(result.flows).toEqual([]);
     expect(result.problems).toHaveLength(1);
@@ -164,7 +164,7 @@ describe("readFlows", () => {
 
   it("reports a role stage when the crewFlows skill folder has no role defaults", async () => {
     const root = makeTempDir("crew-flows-root-");
-    repoOnMain(root, "editor", { ".claude/crew-flows.json": JSON.stringify(ROLE_MANIFEST) });
+    repoOnMain(root, "editor", { ".agents/crew-flows/crew-flows.json": JSON.stringify(ROLE_MANIFEST) });
     const skill = skillDir();
     const result = await readFlows({ roots: [root], repoDirs: [], skillDir: skill });
     expect(result.flows).toEqual([]);
@@ -174,7 +174,7 @@ describe("readFlows", () => {
   it("reports a role defaults file that does not parse once, and still reads a manifest of briefs", async () => {
     const root = makeTempDir("crew-flows-root-");
     traqx(root);
-    repoOnMain(root, "editor", { ".claude/crew-flows.json": JSON.stringify(ROLE_MANIFEST) });
+    repoOnMain(root, "editor", { ".agents/crew-flows/crew-flows.json": JSON.stringify(ROLE_MANIFEST) });
     const skill = roleSkillDir();
     write(join(skill, "roles/defaults.json"), "{ not json");
     const result = await readFlows({ roots: [root], repoDirs: [], skillDir: skill });
@@ -213,8 +213,8 @@ describe("readFlows", () => {
     mkdirSync(join(root, "not-a-repo"));
     write(join(root, "dangling/.git"), "gitdir: /nonexistent/worktree\n");
     repoOnMain(root, "no-loop", { "README.md": "hi" });
-    repoOnMain(root, "broken", { ".claude/crew-flows.json": "{ not json" });
-    repoOnMain(root, "half", { ".claude/crew-flows.json": JSON.stringify({ name: "half", stages: [{ id: "plan", brief: "briefs/plan.md" }] }) });
+    repoOnMain(root, "broken", { ".agents/crew-flows/crew-flows.json": "{ not json" });
+    repoOnMain(root, "half", { ".agents/crew-flows/crew-flows.json": JSON.stringify({ name: "half", stages: [{ id: "plan", brief: "briefs/plan.md" }] }) });
     const result = await readFlows({ roots: [root], repoDirs: [], skillDir: skillDir() });
     expect(result.flows.map((f) => f.name)).toEqual(["half"]);
     expect(result.flows[0].stages[0].brief).toBeNull();
