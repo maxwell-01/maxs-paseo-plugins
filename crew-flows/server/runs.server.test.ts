@@ -31,8 +31,8 @@ describe("readRuns", () => {
       logTail: ["line 1", "line 2"],
     });
     expect(run.stages).toEqual([
-      { id: "plan", reviews: null, persist: true, always: false, model: "claude-sonnet-5" },
-      { id: "plan-review", reviews: "plan", persist: false, always: false, model: "claude-sonnet-5" },
+      { id: "plan", reviews: null, persist: true, always: false, model: "sonnet" },
+      { id: "plan-review", reviews: "plan", persist: false, always: false, model: "sonnet" },
     ]);
     expect(run.verdicts).toEqual([
       { stage: "plan", round: 1, verdict: "PASS", findings: 0 },
