@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, lstatSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
@@ -70,13 +70,37 @@ async function gitRepos(root: string): Promise<string[]> {
     .filter((dir) => existsSync(join(dir, ".git")));
 }
 
-async function readFlow(dir: string, skillDir: string, roles: RoleDefaults | null, problems: string[]): Promise<Flow | null> {
-  if (!(await git(dir, ["for-each-ref", `refs/remotes/${MAIN}`])).trim()) return null;
-  const onMain = new Set((await git(dir, ["ls-tree", "-r", "--name-only", MAIN, "--", REPO_DIR])).split("\n"));
-  if (!onMain.has(MANIFEST)) return null;
-  const manifest = manifestSchema.parse(JSON.parse(await git(dir, ["show", `${MAIN}:${MANIFEST}`])));
+interface FlowFiles {
+  where: string;
+  has(path: string): boolean;
+  read(path: string): Promise<string>;
+}
 
-  async function brief(ref: string, stageId: string): Promise<Brief | null> {
+// origin/main wins, so a stale checkout does not hide a loop. A repo whose team must not see the
+// flow keeps it untracked in the checkout instead, often as a symlink to the owner's own copy.
+async function flowFiles(dir: string): Promise<FlowFiles | null> {
+  if ((await git(dir, ["for-each-ref", `refs/remotes/${MAIN}`])).trim()) {
+    const onMain = new Set((await git(dir, ["ls-tree", "-r", "--name-only", MAIN, "--", REPO_DIR])).split("\n"));
+    if (onMain.has(MANIFEST)) {
+      return { where: `on ${MAIN}`, has: (path) => onMain.has(path), read: (path) => git(dir, ["show", `${MAIN}:${path}`]) };
+    }
+  }
+  if (!existsSync(join(dir, MANIFEST))) {
+    if (lstatSync(join(dir, REPO_DIR), { throwIfNoEntry: false })?.isSymbolicLink()) {
+      throw new Error(`${REPO_DIR} links to a folder that does not exist`);
+    }
+    return null;
+  }
+  if ((await git(dir, ["ls-files", "--", MANIFEST])).trim()) return null;
+  return { where: "in this checkout", has: (path) => existsSync(join(dir, path)), read: (path) => readFile(join(dir, path), "utf8") };
+}
+
+async function readFlow(dir: string, skillDir: string, roles: RoleDefaults | null, problems: string[]): Promise<Flow | null> {
+  const files = await flowFiles(dir);
+  if (!files) return null;
+  const manifest = manifestSchema.parse(JSON.parse(await files.read(MANIFEST)));
+
+  const brief = async (ref: string, stageId: string): Promise<Brief | null> => {
     if (ref.startsWith(SKILL_PREFIX)) {
       const path = join(skillDir, ref.slice(SKILL_PREFIX.length));
       if (existsSync(path)) return summariseBrief(ref, await readFile(path, "utf8"));
@@ -84,10 +108,10 @@ async function readFlow(dir: string, skillDir: string, roles: RoleDefaults | nul
       return null;
     }
     const path = `${REPO_DIR}/${ref}`;
-    if (onMain.has(path)) return summariseBrief(ref, await git(dir, ["show", `${MAIN}:${path}`]));
-    problems.push(`${manifest.name} ${stageId}: brief ${ref} is not on ${MAIN}`);
+    if (files.has(path)) return summariseBrief(ref, await files.read(path));
+    problems.push(`${manifest.name} ${stageId}: brief ${ref} is not ${files.where}`);
     return null;
-  }
+  };
 
   const stages: Stage[] = [];
   for (const s of manifest.stages) {

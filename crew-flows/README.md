@@ -60,8 +60,10 @@ The plugin reads the machine of the daemon it is installed on. Change its folder
 
 - **Workflows.** A repo has a loop when its `origin/main` has `.agents/crew-flows/crew-flows.json`. The
   plugin reads `origin/main`, not the working tree, so a stale checkout does not hide a loop. It
-  never fetches, so the view is as fresh as your last `git fetch`.
-- **Briefs.** A stage's brief comes from the same `origin/main`. A `skill:` brief, and `craft.md`,
+  never fetches, so the view is as fresh as your last `git fetch`. A repo whose team must not see
+  the flow keeps `.agents/crew-flows/` untracked in its checkout instead, as a folder or a symlink;
+  the plugin reads it from the working tree only when `origin/main` has no manifest.
+- **Briefs.** A stage's brief comes from the same place as its manifest. A `skill:` brief, and `craft.md`,
   come from the crewFlows skill folder. A stage with no brief runs a shared role: its brief is
   `roles/<role>.md` and its model, thinking and persistence default from `roles/defaults.json`, both in
   the crewFlows skill folder.
