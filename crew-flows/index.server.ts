@@ -1,7 +1,7 @@
 import type { PluginServerContext } from "@getpaseo/plugin/server";
 import { readFlows } from "./server/flows.server";
 import { expandHome } from "./server/home-path.server";
-import { liveAgentsLabelled } from "./server/live-agents.server";
+import { liveAgentsLabelled, type SaidWhileLoaded } from "./server/live-agents.server";
 import { readRuns } from "./server/runs.server";
 import { listFlows } from "./shared/flows.shared";
 import { sources } from "./shared/settings.shared";
@@ -11,6 +11,7 @@ const TEAM_LABELS = ["crew-flows.", "firstmate."];
 
 export default function contribute(server: PluginServerContext) {
   const settings = server.registerSettings(sources);
+  const saidWhileLoaded: SaidWhileLoaded = new Map();
   async function readSources() {
     const current = await settings.read();
     if (current.status !== "ready") throw new Error(`Crew & Flows settings are invalid: ${current.error}`);
@@ -26,7 +27,7 @@ export default function contribute(server: PluginServerContext) {
   server.handle(listTeams, async (_input, { paseo }) => {
     const [runs, live] = await Promise.all([
       readSources().then(({ stateRoot, skillDir }) => readRuns(stateRoot, skillDir)),
-      liveAgentsLabelled(paseo, TEAM_LABELS),
+      liveAgentsLabelled(paseo, TEAM_LABELS, saidWhileLoaded),
     ]);
     return { runs: runs.runs, agents: live.agents, problems: [...runs.problems, ...live.problems] };
   });

@@ -38,22 +38,32 @@ async function listAgents(paseo: Paseo) {
   return agents.filter((agent) => !agent.archivedAt);
 }
 
+export type SaidWhileLoaded = Map<string, { updatedAt: string; lastSaid: string | null }>;
+
+// Paseo resumes a closed agent from disk to serve its timeline, about a second each, so a closed agent keeps
+// what it said while loaded, or nothing.
+async function readLastSaid(paseo: Paseo, agent: { id: string; status: string; updatedAt: string }, saidWhileLoaded: SaidWhileLoaded) {
+  const remembered = saidWhileLoaded.get(agent.id);
+  if (agent.status === "closed") return remembered?.updatedAt === agent.updatedAt ? remembered.lastSaid : null;
+  const page = await paseo.agents.ref(agent.id).timeline.refetch({ direction: "tail", limit: TIMELINE_TAIL, projection: "projected" });
+  const text = lastSaid(page.entries.map((entry) => entry.item));
+  saidWhileLoaded.set(agent.id, { updatedAt: agent.updatedAt, lastSaid: text });
+  return text;
+}
+
 // An agent can be deleted between the list and its timeline read, as loop.py does at teardown.
-export async function liveAgentsLabelled(paseo: Paseo, prefixes: string[]): Promise<{ agents: LiveAgent[]; problems: string[] }> {
+export async function liveAgentsLabelled(paseo: Paseo, prefixes: string[], saidWhileLoaded: SaidWhileLoaded): Promise<{ agents: LiveAgent[]; problems: string[] }> {
   const agents = (await listAgents(paseo)).filter((agent) => isTeamAgent(agent.labels, prefixes));
-  const read = await Promise.allSettled(agents.map(async (agent) => {
-    const page = await paseo.agents.ref(agent.id).timeline.refetch({ direction: "tail", limit: TIMELINE_TAIL, projection: "projected" });
-    return {
-      id: agent.id,
-      title: agent.title,
-      status: agent.status,
-      model: agent.model ?? null,
-      needsYou: needsYou(agent),
-      labels: agent.labels,
-      updatedAt: agent.updatedAt,
-      lastSaid: lastSaid(page.entries.map((entry) => entry.item)),
-    };
-  }));
+  const read = await Promise.allSettled(agents.map(async (agent) => ({
+    id: agent.id,
+    title: agent.title,
+    status: agent.status,
+    model: agent.model ?? null,
+    needsYou: needsYou(agent),
+    labels: agent.labels,
+    updatedAt: agent.updatedAt,
+    lastSaid: await readLastSaid(paseo, agent, saidWhileLoaded),
+  })));
   return {
     agents: read.flatMap((result) => (result.status === "fulfilled" ? [result.value] : [])),
     problems: read.flatMap((result, i) => (result.status === "rejected" ? [`agent ${agents[i].id}: ${String(result.reason)}`] : [])),
