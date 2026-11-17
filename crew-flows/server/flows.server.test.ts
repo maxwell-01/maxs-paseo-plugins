@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { readFlows } from "./flows.server";
@@ -88,6 +88,42 @@ describe("readFlows", () => {
     expect(flows.map((f) => f.name)).toEqual(["traqx"]);
     expect(flows[0]).toMatchObject({ repoDir: dir, remote: "maxwell-01/traqx-bookings", maxRounds: 3, stallSeconds: 1800 });
     expect(flows[0].queue).toMatchObject({ repo: "maxwell-01/traqx-bookings", excludeLabels: ["blocked", "loop:active"], maxTickets: 3 });
+  });
+
+  it("reads a manifest kept only in the checkout, through a symlink, when origin/main has none", async () => {
+    const root = makeTempDir("crew-flows-root-");
+    const dir = repoOnMain(root, "editor", { "README.md": "team repo" }, "https://github.com/acme/editor.git");
+    const kept = makeTempDir("crew-flows-kept-");
+    write(join(kept, "crew-flows.json"), JSON.stringify({ ...ROLE_MANIFEST, stages: [{ id: "plan" }, { id: "notes", brief: "briefs/notes.md" }] }));
+    write(join(kept, "briefs/notes.md"), "**Outcome:** local notes.\n");
+    mkdirSync(join(dir, ".agents"));
+    symlinkSync(kept, join(dir, ".agents/crew-flows"));
+    const result = await readFlows({ roots: [root], repoDirs: [], skillDir: roleSkillDir() });
+    expect(result.problems).toEqual([]);
+    expect(result.flows.map((f) => [f.name, f.repoDir, f.remote])).toEqual([["editor", dir, "acme/editor"]]);
+    expect(result.flows[0].stages.map((s) => [s.id, s.model, s.brief?.outcome])).toEqual([
+      ["plan", "claude-opus-5-5", "a plan."],
+      ["notes", "claude-sonnet-5-5", "local notes."],
+    ]);
+  });
+
+  it("ignores a manifest tracked on a branch that is not on origin/main yet", async () => {
+    const root = makeTempDir("crew-flows-root-");
+    const dir = repoOnMain(root, "editor", { "README.md": "team repo" });
+    write(join(dir, ".agents/crew-flows/crew-flows.json"), JSON.stringify(ROLE_MANIFEST));
+    execFileSync("git", ["-C", dir, "add", "-A"]);
+    const result = await readFlows({ roots: [root], repoDirs: [], skillDir: roleSkillDir() });
+    expect(result).toMatchObject({ flows: [], problems: [] });
+  });
+
+  it("reports a checkout whose crew-flows symlink points at a missing folder", async () => {
+    const root = makeTempDir("crew-flows-root-");
+    const dir = repoOnMain(root, "editor", { "README.md": "team repo" });
+    mkdirSync(join(dir, ".agents"));
+    symlinkSync(join(makeTempDir("crew-flows-kept-"), "moved"), join(dir, ".agents/crew-flows"));
+    const result = await readFlows({ roots: [root], repoDirs: [], skillDir: roleSkillDir() });
+    expect(result.flows).toEqual([]);
+    expect(result.problems).toEqual([`${dir}: .agents/crew-flows links to a folder that does not exist`]);
   });
 
   it("gives every stage the manifest's model and thinking unless it names its own", async () => {
