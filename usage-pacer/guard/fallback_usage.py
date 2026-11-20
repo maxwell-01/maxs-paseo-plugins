@@ -9,7 +9,8 @@ def unreadable_fallback(problem):
 
 
 def valid_windows(windows):
-    return isinstance(windows, list) and all(isinstance(w, dict) and isinstance(w.get('id'), str) for w in windows)
+    return (isinstance(windows, list) and all(isinstance(w, dict) and isinstance(w.get('id'), str) for w in windows)
+            and any(w['id'] == 'weekly' for w in windows))
 
 
 def fallback_usage(data_dir, provider):
@@ -26,12 +27,12 @@ def fallback_usage(data_dir, provider):
     if provider not in readings:
         return None, None
     entry = readings[provider]
-    if not isinstance(entry, dict) or not valid_windows(entry.get('windows', [])):
-        return unreadable_fallback(f'{provider} entry must be an object with a list of window objects')
+    if not isinstance(entry, dict) or not valid_windows(entry.get('windows')):
+        return unreadable_fallback(f'{provider} entry must be an object with a list of window objects including a weekly window')
     return dict(entry, status='available'), None
 
 
 def weekly_windows_still_open(previous, present_ids, now):
     history = previous.get('history') or [{}]
     return [w for key, w in history[-1].get('windows', {}).items()
-            if key.startswith('weekly') and key not in present_ids and w['resetsAt'] > now]
+            if key.startswith('weekly') and key != 'weekly' and key not in present_ids and w['resetsAt'] > now]

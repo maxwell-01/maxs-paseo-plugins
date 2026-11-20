@@ -48,7 +48,7 @@ class FallbackUsageGuardTests(unittest.TestCase):
 
     def fallback_reading(self, age_minutes, windows=None):
         (self.home / 'fallback-usage.json').write_text(json.dumps({'claude': {
-            'fetchedAt': datetime_iso(time.time() - age_minutes * 60), 'windows': windows or [self.window(40)]}}))
+            'fetchedAt': datetime_iso(time.time() - age_minutes * 60), 'windows': [self.window(40)] if windows is None else windows}}))
 
     def fallback_entry(self, entry):
         (self.home / 'fallback-usage.json').write_text(json.dumps({'claude': entry}))
@@ -87,19 +87,19 @@ class FallbackUsageGuardTests(unittest.TestCase):
         self.assert_allowed(self.check_claude())
 
     def test_a_sixteen_minute_old_reading_with_no_history_keeps_the_gate_closed(self):
-        self.paseo_reports('unavailable')
+        self.paseo_reports(None)
         self.fallback_reading(age_minutes=16)
         self.assertEqual(self.check_claude().returncode, 2)
 
     def test_a_future_dated_reading_is_rejected(self):
-        self.paseo_reports('unavailable')
+        self.paseo_reports(None)
         self.fallback_reading(age_minutes=-10)
         self.assertEqual(self.check_claude().returncode, 2)
         self.assertEqual(self.claude_gate()['reason'], 'invalid or stale usage')
 
     def test_a_stale_reading_after_a_good_one_holds_the_last_good_decision(self):
         seeded = self.seed_history_from_paseo([self.window(10)])
-        self.paseo_reports('unavailable')
+        self.paseo_reports(None)
         self.fallback_reading(age_minutes=16, windows=[self.window(10)])
         self.check_claude()
         held = self.claude_gate()
@@ -120,13 +120,13 @@ class FallbackUsageGuardTests(unittest.TestCase):
         self.assertEqual(self.check_claude().returncode, 2)
 
     def test_without_the_file_an_unavailable_provider_stays_closed(self):
-        self.paseo_reports('unavailable')
+        self.paseo_reports(None)
         self.assertEqual(self.check_claude().returncode, 2)
 
     def test_a_fallback_at_the_stop_limit_closes_the_gate_and_stops_a_working_agent(self):
         crew = {'id': 'crew', 'provider': 'claude', 'status': 'running', 'labels': {'firstmate.role': 'crew'},
                 'createdAt': '2026-10-28T10:00:00+00:00', 'pendingPermissionCount': 0}
-        self.paseo_reports('unavailable', agents=[crew])
+        self.paseo_reports(None, agents=[crew])
         self.fallback_reading(age_minutes=1, windows=[self.window(95)])
         self.assertEqual(self.check_claude().returncode, 2)
         self.assertEqual(self.claude_gate()['reason'], 'actual usage >=90%')
@@ -135,20 +135,38 @@ class FallbackUsageGuardTests(unittest.TestCase):
     def test_a_fallback_without_the_window_that_closed_the_gate_does_not_reopen_it(self):
         self.seed_history_from_paseo([self.window(40), self.window(95, 'weekly_model_fable')])
         self.assertEqual(self.check_claude().returncode, 2)
-        self.paseo_reports('unavailable')
+        self.paseo_reports(None)
         self.fallback_reading(age_minutes=0, windows=[self.window(40)])
         self.assertEqual(self.check_claude().returncode, 2)
         self.assertEqual(self.claude_gate()['reason'], 'actual usage >=90%')
 
+    def test_a_reading_with_no_windows_after_a_good_one_is_held_not_trusted(self):
+        seeded = self.seed_history_from_paseo([self.window(89)])
+        self.paseo_reports(None)
+        self.fallback_reading(age_minutes=0, windows=[])
+        self.check_claude()
+        held = self.claude_gate()
+        self.assertRegex(held['reason'], r'^fallback-usage\.json .*weekly window.*; holding last good reading$')
+        self.assertEqual(held['fetched_at'], seeded['fetched_at'])
+
+    def test_a_reading_without_a_weekly_window_is_held_not_trusted(self):
+        seeded = self.seed_history_from_paseo([self.window(89), self.window(30, 'weekly_model_fable')])
+        self.paseo_reports(None)
+        self.fallback_reading(age_minutes=0, windows=[self.window(30, 'weekly_model_fable')])
+        self.check_claude()
+        held = self.claude_gate()
+        self.assertRegex(held['reason'], r'^fallback-usage\.json .*weekly window.*; holding last good reading$')
+        self.assertEqual(held['fetched_at'], seeded['fetched_at'])
+
     def test_a_malformed_file_with_no_history_closes_the_gate_and_says_why(self):
-        self.paseo_reports('unavailable')
+        self.paseo_reports(None)
         (self.home / 'fallback-usage.json').write_text('{not json')
         self.assertEqual(self.check_claude().returncode, 2)
         self.assertIn('fallback-usage.json is not valid JSON', self.claude_gate()['reason'])
 
     def test_a_malformed_file_after_a_good_reading_holds_and_says_why(self):
         seeded = self.seed_history_from_paseo([self.window(10)])
-        self.paseo_reports('unavailable')
+        self.paseo_reports(None)
         (self.home / 'fallback-usage.json').write_text('{not json')
         self.check_claude()
         held = self.claude_gate()
@@ -161,7 +179,7 @@ class FallbackUsageGuardTests(unittest.TestCase):
         self.assert_allowed(self.check_claude())
 
     def test_a_file_that_cannot_be_read_closes_the_provider_and_says_why(self):
-        self.paseo_reports('unavailable')
+        self.paseo_reports(None)
         (self.home / 'fallback-usage.json').mkdir()
         self.assertEqual(self.check_claude().returncode, 2)
         self.assertIn('fallback-usage.json cannot be read', self.claude_gate()['reason'])
@@ -173,7 +191,7 @@ class FallbackUsageGuardTests(unittest.TestCase):
                        'an entry that is a string': 'abc'}
         for name, entry in bad_entries.items():
             with self.subTest(name):
-                self.paseo_reports('unavailable')
+                self.paseo_reports(None)
                 self.fallback_entry(dict(entry, fetchedAt=datetime_iso(time.time())) if isinstance(entry, dict) else entry)
                 self.assertEqual(self.check_claude().returncode, 2)
                 providers = self.gate()['providers']
