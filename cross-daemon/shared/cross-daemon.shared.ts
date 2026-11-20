@@ -35,8 +35,15 @@ export const describeDaemon = defineRpc({
     passwordSet: z.boolean(),
     // Present when the password entered here was sealed under an earlier daemon key and must be entered again.
     passwordUnreadable: z.literal(true).optional(),
-    member: peerSchema.nullable(),
   }),
+});
+
+// This daemon's link, with its password if set, addressed to each of the given daemons that this
+// daemon's own settings let reach it. Nothing while switched off or without a relay link.
+export const grantAccess = defineRpc({
+  name: "cross-daemon.grant-access",
+  input: z.object({ to: z.array(z.string().min(1)) }),
+  output: z.object({ grants: z.array(z.object({ to: z.string(), peer: peerSchema })) }),
 });
 
 // The password peers need to reach this daemon over the relay. Null forgets it. It is never read back
