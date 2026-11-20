@@ -98,6 +98,26 @@ All in `$PASEO_HOME/plugin-data/usage-pacer/`:
 - `usage-log.jsonl`: one usage reading per run.
 - `watch-state/`: what the last run printed, so repeats stay quiet.
 
+## Usage from another source
+
+When Paseo cannot read a provider's usage (the provider is missing from its answer, or its status is not `available`), the guard reads
+`fallback-usage.json` in the state folder (`$PASEO_HOME/plugin-data/usage-pacer/`, or `$USAGE_PACER_STATE`). The shape matches what the
+guard reads from Paseo, one entry per provider:
+
+```json
+{"claude": {"fetchedAt": "2026-11-20T09:00:00Z",
+            "windows": [{"id": "weekly", "usedPct": 83.0, "resetsAt": "2026-11-23T00:00:00Z"}]}}
+```
+
+A reading counts for 15 minutes after its `fetchedAt`; Paseo's own readings still count for 5. The file is never used for a provider whose
+Paseo reading is `available`. Weekly windows the file leaves out (such as `weekly_model_fable`) stay in force from the last good reading
+until they reset, so a fall-back reading cannot reopen a gate one of them closed.
+
+A reading that is too old, dated in the future, or unreadable (not valid JSON, or an entry whose `windows` is not a list of objects that includes `weekly`) is
+treated like a stale Paseo reading. With no earlier good reading the provider's gate stays closed. With one, the guard holds its last
+decision and steps the cap down over time, and the gate reason says why. A bad file never affects a provider whose Paseo reading is
+`available`.
+
 ## Pacing settings
 
 The pacing limits default to the `pacing.json` in `guard/`. Change them per host in

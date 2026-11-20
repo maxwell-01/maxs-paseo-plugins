@@ -61,10 +61,12 @@ def with_overrides(overrides):
     return dict(CONFIG, **overrides)
 
 
-def reading_problem(data, now, known_windows):
+def reading_problem(data, now, known_windows, max_age=MAX_AGE, source_problem=None):
+    if source_problem:
+        return source_problem
     stamp = data.get('fetchedAt')
     windows = data.get('windows', [])
-    if data.get('status') != 'available' or not valid_number(stamp) or not 0 <= now - stamp <= MAX_AGE:
+    if data.get('status') != 'available' or not valid_number(stamp) or not 0 <= now - stamp <= max_age:
         return 'invalid or stale usage'
     if not windows or any(not isinstance(w, dict) or not isinstance(w.get('id'), str)
                           or not valid_number(w.get('usedPct')) or not 0 <= w['usedPct'] <= 100
@@ -120,9 +122,9 @@ def window_reason(key, projection, raise_limit, recommendation):
     return f"{key} forecast {forecast} vs raise limit {raise_limit}%: {recommendation['reason']}"
 
 
-def decide(data, previous, now, provider='claude', agents=None, config=CONFIG):
+def decide(data, previous, now, provider='claude', agents=None, config=CONFIG, max_age=MAX_AGE, source_problem=None):
     known_windows = previous.get('known_windows', [])
-    problem = reading_problem(data, now, known_windows)
+    problem = reading_problem(data, now, known_windows, max_age, source_problem)
     if problem:
         return hold_last_decision(previous, now, problem)
     stamp = data['fetchedAt']

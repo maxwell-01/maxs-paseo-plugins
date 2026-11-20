@@ -8,7 +8,7 @@ import tempfile
 import time
 import unittest
 
-from test_support import FIRSTMATE_CONFIG
+from test_support import FIRSTMATE_CONFIG, install_stub_paseo
 
 HERE = Path(__file__).parent
 
@@ -19,43 +19,7 @@ class WatchBoundaryTests(unittest.TestCase):
         self.home = Path(self.temp.name)
         self.data = self.home
         self.fixture = self.home / 'usage.json'
-        self.cli = self.home / 'paseo'
-        self.cli.write_text("""#!/usr/bin/env python3
-import json, os, pathlib, sys
-home = pathlib.Path(os.environ['USAGE_PACER_STATE'])
-with (home / 'calls').open('a') as log:
-    log.write(json.dumps(sys.argv[1:]) + '\\n')
-if sys.argv[1] == 'agent':
-    if os.environ.get('LABEL_FAIL'):
-        sys.exit(1)
-    path = home / 'usage.json'
-    data = json.loads(path.read_text())
-    key, value = sys.argv[5].split('=', 1)
-    for agent in data['agents']:
-        if agent['id'] == sys.argv[3]:
-            agent['labels'][key] = value
-    path.write_text(json.dumps(data))
-if sys.argv[1] != 'stop':
-    sys.exit(0)
-with (home / 'stops').open('a') as log:
-    log.write(sys.argv[2] + '\\n')
-if sys.argv[2] == os.environ.get('STOP_FAIL_ID'):
-    sys.exit(1)
-if not os.environ.get('STOP_NOOP') or os.environ.get('STOP_RACE'):
-    path = home / 'usage.json'
-    data = json.loads(path.read_text())
-    for agent in data['agents']:
-        if agent['id'] == sys.argv[2]:
-            agent['status'] = 'idle'
-    path.write_text(json.dumps(data))
-ids = [] if os.environ.get('STOP_NOOP') or os.environ.get('STOP_RACE') else [sys.argv[2]]
-print(json.dumps({'agentIds': ids, 'stoppedCount': len(ids)}))
-""")
-        self.cli.chmod(0o755)
-        node = self.home / 'node'
-        node.write_text("#!/bin/sh\nexec cat \"$USAGE_PACER_STATE/usage.json\"\n")
-        node.chmod(0o755)
-        (self.data / 'config.json').write_text(json.dumps({'cli': str(self.cli), 'node': str(node), **FIRSTMATE_CONFIG}))
+        self.cli = install_stub_paseo(self.home, **FIRSTMATE_CONFIG)
         self.env = dict(os.environ, HOME=str(self.home), USAGE_PACER_STATE=str(self.home), USAGE_PACER_NOTICE_STATE=str(self.home / 'notices'))
         self.env.pop('PASEO_AGENT_ID', None)
         self.set_usage(90)
