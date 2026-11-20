@@ -110,8 +110,13 @@ guard reads from Paseo, one entry per provider:
 ```
 
 A reading counts for 15 minutes after its `fetchedAt`; Paseo's own readings still count for 5. The file is never used for a provider whose
-Paseo reading is `available`. A file that is not valid JSON, or has a provider entry that is not an object, closes that provider's gate
-and says so in its reason.
+Paseo reading is `available`. Weekly windows the file leaves out (such as `weekly_model_fable`) stay in force from the last good reading
+until they reset, so a fall-back reading cannot reopen a gate one of them closed.
+
+A reading that is too old, dated in the future, or unreadable (not valid JSON, or an entry whose `windows` is not a list of objects) is
+treated like a stale Paseo reading. With no earlier good reading the provider's gate stays closed. With one, the guard holds its last
+decision and steps the cap down over time, and the gate reason says why. A bad file never affects a provider whose Paseo reading is
+`available`.
 
 ## Pacing settings
 

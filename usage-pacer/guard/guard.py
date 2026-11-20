@@ -12,10 +12,10 @@ import subprocess
 import sys
 import time
 
-from fallback_usage import FALLBACK_MAX_AGE, fallback_usage
+from fallback_usage import FALLBACK_MAX_AGE, fallback_usage, weekly_windows_still_open
 from holds import LIVE, clear_hold_label, resumed_agent_ids, set_hold_label, stale_hold_ids, tell_parents
 from pace_alert import pace_alerts
-from policy import MAX_AGE, decide, with_overrides
+from policy import decide, with_overrides
 from slots import stop_order, waiting_ids, working_agents
 from state_dir import state_dir
 from usage_log import LOG_NAME, append_reading
@@ -177,6 +177,27 @@ def snapshot_with_retry(config):
     return snapshot(config)
 
 
+def signal_from(usage, fetched_at, key):
+    return dict(usage, fetchedAt=epoch(fetched_at),
+                windows=[dict(w, resetsAt=epoch(w.get('resetsAt')))
+                         for w in windows_with_a_limit(key, usage.get('windows', []))])
+
+
+def provider_usage(live, key, data_dir, previous, now):
+    usage = next((p for p in live['providers'] if p['providerId'] == key), {})
+    paseo_signal = signal_from(usage, live.get('fetchedAt'), key)
+    if usage.get('status') == 'available':
+        return paseo_signal, {}
+    fallback, problem = fallback_usage(data_dir, key)
+    if problem:
+        return paseo_signal, {'source_problem': problem}
+    if fallback is None:
+        return paseo_signal, {}
+    signal = signal_from(fallback, fallback.get('fetchedAt'), key)
+    signal['windows'] += weekly_windows_still_open(previous, {w['id'] for w in signal['windows']}, now)
+    return signal, {'max_age': FALLBACK_MAX_AGE}
+
+
 def run(data_dir, watch_state, bootstrap=False, check=None, slots=1, target=None, started_at=0, task=None):
     data_dir.mkdir(parents=True, exist_ok=True)
     with (data_dir / 'lock').open('a') as lock:
@@ -210,17 +231,10 @@ def run_locked(data_dir, watch_state, bootstrap, check, slots, target=None, star
     providers, slots_in_use = {}, {}
     for key in ('claude', 'codex'):
         slots_in_use[key] = [a for a in working if provider_of[a['id']] == key]
-        usage = next((p for p in live['providers'] if p['providerId'] == key), {})
-        fetched_at, max_age = live.get('fetchedAt'), MAX_AGE
-        if usage.get('status') != 'available':
-            fallback = fallback_usage(data_dir, key)
-            if fallback:
-                usage, fetched_at, max_age = fallback, fallback.get('fetchedAt'), FALLBACK_MAX_AGE
-        signal = dict(usage, fetchedAt=epoch(fetched_at))
-        signal['windows'] = [dict(w, resetsAt=epoch(w.get('resetsAt')))
-                             for w in windows_with_a_limit(key, usage.get('windows', []))]
-        providers[key] = decide(signal, previous.get('providers', {}).get(key, {}), now, provider=key,
-                                agents=len(slots_in_use[key]), config=pacing, max_age=max_age)
+        last = previous.get('providers', {}).get(key, {})
+        signal, source = provider_usage(live, key, data_dir, last, now)
+        providers[key] = decide(signal, last, now, provider=key,
+                                agents=len(slots_in_use[key]), config=pacing, **source)
     gate = {'updated_at': now, 'providers': providers, 'stopped': read_json(data_dir / 'stopped.json', previous.get('stopped', {})),
             'enforcement_error': error}
     write_json(gate_path, gate)
