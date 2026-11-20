@@ -19,7 +19,8 @@ import { openPasswordStores, type PasswordStores } from "./password-stores.serve
 import { withPeerPasswords } from "./peer-password-store.server";
 import { createStartedAgents } from "./started-agents.server";
 import { createWatchList } from "./watch-list.server";
-import { isSwitchedOn, peersToStore } from "./switch-policy.server";
+import { isPeerAllowed } from "../shared/peer-access.shared";
+import { isSwitchedOn, peersToStore, switchedOnSettings } from "./switch-policy.server";
 import { installToolProxy } from "./tool-proxy.server";
 import { serveTools } from "./tool-socket.server";
 import { createTools, type DaemonIdentity } from "./tools.server";
@@ -64,9 +65,10 @@ export function registerCrossDaemon(
   const stores = Promise.all([stateDir, daemonSecretKey]).then(([dir, key]) => openPasswordStores(dir, key));
   const toolServer = Promise.all([stateDir, stores]).then(([dir, opened]) => startToolServer(dir, opened, { cli, ownDaemon }));
   toolServer.catch((error: unknown) => console.error("cross-daemon: the tool server did not start", error));
-  const clearPeersUnlessSwitchedOn = async () => {
+  const dropPeersNotAllowed = async () => {
     const { peers } = await stores;
-    if (!isSwitchedOn(await settings.read())) peers.write([]);
+    const switchedOn = switchedOnSettings(await settings.read());
+    peers.keepOnly((serverId) => switchedOn !== null && isPeerAllowed(switchedOn, serverId, "outbound"));
   };
 
   // A plugin fault must not stop agents being created: they start without the cross-daemon tools.
@@ -105,8 +107,7 @@ export function registerCrossDaemon(
     const { config } = await paseo.config.get();
     const ownServerId = (await readOwnPeer(config.relay?.enabled === true))?.serverId ?? (await ownDaemon()).serverId;
     // Read the switch last, so a switch-off that lands during the awaits above is not overwritten.
-    const switchedOn = isSwitchedOn(await settings.read());
-    const next = peersToStore({ switchedOn, ownServerId, stored: peers.read(), ...input });
+    const next = peersToStore({ settings: switchedOnSettings(await settings.read()), ownServerId, stored: peers.read(), ...input });
     peers.write(next);
     return { stored: next.length };
   });
@@ -128,8 +129,8 @@ export function registerCrossDaemon(
     return { peers: peers.read().map((peer) => ({ serverId: peer.serverId, name: peer.name, password: passwordSource(peer) })) };
   });
 
-  clearPeersUnlessSwitchedOn().catch((error: unknown) => console.error("cross-daemon: could not clear peers at start", error));
-  const unsubscribe = settings.subscribe(clearPeersUnlessSwitchedOn);
+  dropPeersNotAllowed().catch((error: unknown) => console.error("cross-daemon: could not drop peers at start", error));
+  const unsubscribe = settings.subscribe(dropPeersNotAllowed);
   return async () => {
     unsubscribe();
     (await toolServer).stop();

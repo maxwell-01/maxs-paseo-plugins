@@ -24,7 +24,8 @@ export function createDaemonPort(rpc: PluginClientContext["rpc"]): DaemonPort {
     listPeers: async () => (await rpc(listPeers, {})).peers,
     setSwitch: async (switchedOn) => {
       const current = await rpc(switchSettings.read, {});
-      const values: z.input<typeof crossDaemonSettings.schema> = { enabled: switchedOn };
+      if (current.status !== "ready") throw new Error(`Could not read the settings: ${current.error}`);
+      const values = { ...crossDaemonSettings.schema.parse(current.values), enabled: switchedOn };
       const saved = await rpc(switchSettings.write, { values, revision: current.revision });
       if (saved.status !== "saved") throw new Error(`Could not save the switch: ${saved.error}`);
     },

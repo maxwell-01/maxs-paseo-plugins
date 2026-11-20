@@ -22,5 +22,11 @@ export function createPeerStore(stateDir: string, sealer: PasswordSealer) {
     // Peers whose announced password was sealed under an earlier daemon key. Their next sync brings it again.
     withUnreadablePassword: (): Peer[] => readStored().map(open).filter(({ unreadable }) => unreadable).map(({ peer }) => peer),
     write: (peers: readonly Peer[]) => writePrivateJson(peersFile, peers.map(seal)),
+    // Filters the stored entries as they are, so a kept peer's sealed password is not reopened and resealed.
+    keepOnly(isKept: (serverId: string) => boolean) {
+      const stored = readStored();
+      const kept = stored.filter((peer) => isKept(peer.serverId));
+      if (kept.length !== stored.length) writePrivateJson(peersFile, kept);
+    },
   };
 }
