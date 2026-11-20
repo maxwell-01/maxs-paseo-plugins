@@ -100,10 +100,10 @@ export function registerCrossDaemon(
     const { config } = await paseo.config.get();
     const own = await readOwnPeer(config.relay?.enabled === true);
     const password = (await stores).ownPassword.read();
-    const switchedOn = switchedOnSettings(await settings.read());
-    if (!own || !switchedOn) return { grants: [] };
+    const switchedOnValues = switchedOnSettings(await settings.read());
+    if (!own || !switchedOnValues) return { grants: [] };
     const peer = password ? { ...own, password } : own;
-    const allowed = [...new Set(to)].filter((serverId) => serverId !== own.serverId && isPeerAllowed(switchedOn, serverId, "inbound"));
+    const allowed = [...new Set(to)].filter((serverId) => serverId !== own.serverId && isPeerAllowed(switchedOnValues, serverId, "inbound"));
     return { grants: allowed.map((serverId) => ({ to: serverId, peer })) };
   });
 

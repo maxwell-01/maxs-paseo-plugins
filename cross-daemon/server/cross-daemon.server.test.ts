@@ -200,6 +200,13 @@ describe("per-peer access", () => {
     });
   });
 
+  it("gives one grant per daemon asked for, and none to itself", async () => {
+    const plugin = startPlugin(on);
+    await expect(plugin.call("cross-daemon.grant-access", { to: ["srv_mac", "srv_mac", "srv_tower"] })).resolves.toEqual({
+      grants: [{ to: "srv_mac", peer: tower }],
+    });
+  });
+
   it("gives its link to a peer it may not reach, when that peer may reach it", async () => {
     const plugin = startPlugin(ready({ enabled: true, peerAccess: { srv_brs: { inbound: true, outbound: false } } }));
     expect(await plugin.linkGivenTo("srv_brs")).toEqual(tower);

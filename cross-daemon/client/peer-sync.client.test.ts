@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Peer } from "../shared/cross-daemon.shared";
 import type { PluginClientContext } from "@getpaseo/plugin/client";
-import { createDaemonPort, type DaemonDescription, type DaemonPort, type PeerUpdate, syncPeers } from "./peer-sync.client";
+import { createDaemonPort, type DaemonDescription, type DaemonPort, type Grant, type PeerUpdate, syncPeers } from "./peer-sync.client";
 
 interface FakeDaemon {
   description: DaemonDescription | Error;
@@ -9,9 +9,11 @@ interface FakeDaemon {
   member: Peer | null;
   blocks?: string[];
   grantFails?: boolean;
+  // Grants it returns whatever it was asked, as a daemon running hostile code could.
+  forgedGrants?: Grant[];
 }
 
-function fakeDaemon({ description, member, blocks = [], grantFails = false }: FakeDaemon) {
+function fakeDaemon({ description, member, blocks = [], grantFails = false, forgedGrants }: FakeDaemon) {
   const received: PeerUpdate[] = [];
   const port: DaemonPort = {
     async describe() {
@@ -20,6 +22,7 @@ function fakeDaemon({ description, member, blocks = [], grantFails = false }: Fa
     },
     async grantAccess(to) {
       if (grantFails) throw new Error("grant-access is not a plugin RPC on this host");
+      if (forgedGrants) return forgedGrants;
       return member ? to.filter((serverId) => !blocks.includes(serverId)).map((serverId) => ({ to: serverId, peer: member })) : [];
     },
     async setPeers(update) {
@@ -98,16 +101,35 @@ describe("syncPeers", () => {
     expect(flaky.received).toEqual([{ peers: [peer("tower")], answeredServerIds: ["srv_tower"] }]);
   });
 
-  it("gives no link to, or from, two daemons that claim the same server ID", async () => {
+  it("gives no link to, or from, two daemons that claim the same server ID, and takes back the links they hold", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const tower = fakeDaemon(on("tower"));
     const mac = fakeDaemon(on("mac"));
     const impostor = fakeDaemon(on("mac"));
     await syncPeers([tower.port, mac.port, impostor.port]);
     expect(tower.received).toEqual([{ peers: [], answeredServerIds: ["srv_tower"] }]);
-    expect(mac.received).toEqual([]);
-    expect(impostor.received).toEqual([]);
+    expect(mac.received).toEqual([{ peers: [], answeredServerIds: ["srv_tower"] }]);
+    expect(impostor.received).toEqual([{ peers: [], answeredServerIds: ["srv_tower"] }]);
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("srv_mac"));
+  });
+
+  it("delivers a grant only when it gives the granting daemon's own link to a daemon it was asked about", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const tower = fakeDaemon(on("tower"));
+    const mac = fakeDaemon(on("mac"));
+    const brs = fakeDaemon(
+      on("brs", {
+        forgedGrants: [
+          { to: "srv_tower", peer: { ...peer("brs"), serverId: "srv_mac" } },
+          { to: "srv_elsewhere", peer: peer("brs") },
+          { to: "srv_mac", peer: peer("brs") },
+        ],
+      }),
+    );
+    await syncPeers([tower.port, mac.port, brs.port]);
+    expect(tower.received[0].peers).toEqual([peer("mac")]);
+    expect(mac.received[0].peers).toEqual([peer("tower"), peer("brs")]);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("srv_brs"));
   });
 
   it("reports a daemon that failed to answer instead of dropping the error", async () => {
