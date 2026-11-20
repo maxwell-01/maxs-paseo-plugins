@@ -10,7 +10,7 @@ describe("embedded guard files", () => {
 
   it("carry the runtime files and no tests", () => {
     expect(Object.keys(guardFiles).sort()).toEqual([
-      "guard.py", "holds.py", "pace.py", "pace_alert.py", "pacing.json",
+      "fallback_usage.py", "guard.py", "holds.py", "pace.py", "pace_alert.py", "pacing.json",
       "paseo-source.mjs", "policy.py", "slots.py", "state_dir.py", "usage_log.py",
     ]);
   });
