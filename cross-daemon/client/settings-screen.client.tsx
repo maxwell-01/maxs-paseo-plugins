@@ -2,7 +2,7 @@ import { type PluginSurfaceProps, useRpc, useSettings } from "@getpaseo/plugin/c
 import { SettingsAction, SettingsCard, SettingsRow, SettingsSection, SettingsSwitch } from "@getpaseo/plugin/client/ui";
 import { useQuery } from "@tanstack/react-query";
 import { ScrollView, Text } from "react-native";
-import { crossDaemonSettings, listPeers } from "../shared/cross-daemon.shared";
+import { type CrossDaemonSettings, crossDaemonSettings, listPeers } from "../shared/cross-daemon.shared";
 import { DaemonsSection } from "./daemons-section.client";
 import { OwnPasswordRows } from "./own-password-rows.client";
 import { PeerAccessSection } from "./peer-access-section.client";
@@ -61,8 +61,8 @@ function ThisDaemonSection({ theme }: Pick<PluginSurfaceProps, "theme">) {
     );
   }
 
-  const saveEnabled = async (enabled: boolean) => {
-    if (await settings.save({ ...settings.values, enabled }, settings.revision)) requestPeerSync();
+  const save = async (values: CrossDaemonSettings) => {
+    if (await settings.save(values, settings.revision)) requestPeerSync();
   };
 
   return (
@@ -75,7 +75,7 @@ function ThisDaemonSection({ theme }: Pick<PluginSurfaceProps, "theme">) {
             value={settings.values.enabled}
             disabled={settings.saving}
             error={settings.saveError}
-            onValueChange={(enabled) => void saveEnabled(enabled)}
+            onValueChange={(enabled) => void save({ ...settings.values, enabled })}
           />
           <SettingsRow
             label="Can reach"
@@ -86,7 +86,7 @@ function ThisDaemonSection({ theme }: Pick<PluginSurfaceProps, "theme">) {
           <PeerPasswordRows peers={peers.data?.peers ?? []} onSaved={() => void peers.refetch()} />
         </SettingsCard>
       </SettingsSection>
-      <PeerAccessSection settings={settings} storedPeers={peers.data?.peers ?? []} />
+      <PeerAccessSection settings={settings} save={save} storedPeers={peers.data?.peers ?? []} />
     </>
   );
 }

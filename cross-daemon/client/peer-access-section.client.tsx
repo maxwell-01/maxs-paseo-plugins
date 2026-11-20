@@ -6,7 +6,6 @@ import { type PeerAccessDirection, withPeerAccess } from "../shared/peer-access.
 import { DAEMONS_KEY, DAEMONS_REFRESH_MS, describeAll } from "./daemons-section.client";
 import { DESCRIPTION_KEY } from "./own-password-rows.client";
 import { buildPeerAccessRows } from "./peer-access-rows.client";
-import { requestPeerSync } from "./sync-scheduler.client";
 
 type ReadySettings = Extract<SettingsState<typeof crossDaemonSettings.schema>, { status: "ready" }>;
 
@@ -18,14 +17,17 @@ const DEFAULT_ACCESS_OPTIONS = [
 const STILL_HOLDS_LINK =
   "It still holds this daemon's link. It drops it at the next sync while the app is open. If it keeps it, change this daemon's password.";
 
-export function PeerAccessSection({ settings, storedPeers }: { settings: ReadySettings; storedPeers: readonly { serverId: string; name: string }[] }) {
+interface PeerAccessSectionProps {
+  settings: ReadySettings;
+  save(values: CrossDaemonSettings): Promise<void>;
+  storedPeers: readonly { serverId: string; name: string }[];
+}
+
+export function PeerAccessSection({ settings, save, storedPeers }: PeerAccessSectionProps) {
   const hosts = useHosts();
   const callDescribe = useRpc(describeDaemon);
   const description = useQuery({ queryKey: DESCRIPTION_KEY, queryFn: () => callDescribe({}) });
   const daemons = useQuery({ queryKey: DAEMONS_KEY, queryFn: describeAll, refetchInterval: DAEMONS_REFRESH_MS });
-  const save = async (values: CrossDaemonSettings) => {
-    if (await settings.save(values, settings.revision)) requestPeerSync();
-  };
   const setAccess = (serverId: string, direction: PeerAccessDirection, allowed: boolean) =>
     void save(withPeerAccess(settings.values, serverId, direction, allowed));
   const rows = description.data

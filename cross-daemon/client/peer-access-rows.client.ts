@@ -20,10 +20,13 @@ interface PeerAccessSources {
 }
 
 export function buildPeerAccessRows({ ownServerId, hosts, storedPeers, daemons, settings }: PeerAccessSources): PeerAccessRow[] {
-  const known = [
+  // A peer with a choice of its own keeps its row even when nothing else lists it, so the choice can be undone.
+  const candidates = [
     ...hosts.map(({ serverId, label }) => ({ serverId, label })),
-    ...storedPeers.filter((peer) => !hosts.some((host) => host.serverId === peer.serverId)).map(({ serverId, name }) => ({ serverId, label: name })),
+    ...storedPeers.map(({ serverId, name }) => ({ serverId, label: name })),
+    ...Object.keys(settings.peerAccess).map((serverId) => ({ serverId, label: serverId })),
   ];
+  const known = candidates.filter((candidate, index) => candidates.findIndex(({ serverId }) => serverId === candidate.serverId) === index);
   return known
     .filter(({ serverId }) => serverId !== ownServerId)
     .map(({ serverId, label }) => {

@@ -47,7 +47,8 @@ Each daemon enforces its own choices, not the app:
   daemon it names.
 - A daemon refuses to store a peer it may not reach, and drops one at once when you block it.
 - Unreadable settings count as switched off: the daemon gives no link and keeps no peers.
-- If two hosts in the app give the same server ID, neither gets or gives a link.
+- If two hosts in the app give the same server ID, neither gets or gives a link, and each is told to
+  drop the links it holds.
 
 ### Limits
 

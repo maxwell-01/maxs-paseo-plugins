@@ -43,6 +43,17 @@ describe("buildPeerAccessRows", () => {
     expect(rows).toEqual([{ serverId: "srv_laptop", label: "laptop.local", inbound: true, outbound: true, stillHoldsLink: false }]);
   });
 
+  it("keeps a row for a peer with a choice of its own that the app no longer lists, so the choice can be undone", () => {
+    const rows = buildPeerAccessRows({
+      ownServerId: "srv_rescue",
+      hosts: [],
+      storedPeers: [],
+      daemons: [],
+      settings: settings({ peerAccess: { srv_gone: { outbound: false } } }),
+    });
+    expect(rows).toEqual([{ serverId: "srv_gone", label: "srv_gone", inbound: true, outbound: false, stillHoldsLink: false }]);
+  });
+
   it("flags a blocked peer that still lists this daemon, so its link may need changing", () => {
     const [brs] = buildPeerAccessRows({
       ownServerId: "srv_rescue",
