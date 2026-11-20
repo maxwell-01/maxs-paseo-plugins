@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { crossDaemonSettings } from "./cross-daemon.shared";
-import { isPeerAllowed } from "./peer-access.shared";
+import { isPeerAllowed, withPeerAccess } from "./peer-access.shared";
 
 const defaults = crossDaemonSettings.schema.parse({ enabled: true });
 
@@ -20,6 +20,24 @@ describe("isPeerAllowed", () => {
     const values = { ...defaults, defaultPeerAccess: "blocked" as const, peerAccess: { srv_tower: { inbound: true, outbound: false } } };
     expect(isPeerAllowed(values, "srv_tower", "inbound")).toBe(true);
     expect(isPeerAllowed(values, "srv_tower", "outbound")).toBe(false);
+  });
+});
+
+describe("withPeerAccess", () => {
+  it("sets one direction and leaves the other following the default", () => {
+    const blockedByDefault = { ...defaults, defaultPeerAccess: "blocked" as const };
+    const next = withPeerAccess(blockedByDefault, "srv_tower", "inbound", true);
+    expect(next.peerAccess).toEqual({ srv_tower: { inbound: true } });
+    expect(next.enabled).toBe(true);
+    expect(isPeerAllowed({ ...next, defaultPeerAccess: "allowed" }, "srv_tower", "outbound")).toBe(true);
+  });
+
+  it("leaves other peers' choices, and this peer's other direction, alone", () => {
+    const values = { ...defaults, peerAccess: { srv_mac: { inbound: false, outbound: true }, srv_tower: { inbound: false } } };
+    expect(withPeerAccess(values, "srv_tower", "outbound", false).peerAccess).toEqual({
+      srv_mac: { inbound: false, outbound: true },
+      srv_tower: { inbound: false, outbound: false },
+    });
   });
 });
 

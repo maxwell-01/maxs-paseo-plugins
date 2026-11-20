@@ -8,8 +8,8 @@ and archive each other. Requires **Paseo 0.9.2 or newer**, installed on every da
 Open **Settings → Plugins → cross-daemon ⋯ → Settings**. **This daemon** has the switch for that
 host and the daemons it can reach. **All daemons** lists every daemon the app is connected to, each
 with a switch and the daemons it can reach. Switches are off by default. Daemons that are switched
-on can reach each other; a switched-off daemon shares no link and keeps no peers. A daemon without
-the plugin, or offline, is shown but cannot be switched.
+on can reach each other, as **Per-daemon access** allows; a switched-off daemon shares no link and
+keeps no peers. A daemon without the plugin, or offline, is shown but cannot be switched.
 
 While the app is open it syncs every host that has the plugin, one sync at a time: at connect, after
 a switch change, and every minute. Each daemon gets the names and links of the other switched-on
@@ -18,13 +18,56 @@ it is open; daemons keep their last list when it closes.
 
 Switching off clears that daemon's peer list at once. The other daemons drop it at their next sync.
 
+Every daemon must run version 0.11.0 or newer for the sync to include it. Until then, daemons on
+older versions and newer ones keep the links they already have to each other, but get no new ones.
+
 A daemon that does not answer a sync, for example a sleeping Mac, keeps its place on its peers'
 lists until it answers switched off.
+
+## Per-daemon access
+
+Each daemon chooses, in its own settings, which daemons it talks to. Open **Settings → Plugins →
+cross-daemon ⋯ → Settings → Per-daemon access** for that host:
+
+- **Daemons not set below**: **Allowed** (the default) or **Blocked**. It applies to every daemon you
+  have not set, including daemons added later. The default keeps every existing link working.
+- For each other daemon, two switches:
+  - **_peer_ can reach this daemon**. Off: this daemon gives that daemon no link and no password.
+  - **This daemon can reach _peer_**. Off: this daemon keeps no link to that daemon, and its agents
+    cannot reach it.
+
+A link works only when both daemons allow it: the caller must allow reaching the peer, and the peer
+must allow the caller to reach it. For example, to let a daemon talk only to two others, set
+**Daemons not set below** to **Blocked** on it and switch both directions on for those two.
+
+Each daemon enforces its own choices, not the app:
+
+- A daemon gives its link and password only through the plugin's `grant-access` call. It answers
+  with one grant for each daemon its settings let reach it. The app passes each grant only to the
+  daemon it names.
+- A daemon refuses to store a peer it may not reach, and drops one at once when you block it.
+- Unreadable settings count as switched off: the daemon gives no link and keeps no peers.
+- If two hosts in the app give the same server ID, neither gets or gives a link.
+
+### Limits
+
+Blocking stops a daemon giving its link. It cannot take back a link a peer already has:
+
+- A peer drops the link at the next sync while the app is open and both are online.
+- A peer on an older version, or one that does not play by the rules, can keep it. The settings show
+  **It still holds this daemon's link** while a blocked peer still lists this daemon.
+- To cut such a peer off, change this daemon's password, then enter the new one in **This daemon's
+  password**. A daemon with no password is reachable by anyone with its link, so give a daemon you
+  must protect a password.
+
+The app's sync addresses each grant by the server ID each daemon reports. A daemon that runs hostile
+code can report the ID of another daemon that is offline at that moment, and so get the grants for
+it. The app already trusts every daemon it connects to, so connect only daemons you trust that far.
 
 ## Links
 
 Each daemon gives its own relay pairing link, the same as `paseo pair`, only while it is switched
-on. A pairing link grants full control of that daemon. Peers are stored owner-only in
+on, and only to the daemons it lets reach it. A pairing link grants full control of that daemon. Peers are stored owner-only in
 `$PASEO_HOME/plugin-data/cross-daemon/`, which keeps other users out but not the daemon's own
 agents: they run as the same user. The cross-daemon tools never print a link.
 
@@ -34,7 +77,7 @@ A daemon with a password refuses a pairing link on its own. Paseo keeps only a h
 password, and the app does not show plugins the passwords it holds, so enter the password once in
 that daemon's own **This daemon → This daemon's password**. The plugin keeps it sealed in
 `$PASEO_HOME/plugin-data/cross-daemon/own-password.json` and gives it, with the link, to the other
-switched-on daemons at each sync. They store it sealed with that peer and pass it to the CLI as
+switched-on daemons it lets reach it, at each sync. They store it sealed with that peer and pass it to the CLI as
 `PASEO_PASSWORD` only for calls to that daemon, never on the command line and never to another
 daemon. No tool or listing shows a password. **Forget** stops giving it; peers drop it at their next
 sync. Without it, calls to that daemon fail with `Password required`.

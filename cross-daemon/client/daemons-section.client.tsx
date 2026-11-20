@@ -6,12 +6,12 @@ import { buildDaemonRows, type DescribedDaemon } from "./daemon-rows.client";
 import type { DaemonPort } from "./peer-sync.client";
 import { listRegisteredDaemons, requestPeerSync } from "./sync-scheduler.client";
 
-const DAEMONS_KEY = ["cross-daemon", "daemons"];
-const REFRESH_MS = 5_000;
+export const DAEMONS_KEY = ["cross-daemon", "daemons"];
+export const DAEMONS_REFRESH_MS = 5_000;
 
 type ReachableDaemon = DescribedDaemon & { port: DaemonPort };
 
-async function describeAll(): Promise<{ daemons: ReachableDaemon[]; failedCount: number }> {
+export async function describeAll(): Promise<{ daemons: ReachableDaemon[]; failedCount: number }> {
   const results = await Promise.allSettled(
     listRegisteredDaemons().map(async (port) => {
       const [described, peers] = await Promise.all([port.describe(), port.listPeers()]);
@@ -28,7 +28,7 @@ async function describeAll(): Promise<{ daemons: ReachableDaemon[]; failedCount:
 export function DaemonsSection({ theme }: Pick<PluginSurfaceProps, "theme">) {
   const hosts = useHosts();
   const queryClient = useQueryClient();
-  const daemons = useQuery({ queryKey: DAEMONS_KEY, queryFn: describeAll, refetchInterval: REFRESH_MS });
+  const daemons = useQuery({ queryKey: DAEMONS_KEY, queryFn: describeAll, refetchInterval: DAEMONS_REFRESH_MS });
   const toggle = useMutation({
     mutationFn: async ({ port, switchedOn, label }: { port: DaemonPort; switchedOn: boolean; label: string }) => {
       try {
