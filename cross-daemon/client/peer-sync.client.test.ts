@@ -1,14 +1,29 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Peer } from "../shared/cross-daemon.shared";
 import type { PluginClientContext } from "@getpaseo/plugin/client";
-import { createDaemonPort, type DaemonDescription, type DaemonPort, type PeerUpdate, syncPeers } from "./peer-sync.client";
+import { createDaemonPort, type DaemonDescription, type DaemonPort, type Grant, type PeerUpdate, syncPeers } from "./peer-sync.client";
 
-function fakeDaemon(description: DaemonDescription | Error) {
+interface FakeDaemon {
+  description: DaemonDescription | Error;
+  // This daemon's link, given to every daemon asked for unless blocked. Null: switched off or no relay.
+  member: Peer | null;
+  blocks?: string[];
+  grantFails?: boolean;
+  // Grants it returns whatever it was asked, as a daemon running hostile code could.
+  forgedGrants?: Grant[];
+}
+
+function fakeDaemon({ description, member, blocks = [], grantFails = false, forgedGrants }: FakeDaemon) {
   const received: PeerUpdate[] = [];
   const port: DaemonPort = {
     async describe() {
       if (description instanceof Error) throw description;
       return description;
+    },
+    async grantAccess(to) {
+      if (grantFails) throw new Error("grant-access is not a plugin RPC on this host");
+      if (forgedGrants) return forgedGrants;
+      return member ? to.filter((serverId) => !blocks.includes(serverId)).map((serverId) => ({ to: serverId, peer: member })) : [];
     },
     async setPeers(update) {
       received.push(update);
@@ -20,8 +35,9 @@ function fakeDaemon(description: DaemonDescription | Error) {
 }
 
 const peer = (name: string): Peer => ({ serverId: `srv_${name}`, name, link: `https://app.paseo.sh/#offer=${name}` });
-const on = (name: string): DaemonDescription => ({ serverId: `srv_${name}`, switchedOn: true, passwordSet: false, member: peer(name) });
-const off = (name: string): DaemonDescription => ({ serverId: `srv_${name}`, switchedOn: false, passwordSet: false, member: null });
+const described = (name: string, switchedOn: boolean): DaemonDescription => ({ serverId: `srv_${name}`, switchedOn, passwordSet: false });
+const on = (name: string, options: Partial<FakeDaemon> = {}): FakeDaemon => ({ description: described(name, true), member: peer(name), ...options });
+const off = (name: string): FakeDaemon => ({ description: described(name, false), member: null });
 
 describe("syncPeers", () => {
   afterEach(() => vi.restoreAllMocks());
@@ -37,7 +53,7 @@ describe("syncPeers", () => {
 
   it("gives a password-protected daemon's password only to the daemons that call it", async () => {
     const protectedTower = { ...peer("tower"), password: "tower-password" };
-    const tower = fakeDaemon({ serverId: "srv_tower", switchedOn: true, passwordSet: true, member: protectedTower });
+    const tower = fakeDaemon({ description: { ...described("tower", true), passwordSet: true }, member: protectedTower });
     const mac = fakeDaemon(on("mac"));
     await syncPeers([tower.port, mac.port]);
     expect(mac.received[0].peers).toEqual([protectedTower]);
@@ -53,7 +69,7 @@ describe("syncPeers", () => {
 
   it("leaves out a daemon with no link, such as one with the relay off", async () => {
     const tower = fakeDaemon(on("tower"));
-    const noRelay = fakeDaemon({ serverId: "srv_norelay", switchedOn: true, passwordSet: false, member: null });
+    const noRelay = fakeDaemon({ description: described("norelay", true), member: null });
     await syncPeers([tower.port, noRelay.port]);
     expect(tower.received).toEqual([{ peers: [], answeredServerIds: ["srv_tower", "srv_norelay"] }]);
   });
@@ -61,15 +77,64 @@ describe("syncPeers", () => {
   it("does not count a daemon that failed to answer, so its peers keep its link", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const tower = fakeDaemon(on("tower"));
-    const asleep = fakeDaemon(new Error("Plugin host is offline"));
+    const asleep = fakeDaemon({ description: new Error("Plugin host is offline"), member: null });
     await syncPeers([tower.port, asleep.port]);
     expect(tower.received).toEqual([{ peers: [], answeredServerIds: ["srv_tower"] }]);
     expect(asleep.received).toEqual([]);
   });
 
+  it("gives a daemon's link only to the daemons it grants, so the rest drop it", async () => {
+    const rescue = fakeDaemon(on("rescue", { blocks: ["srv_brs"] }));
+    const tower = fakeDaemon(on("tower"));
+    const brs = fakeDaemon(on("brs"));
+    await syncPeers([rescue.port, tower.port, brs.port]);
+    expect(tower.received[0].peers).toEqual([peer("rescue"), peer("brs")]);
+    expect(brs.received[0]).toEqual({ peers: [peer("tower")], answeredServerIds: ["srv_rescue", "srv_tower", "srv_brs"] });
+  });
+
+  it("does not count a daemon whose grants failed, so its peers keep its link until it answers", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const tower = fakeDaemon(on("tower"));
+    const flaky = fakeDaemon(on("flaky", { grantFails: true }));
+    await syncPeers([tower.port, flaky.port]);
+    expect(tower.received).toEqual([{ peers: [], answeredServerIds: ["srv_tower"] }]);
+    expect(flaky.received).toEqual([{ peers: [peer("tower")], answeredServerIds: ["srv_tower"] }]);
+  });
+
+  it("gives no link to, or from, two daemons that claim the same server ID, and takes back the links they hold", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const tower = fakeDaemon(on("tower"));
+    const mac = fakeDaemon(on("mac"));
+    const impostor = fakeDaemon(on("mac"));
+    await syncPeers([tower.port, mac.port, impostor.port]);
+    expect(tower.received).toEqual([{ peers: [], answeredServerIds: ["srv_tower"] }]);
+    expect(mac.received).toEqual([{ peers: [], answeredServerIds: ["srv_tower"] }]);
+    expect(impostor.received).toEqual([{ peers: [], answeredServerIds: ["srv_tower"] }]);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("srv_mac"));
+  });
+
+  it("delivers a grant only when it gives the granting daemon's own link to a daemon it was asked about", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const tower = fakeDaemon(on("tower"));
+    const mac = fakeDaemon(on("mac"));
+    const brs = fakeDaemon(
+      on("brs", {
+        forgedGrants: [
+          { to: "srv_tower", peer: { ...peer("brs"), serverId: "srv_mac" } },
+          { to: "srv_elsewhere", peer: peer("brs") },
+          { to: "srv_mac", peer: peer("brs") },
+        ],
+      }),
+    );
+    await syncPeers([tower.port, mac.port, brs.port]);
+    expect(tower.received[0].peers).toEqual([peer("mac")]);
+    expect(mac.received[0].peers).toEqual([peer("tower"), peer("brs")]);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("srv_brs"));
+  });
+
   it("reports a daemon that failed to answer instead of dropping the error", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    await syncPeers([fakeDaemon(new Error("Plugin host is offline")).port]);
+    await syncPeers([fakeDaemon({ description: new Error("Plugin host is offline"), member: null }).port]);
     expect(warn).toHaveBeenCalledWith("cross-daemon: a host did not answer the peer sync", expect.any(Error));
   });
 });
@@ -82,6 +147,7 @@ describe("createDaemonPort", () => {
         : { status: "conflict", error: "the settings changed elsewhere" }) as unknown as PluginClientContext["rpc"];
     await expect(createDaemonPort(rpc).setSwitch(true)).rejects.toThrow("the settings changed elsewhere");
   });
+
   it("keeps the per-peer access choices when it flips the switch", async () => {
     const access = { defaultPeerAccess: "blocked", peerAccess: { srv_mac: { inbound: true, outbound: true } } };
     const written: unknown[] = [];

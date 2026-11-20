@@ -3,6 +3,7 @@ import type { PluginServerContext } from "@getpaseo/plugin/server";
 import {
   crossDaemonSettings,
   describeDaemon,
+  grantAccess,
   listPeers,
   type Peer,
   type PeerPasswordSource,
@@ -85,16 +86,25 @@ export function registerCrossDaemon(
     const { config } = await paseo.config.get();
     const own = await readOwnPeer(config.relay?.enabled === true);
     const { ownPassword } = await stores;
-    const password = ownPassword.read();
-    const switchedOn = isSwitchedOn(await settings.read());
-    const member = switchedOn && own ? { ...own, ...(password ? { password } : {}) } : null;
     return {
       serverId: own?.serverId ?? (await ownDaemon()).serverId,
-      switchedOn,
-      passwordSet: password !== null,
+      switchedOn: isSwitchedOn(await settings.read()),
+      passwordSet: ownPassword.read() !== null,
       ...(ownPassword.isUnreadable() ? { passwordUnreadable: true as const } : {}),
-      member,
     };
+  });
+
+  // The only way this daemon's link and password leave it: each grant names the one daemon it is for,
+  // and this daemon's own settings decide which daemons get one.
+  server.handle(grantAccess, async ({ to }, { paseo }) => {
+    const { config } = await paseo.config.get();
+    const own = await readOwnPeer(config.relay?.enabled === true);
+    const password = (await stores).ownPassword.read();
+    const switchedOnValues = switchedOnSettings(await settings.read());
+    if (!own || !switchedOnValues) return { grants: [] };
+    const peer = password ? { ...own, password } : own;
+    const allowed = [...new Set(to)].filter((serverId) => serverId !== own.serverId && isPeerAllowed(switchedOnValues, serverId, "inbound"));
+    return { grants: allowed.map((serverId) => ({ to: serverId, peer })) };
   });
 
   server.handle(setOwnPassword, async ({ password }) => {

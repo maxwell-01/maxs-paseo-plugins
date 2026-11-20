@@ -4,7 +4,8 @@ import { registerDaemon, requestPeerSync } from "./sync-scheduler.client";
 
 function countingPort() {
   const port: DaemonPort = {
-    describe: vi.fn(async () => ({ serverId: "srv_tower", switchedOn: false, passwordSet: false, member: null })),
+    describe: vi.fn(async () => ({ serverId: "srv_tower", switchedOn: false, passwordSet: false })),
+    grantAccess: vi.fn(async () => []),
     setPeers: vi.fn(async () => {}),
     listPeers: vi.fn(async () => []),
     setSwitch: vi.fn(async () => {}),
@@ -41,10 +42,11 @@ describe("sync scheduler", () => {
     let finishDescribe = () => {};
     const slow: DaemonPort = {
       describe: vi.fn(
-        () => new Promise<{ serverId: string; switchedOn: boolean; passwordSet: boolean; member: null }>((resolve) => {
-          finishDescribe = () => resolve({ serverId: "srv_slow", switchedOn: false, passwordSet: false, member: null });
+        () => new Promise<{ serverId: string; switchedOn: boolean; passwordSet: boolean }>((resolve) => {
+          finishDescribe = () => resolve({ serverId: "srv_slow", switchedOn: false, passwordSet: false });
         }),
       ),
+      grantAccess: vi.fn(async () => []),
       setPeers: vi.fn(async () => {}),
       listPeers: vi.fn(async () => []),
       setSwitch: vi.fn(async () => {}),
