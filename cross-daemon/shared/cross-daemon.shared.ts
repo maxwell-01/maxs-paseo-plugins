@@ -5,8 +5,15 @@ export const crossDaemonSettings = defineSettings({
   id: "cross-daemon",
   scope: "host",
   version: 1,
-  schema: z.object({ enabled: z.boolean().default(false) }),
+  schema: z.object({
+    enabled: z.boolean().default(false),
+    // For each peer with no entry in peerAccess. "allowed" keeps links made before per-peer access working.
+    defaultPeerAccess: z.enum(["allowed", "blocked"]).default("allowed"),
+    // A direction left unset follows defaultPeerAccess.
+    peerAccess: z.record(z.string(), z.object({ inbound: z.boolean().optional(), outbound: z.boolean().optional() })).default({}),
+  }),
 });
+export type CrossDaemonSettings = z.output<typeof crossDaemonSettings.schema>;
 
 const PAIRING_LINK = /^https:\/\/[^\s#]+#offer=[A-Za-z0-9_-]+={0,2}$/;
 

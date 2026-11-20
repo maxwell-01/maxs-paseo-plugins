@@ -82,4 +82,21 @@ describe("createDaemonPort", () => {
         : { status: "conflict", error: "the settings changed elsewhere" }) as unknown as PluginClientContext["rpc"];
     await expect(createDaemonPort(rpc).setSwitch(true)).rejects.toThrow("the settings changed elsewhere");
   });
+  it("keeps the per-peer access choices when it flips the switch", async () => {
+    const access = { defaultPeerAccess: "blocked", peerAccess: { srv_mac: { inbound: true, outbound: true } } };
+    const written: unknown[] = [];
+    const rpc = (async (contract: { name: string }, input: { values?: unknown }) => {
+      if (contract.name.endsWith(".read")) return { status: "ready", revision: "r1", values: { enabled: false, ...access } };
+      written.push(input.values);
+      return { status: "saved", revision: "r2" };
+    }) as unknown as PluginClientContext["rpc"];
+    await createDaemonPort(rpc).setSwitch(true);
+    expect(written).toEqual([{ enabled: true, ...access }]);
+  });
+
+  it("refuses to flip the switch over settings it cannot read, rather than reset them", async () => {
+    const rpc = (async (contract: { name: string }) =>
+      contract.name.endsWith(".read") ? { status: "invalid", revision: "r1", error: "schema version 9 is newer" } : { status: "saved" }) as unknown as PluginClientContext["rpc"];
+    await expect(createDaemonPort(rpc).setSwitch(true)).rejects.toThrow("schema version 9 is newer");
+  });
 });

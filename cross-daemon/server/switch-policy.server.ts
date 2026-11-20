@@ -1,12 +1,18 @@
 import type { PluginSettingsState } from "@getpaseo/plugin/server";
-import type { crossDaemonSettings, Peer } from "../shared/cross-daemon.shared";
+import type { CrossDaemonSettings, crossDaemonSettings, Peer } from "../shared/cross-daemon.shared";
+import { isPeerAllowed } from "../shared/peer-access.shared";
+
+// Null unless the settings are readable and switched on, so unreadable settings share and keep nothing.
+export function switchedOnSettings(state: PluginSettingsState<typeof crossDaemonSettings.schema>): CrossDaemonSettings | null {
+  return state.status === "ready" && state.values.enabled ? state.values : null;
+}
 
 export function isSwitchedOn(state: PluginSettingsState<typeof crossDaemonSettings.schema>): boolean {
-  return state.status === "ready" && state.values.enabled;
+  return switchedOnSettings(state) !== null;
 }
 
 interface StoredPeerUpdate {
-  switchedOn: boolean;
+  settings: CrossDaemonSettings | null;
   ownServerId: string;
   stored: readonly Peer[];
   peers: readonly Peer[];
@@ -14,10 +20,10 @@ interface StoredPeerUpdate {
 }
 
 // A daemon that did not answer this sync may be asleep or still connecting, so its stored link stays
-// until it answers switched off.
-export function peersToStore(update: StoredPeerUpdate): Peer[] {
-  if (!update.switchedOn) return [];
-  const answered = new Set([...update.answeredServerIds, ...update.peers.map((peer) => peer.serverId)]);
-  const silent = update.stored.filter((peer) => !answered.has(peer.serverId));
-  return [...update.peers, ...silent].filter((peer) => peer.serverId !== update.ownServerId);
+// until it answers switched off. A peer this daemon may not reach is never kept, whatever it gave.
+export function peersToStore({ settings, ownServerId, stored, peers, answeredServerIds }: StoredPeerUpdate): Peer[] {
+  if (!settings) return [];
+  const answered = new Set([...answeredServerIds, ...peers.map((peer) => peer.serverId)]);
+  const silent = stored.filter((peer) => !answered.has(peer.serverId));
+  return [...peers, ...silent].filter((peer) => peer.serverId !== ownServerId && isPeerAllowed(settings, peer.serverId, "outbound"));
 }

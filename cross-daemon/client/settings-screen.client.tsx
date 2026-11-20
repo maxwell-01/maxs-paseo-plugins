@@ -61,7 +61,7 @@ function ThisDaemonSection({ theme }: Pick<PluginSurfaceProps, "theme">) {
   }
 
   const saveEnabled = async (enabled: boolean) => {
-    if (await settings.save({ enabled }, settings.revision)) requestPeerSync();
+    if (await settings.save({ ...settings.values, enabled }, settings.revision)) requestPeerSync();
   };
 
   return (

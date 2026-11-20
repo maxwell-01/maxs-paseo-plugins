@@ -5,7 +5,7 @@ import { join } from "node:path";
 import type { PluginServerContext, PluginSettingsState } from "@getpaseo/plugin/server";
 import type { PaseoApi } from "@getpaseo/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Peer } from "../shared/cross-daemon.shared";
+import { type CrossDaemonSettings, crossDaemonSettings, type Peer } from "../shared/cross-daemon.shared";
 import { registerCrossDaemon } from "./cross-daemon.server";
 import { makeTempDir } from "./temp-dir.test-support";
 
@@ -14,9 +14,14 @@ const mac: Peer = { serverId: "srv_mac", name: "mac", link: "https://app.paseo.s
 const brs: Peer = { serverId: "srv_brs", name: "brs", link: "https://app.paseo.sh/#offer=YnJz" };
 const testDaemonKey = randomBytes(32);
 
-type State = PluginSettingsState<any>;
-const on: State = { status: "ready", revision: "r1", values: { enabled: true } };
-const off: State = { status: "ready", revision: "r2", values: { enabled: false } };
+type State = PluginSettingsState<typeof crossDaemonSettings.schema>;
+const ready = (values: Partial<CrossDaemonSettings>, revision = "r1"): State => ({
+  status: "ready",
+  revision,
+  values: crossDaemonSettings.schema.parse(values),
+});
+const on = ready({ enabled: true });
+const off = ready({ enabled: false }, "r2");
 const invalid: State = { status: "invalid", revision: "r3", error: "schema version 9 is newer" };
 
 function startPlugin(initial: State, stored: Peer[] = [], stateDirOverride?: Promise<string>, relayEnabled = true, daemonSecretKey: Uint8Array = testDaemonKey) {
@@ -66,6 +71,8 @@ function startPlugin(initial: State, stored: Peer[] = [], stateDirOverride?: Pro
     },
     settle: () => new Promise((resolve) => setTimeout(resolve, 10)),
     createAgent: async (config: object) => hooks.get("agent.create")!({ request: { config } }),
+    callTool: async (name: string, args: object) => callTool(join(await (stateDirOverride ?? Promise.resolve(stateDir)), "tools.sock"), name, args),
+    reachedServerIds: () => reachedPeers.map((peer) => peer.serverId),
     passwordUsedFor: async (daemon: string) => {
       await callTool(join(await (stateDirOverride ?? Promise.resolve(stateDir)), "tools.sock"), "list_workspaces", { daemon });
       return reachedPeers.at(-1)?.password;
@@ -166,6 +173,40 @@ describe("cross-daemon switch", () => {
     const plugin = startPlugin(off);
     await expect(plugin.call("cross-daemon.set-peers", { peers: [mac], answeredServerIds: ["srv_mac"] })).resolves.toEqual({ stored: 0 });
     expect(plugin.storedPeers()).toEqual([]);
+  });
+});
+
+describe("per-peer access", () => {
+  const onlyMac = ready({ enabled: true, defaultPeerAccess: "blocked", peerAccess: { srv_mac: { inbound: true, outbound: true } } });
+
+  it("refuses to store a peer it may not reach, even when that peer gives its link", async () => {
+    const plugin = startPlugin(onlyMac);
+    await expect(plugin.call("cross-daemon.set-peers", { peers: [mac, brs], answeredServerIds: ["srv_mac", "srv_brs"] })).resolves.toEqual({
+      stored: 1,
+    });
+    expect(plugin.storedPeers()).toEqual([mac]);
+  });
+
+  it("drops a blocked peer kept from an earlier sync, even when it did not answer this one", async () => {
+    const plugin = startPlugin(onlyMac, [mac, brs]);
+    await plugin.call("cross-daemon.set-peers", { peers: [], answeredServerIds: [] });
+    expect(plugin.storedPeers()).toEqual([mac]);
+  });
+
+  it("drops a peer at once when it is blocked, and its tools then refuse that peer", async () => {
+    const plugin = startPlugin(on, [mac, brs]);
+    await plugin.settle();
+    await plugin.switchTo(ready({ enabled: true, peerAccess: { srv_brs: { inbound: true, outbound: false } } }, "r4"));
+    await plugin.settle();
+    expect(plugin.storedPeers()).toEqual([mac]);
+    await expect(plugin.callTool("list_workspaces", { daemon: "brs" })).resolves.toMatchObject({ isError: true });
+    expect(plugin.reachedServerIds()).not.toContain("srv_brs");
+  });
+
+  it("drops a peer it may not reach at start, as settings saved while it was stopped say", async () => {
+    const plugin = startPlugin(onlyMac, [mac, brs]);
+    await plugin.settle();
+    expect(plugin.storedPeers()).toEqual([mac]);
   });
 });
 
