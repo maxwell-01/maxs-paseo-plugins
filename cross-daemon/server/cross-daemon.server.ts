@@ -67,8 +67,8 @@ export function registerCrossDaemon(
   toolServer.catch((error: unknown) => console.error("cross-daemon: the tool server did not start", error));
   const dropPeersNotAllowed = async () => {
     const { peers } = await stores;
-    const switchedOn = switchedOnSettings(await settings.read());
-    peers.keepOnly((serverId) => switchedOn !== null && isPeerAllowed(switchedOn, serverId, "outbound"));
+    const switchedOnValues = switchedOnSettings(await settings.read());
+    peers.keepOnly((serverId) => switchedOnValues !== null && isPeerAllowed(switchedOnValues, serverId, "outbound"));
   };
 
   // A plugin fault must not stop agents being created: they start without the cross-daemon tools.
