@@ -2,9 +2,10 @@ import { type PluginSurfaceProps, useRpc, useSettings } from "@getpaseo/plugin/c
 import { SettingsAction, SettingsCard, SettingsRow, SettingsSection, SettingsSwitch } from "@getpaseo/plugin/client/ui";
 import { useQuery } from "@tanstack/react-query";
 import { ScrollView, Text } from "react-native";
-import { crossDaemonSettings, listPeers } from "../shared/cross-daemon.shared";
+import { type CrossDaemonSettings, crossDaemonSettings, listPeers } from "../shared/cross-daemon.shared";
 import { DaemonsSection } from "./daemons-section.client";
 import { OwnPasswordRows } from "./own-password-rows.client";
+import { PeerAccessSection } from "./peer-access-section.client";
 import { PeerPasswordRows } from "./peer-password-rows.client";
 import { requestPeerSync } from "./sync-scheduler.client";
 
@@ -47,7 +48,7 @@ function ThisDaemonSection({ theme }: Pick<PluginSurfaceProps, "theme">) {
           <SettingsAction label="Read settings again" actionLabel="Reload" onPress={settings.reload} />
           {settings.status === "invalid" ? (
             <SettingsAction
-              label="Replace invalid settings with defaults (switched off)"
+              label="Replace invalid settings with defaults (switched off, every daemon allowed)"
               actionLabel="Reset"
               disabled={settings.saving}
               onPress={async () => {
@@ -60,29 +61,32 @@ function ThisDaemonSection({ theme }: Pick<PluginSurfaceProps, "theme">) {
     );
   }
 
-  const saveEnabled = async (enabled: boolean) => {
-    if (await settings.save({ ...settings.values, enabled }, settings.revision)) requestPeerSync();
+  const save = async (values: CrossDaemonSettings) => {
+    if (await settings.save(values, settings.revision)) requestPeerSync();
   };
 
   return (
-    <SettingsSection title="This daemon">
-      <SettingsCard>
-        <SettingsSwitch
-          label="Allow cross-daemon comms"
-          hint="Agents on this daemon can reach agents on other switched-on daemons, and theirs can reach this one."
-          value={settings.values.enabled}
-          disabled={settings.saving}
-          error={settings.saveError}
-          onValueChange={(enabled) => void saveEnabled(enabled)}
-        />
-        <SettingsRow
-          label="Can reach"
-          hint={describeReach(peers.data?.peers.map((peer) => peer.name), peers.isError)}
-          error={peers.error?.message ?? null}
-        />
-        <OwnPasswordRows />
-        <PeerPasswordRows peers={peers.data?.peers ?? []} onSaved={() => void peers.refetch()} />
-      </SettingsCard>
-    </SettingsSection>
+    <>
+      <SettingsSection title="This daemon">
+        <SettingsCard>
+          <SettingsSwitch
+            label="Allow cross-daemon comms"
+            hint="Agents on this daemon can reach agents on other switched-on daemons, and theirs can reach this one, as Per-daemon access allows."
+            value={settings.values.enabled}
+            disabled={settings.saving}
+            error={settings.saveError}
+            onValueChange={(enabled) => void save({ ...settings.values, enabled })}
+          />
+          <SettingsRow
+            label="Can reach"
+            hint={describeReach(peers.data?.peers.map((peer) => peer.name), peers.isError)}
+            error={peers.error?.message ?? null}
+          />
+          <OwnPasswordRows />
+          <PeerPasswordRows peers={peers.data?.peers ?? []} onSaved={() => void peers.refetch()} />
+        </SettingsCard>
+      </SettingsSection>
+      <PeerAccessSection settings={settings} save={save} storedPeers={peers.data?.peers ?? []} />
+    </>
   );
 }

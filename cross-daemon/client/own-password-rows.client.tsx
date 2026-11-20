@@ -5,7 +5,7 @@ import { useRef, useState } from "react";
 import { describeDaemon, setOwnPassword } from "../shared/cross-daemon.shared";
 import { requestPeerSync } from "./sync-scheduler.client";
 
-const DESCRIPTION_KEY = ["cross-daemon", "describe"];
+export const DESCRIPTION_KEY = ["cross-daemon", "describe"];
 
 function describePassword(passwordSet: boolean | undefined, passwordUnreadable: boolean): string {
   if (passwordSet === undefined) return "Checking…";
