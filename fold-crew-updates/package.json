@@ -1,0 +1,42 @@
+{
+  "name": "paseo-fold-crew-updates",
+  "version": "0.1.0",
+  "description": "Fold every message you did not write, such as agent notifications and cross-daemon messages, into one closed row in an agent chat.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/maxwell-01/maxs-paseo-plugins.git",
+    "directory": "fold-crew-updates"
+  },
+  "keywords": [
+    "paseo",
+    "paseo-plugin"
+  ],
+  "files": [
+    "paseo-plugin.json",
+    "index.client.tsx",
+    "client/",
+    "shared/",
+    "!**/*.test.ts",
+    "!**/*.test-support.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@getpaseo/client": "0.9.2",
+    "@getpaseo/plugin": "0.9.2",
+    "@getpaseo/protocol": "0.9.2",
+    "@types/node": "^20.9.0",
+    "@types/react": "^19.3.0",
+    "react": "^19.3.0",
+    "react-native": "^0.84.1",
+    "typescript": "^7.0.2",
+    "vitest": "^3.2.7",
+    "zod": "^4.6.2"
+  }
+}
