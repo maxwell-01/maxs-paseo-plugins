@@ -15,9 +15,7 @@ The closed row shows the source and the first 80 characters. Tap it to read the 
 
 - It folds the incoming message only. The agent's reply stays open: a Paseo timeline transformer sees
   one item at a time, with no link to the turn it belongs to, so it cannot fold the reply.
-- It matches by text. A heartbeat or schedule prompt that has no marker above looks like one of your
-  own messages and is not folded.
-- A message you type that starts with one of the markers is folded too.
+- It matches by text, so a message you type that starts with one of the markers is folded too.
 
 ## Install
 

@@ -29,6 +29,8 @@ const paseoNotification =
   '<paseo-system version="1" kind="agent-message" source-agent-id="69a0ce27" message-id="a897d596" source-agent-title="First mate">\nRead your instructions in /home/paseo/brief.md and follow them.\n</paseo-system>';
 const firstmateWatch =
   '<firstmate-watch id="w1" agent="crew-7">crew-7 went idle after 4 minutes.</firstmate-watch>';
+const schedulePrompt =
+  '<paseo-system>\nSchedule "overnight-merge" fired (id=48dcc983, run=ee752eeb-1111-2222-3333-444455556666).\nMerge every green PR.\n</paseo-system>';
 const crossDaemon =
   '[cross-daemon abcd1234] Message from agent boss on daemon "mac" (srv_1). Please rebuild the stack.';
 const crossDaemonNotice =
@@ -37,6 +39,7 @@ const crossDaemonNotice =
 describe("fold crew updates", () => {
   it.each([
     ["a Paseo agent notification", paseoNotification, "paseo notification"],
+    ["a schedule or heartbeat prompt", schedulePrompt, "paseo notification"],
     ["a firstmate watch block", firstmateWatch, "firstmate watch"],
     ["a cross-daemon message", crossDaemon, "cross-daemon message"],
     ["a cross-daemon notice", crossDaemonNotice, "cross-daemon message"],
