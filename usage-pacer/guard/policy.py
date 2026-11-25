@@ -14,6 +14,7 @@ STEP_DOWN_SECONDS = 300
 RESET_GRACE = 1800
 WEEK_SECONDS = 7 * 86400
 WORKING_WEEKDAYS = 5
+MIN_FORECAST_FRACTION = 0.05
 
 
 def valid_number(value):
@@ -166,8 +167,9 @@ def decide(data, previous, now, provider='claude', agents=None, config=CONFIG, m
             ceiling = 100 - config['contingency_7d_pct']
             pace_limit = target * fraction + margin
             ahead = pct > pace_limit
-            projection = round(pct / fraction, 1) if fraction else None
-            forecast = pct / fraction if fraction else 0 if pct == 0 else target
+            enough_data = fraction >= MIN_FORECAST_FRACTION
+            projection = round(pct / fraction, 1) if enough_data or ahead and fraction else None
+            forecast = pct / fraction if enough_data else pct
             signal['paced_projection_pct'] = ceiling + 1 if ahead else min(forecast, target)
             signal['raise_below_pct'] = target
         elif reset > stamp and not pace.window_measured(records, 'five_h_pct', stamp):

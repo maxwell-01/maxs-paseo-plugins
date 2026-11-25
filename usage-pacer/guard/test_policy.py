@@ -644,3 +644,27 @@ class PacingOverridesTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class EarlyWeekForecastTests(unittest.TestCase):
+    def setUp(self):
+        for target in (patch.object(policy.pace, 'read_sharing', return_value='on'),
+                       patch.object(policy.pace.time, 'time', return_value=NOW)):
+            target.start()
+            self.addCleanup(target.stop)
+        self.config = dict(policy.CONFIG, weekly_pace='whole_week')
+
+    def weekly(self, pct, hours_to_reset):
+        data = {'status': 'available', 'fetchedAt': NOW, 'windows': [
+            {'id': 'weekly', 'usedPct': pct, 'resetsAt': NOW + hours_to_reset * 3600}]}
+        return policy.decide(data, {}, NOW, provider='codex', config=self.config)
+
+    def test_one_percent_used_167_8_hours_before_reset_has_no_forecast_and_is_not_capped(self):
+        result = self.weekly(1, 167.8)
+        self.assertIsNone(result['projections']['weekly'])
+        self.assertNotIn('forecast 618', result['reason'])
+
+    def test_a_fast_burn_early_in_the_week_still_gets_a_forecast_and_a_cap(self):
+        result = self.weekly(40, 167.8)
+        self.assertGreater(result['projections']['weekly'], 95)
+        self.assertEqual(result['cap'], 1)
