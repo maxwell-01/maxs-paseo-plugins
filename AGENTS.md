@@ -1,5 +1,8 @@
 # Agent notes
 
+Try a plugin build only on the throwaway Paseo that `scripts/paseo-sandbox.sh` starts, never on
+Max's own Paseo. The README's "Test a plugin build" says how, and what it cannot test.
+
 ## Paseo Cafe listings
 
 [Paseo Cafe](https://paseo.cafe) lists a plugin from its entry in
